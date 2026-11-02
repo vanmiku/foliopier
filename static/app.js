@@ -500,24 +500,74 @@
     e.preventDefault(); setCollapsed(!isCollapsed());
   });
 
-  // ---------- 在其他设备上打开：Tailscale 地址、局域网地址 + 二维码 + 访问码 ----------
+  // ---------- 在其他设备上打开：开关、设备申请和逐台撤销 ----------
   document.addEventListener('click', async e => {
-    const btn = e.target.closest('.reach-btn'); if (!btn) return;
+    if (e.target.closest('.lan-logout')) {
+      try { await post('/api/logout', {}); location.replace('/login'); }
+      catch { toast(T('That did not work. Try again in a moment.')); }
+      return;
+    }
+    if (!e.target.closest('.reach-btn')) return;
     let info;
-    try { const r = await fetch('/api/access', { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); info = await r.json(); }
-    catch { toast(T('Only the computer running mydash, or your tailnet, can show this.')); return; }
-    const esc = x => String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-    const parts = [];
-    if (info.tailnet) parts.push(`<section><h4>${T('Over Tailscale')}</h4><a class="ad-url" href="${esc(info.tailnet)}">${esc(info.tailnet)}</a><p>${T('On any device with Tailscale signed in to the same account, from anywhere.')}</p></section>`);
-    if (info.lan) parts.push(`<section><h4>${T('On the same Wi-Fi')}</h4>${info.qr ? `<div class="ad-qr" aria-label="QR">${info.qr}</div><p>${T('Scan with the phone camera to open it and log in at once.')}</p>` : ''}${info.urls.map(u => `<div><a class="ad-url" href="${esc(u)}">${esc(u)}</a></div>`).join('')}<p>${T('Access code')}: <span class="ad-code">${esc(info.code)}</span></p><p>${T('{n} device logged in. To change the code and log every device out, run mydash lan reset.|{n} devices logged in. To change the code and log every device out, run mydash lan reset.', { n: info.devices })}</p></section>`);
-    else parts.push(`<section><h4>${T('On the same Wi-Fi')}</h4><p>${T('Not turned on. On this computer run mydash lan on, or ask your agent to.')}</p></section>`);
-    const dlg = document.createElement('dialog'); dlg.className = 'access-dlg';
-    dlg.innerHTML = `<div class="ad-body"><h3>${T('Open on another device')}</h3>${parts.join('')}<button type="button" class="ad-close">${T('Close')}</button></div>`;
-    document.body.appendChild(dlg);
-    dlg.addEventListener('close', () => dlg.remove());
-    dlg.querySelector('.ad-close').addEventListener('click', () => dlg.close());
-    dlg.addEventListener('click', ev => { if (ev.target === dlg) dlg.close(); });
-    dlg.showModal();
+    const get = async () => { const r = await fetch('/api/access', { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return r.json(); };
+    try { info = await get(); } catch { toast(T('Only the computer running mydash, or your tailnet, can show this.')); return; }
+    const dlg = modal(`<h3 id="access-title">${T('Open on another device')}</h3><p class="access-computer"></p>
+      <section class="access-tailnet" hidden></section>
+      <section><label class="access-switch"><span>${T('Allow access on the same Wi-Fi')}</span><input id="lan-toggle" type="checkbox" role="switch"></label>
+      <p>${T('New devices need an access code and your approval. Turning this off revokes all devices.')}</p></section>
+      <p class="access-notice">${T('Approval grants access to all projects and workbench actions on this computer. Only approve devices you trust.')}</p><div class="access-content"></div><p class="access-error" role="status"></p>
+      <button type="button" class="ad-close" data-close>${T('Close')}</button>`);
+    let busy = false, signature = '', timer, revision = 0;
+    dlg.setAttribute('aria-labelledby', 'access-title');
+    const toggle = $('#lan-toggle', dlg), content = $('.access-content', dlg);
+    const date = iso => new Date(iso).toLocaleString(document.documentElement.lang || 'en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    function render(x) {
+      info = x; toggle.checked = x.lan;
+      $('.access-computer', dlg).textContent = T('This computer: {name} · {id}', { name: x.computer, id: x.instance });
+      const tail = $('.access-tailnet', dlg);
+      if (x.tailnet) { tail.hidden = false; tail.innerHTML = `<h4>${T('Over Tailscale')}</h4><a class="ad-url" href="${escH(x.tailnet)}">${escH(x.tailnet)}</a><p>${T('Devices permitted to reach this node by your Tailscale access rules can open it remotely.')}</p>`; }
+      const next = JSON.stringify([x.lan, x.urls, x.code, x.pending, x.authorized]);
+      if (next === signature) return; signature = next;
+      const focused = document.activeElement, focusId = focused?.dataset.device, focusAction = focused?.dataset.access;
+      content.innerHTML = x.lan ? `<section><h4>${T('Waiting for approval')} · ${x.pending.length}</h4>
+        ${x.pending.length ? x.pending.map(d => `<div class="access-device"><div><strong>${escH(d.name)}</strong><span class="access-pair-code">${escH(d.pairCode.slice(0, 3) + '-' + d.pairCode.slice(3))}</span><small>${escH(d.ip)}</small></div>
+        <div class="access-actions"><button type="button" class="act" data-access="approve" data-device="${d.id}" aria-label="${escH(T('Allow {name}', { name: d.name }))}">${T('Allow')}</button><button type="button" class="act" data-access="reject" data-device="${d.id}">${T('Deny')}</button></div></div>`).join('') : `<p>${T('No devices are waiting.')}</p>`}
+      </section><section>
+        <h4>${T('Connect a device')}</h4><p>${T('Access code')}: <span class="ad-code">${escH(x.code)}</span></p>
+        ${x.qr ? `<div class="ad-qr" role="img" aria-label="${escH(T('Scan to request access'))}">${x.qr}</div>` : ''}
+        ${x.urls.length ? x.urls.map(u => `<div><a class="ad-url" href="${escH(u)}">${escH(u)}</a></div>`).join('') : `<p>${T('No LAN address is available. Connect this computer to a local network.')}</p>`}
+        <p>${T('Scan or enter the code, then approve the matching request.')}</p>
+        <p>${T('On a company or shared network, use Tailscale for encrypted access. Plain HTTP LAN traffic is not encrypted.')}</p>
+      </section><section><h4>${T('Authorized devices')} · ${x.authorized.length}</h4>
+        ${x.authorized.length ? x.authorized.map(d => `<div class="access-device"><div><strong>${escH(d.name)}</strong><small>${escH(T('Expires {time}', { time: date(d.expires) }))}</small></div><button type="button" class="act" data-access="revoke" data-device="${d.id}" aria-label="${escH(T('Revoke {name}', { name: d.name }))}">${T('Revoke access')}</button></div>`).join('') : `<p>${T('No authorized devices.')}</p>`}
+        <button type="button" class="act access-reset" data-access="reset">${T('Change code and disconnect all devices')}</button>
+      </section>` : `<p>${T('Only local and Tailscale access remain available. Enable the switch to connect another device on this network.')}</p>`;
+      if (focusId && focusAction) content.querySelector(`[data-device="${focusId}"][data-access="${focusAction}"]`)?.focus({ preventScroll: true });
+    }
+    async function act(data) {
+      if (busy) return; busy = true; revision++; toggle.disabled = true; dlg.setAttribute('aria-busy', 'true');
+      for (const b of $$('[data-access]', dlg)) b.disabled = true;
+      try { render(await post('/api/access', data)); $('.access-error', dlg).textContent = ''; }
+      catch { $('.access-error', dlg).textContent = T('That did not work. The list has been refreshed; try again.'); try { render(await get()); } catch { toggle.checked = info.lan; } }
+      finally { busy = false; toggle.disabled = false; dlg.removeAttribute('aria-busy'); for (const b of $$('[data-access]', dlg)) b.disabled = false; }
+    }
+    toggle.addEventListener('change', () => act({ action: 'set', enabled: toggle.checked }));
+    content.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-access]'); if (!b || busy) return;
+      if (b.dataset.access === 'reset') {
+        const confirm = modal(`<h3>${T('Change code and disconnect all devices')}</h3><p>${T('Every LAN device will lose access and need approval again.')}</p><button type="button" class="ad-close" data-reset-go>${T('Disconnect all devices')}</button><button type="button" class="ad-close" data-close>${T('Cancel')}</button>`);
+        confirm.setAttribute('aria-label', T('Change code and disconnect all devices'));
+        $('[data-reset-go]', confirm).addEventListener('click', () => { confirm.close(); act({ action: 'reset' }); });
+        return;
+      }
+      act({ action: b.dataset.access, ...(b.dataset.device ? { id: b.dataset.device } : {}) });
+    });
+    render(info);
+    timer = setInterval(async () => {
+      if (busy || !dlg.open) return; const version = revision;
+      try { const x = await get(); if (!busy && version === revision && dlg.open) render(x); } catch {}
+    }, 2000);
+    dlg.addEventListener('close', () => clearInterval(timer), { once: true });
   });
 
   // 打印 / 存成 PDF：用浏览器自带的打印（手机上从共享菜单里也能存成 PDF）

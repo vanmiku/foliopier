@@ -320,7 +320,10 @@ if [ -n "$LANIP" ]; then
   check "登录页不泄露项目名" "curl -s '$LB/login' | grep '输入访问码' >/dev/null && ! curl -s '$LB/login' | grep secretproj >/dev/null"
   check "访问码错误被拒" "test \"\$(curl -s -o /dev/null -w '%{http_code}' -d code=AAAA-BBBB '$LB/login')\" = 401"
   check "内容端口没登录被拒" "test \"\$(curl -s -o /dev/null -w '%{http_code}' '$LCB/f/secretproj/lan-site/v1/index.html')\" = 401"
-  check "访问码正确就登录并记住设备" "curl -s -c '$JAR' -o /dev/null -w '%{http_code}' -d \"code=\$(echo $CODE | tr A-Z a-z)\" '$LB/login' | grep 303 >/dev/null && grep mydash_session '$JAR' >/dev/null"
+  check "访问码正确后进入待批准状态" "curl -s -c '$JAR' -o /dev/null -w '%{http_code}' -d \"code=\$(echo $CODE | tr A-Z a-z)\" '$LB/login' | grep 303 >/dev/null && grep mydash_session '$JAR' >/dev/null"
+  check "有访问码但未批准仍看不到数据" "test \"\$(curl -s -b '$JAR' -o /dev/null -w '%{http_code}' '$LB/api/index')\" = 401"
+  PENDING_ID=$(curl -s "http://127.0.0.1:$LPORT/api/access" | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0)).pending[0].id)')
+  check "本机批准后授权才生效" "curl -s -H 'X-Mydash: 1' -H 'Content-Type: application/json' -d '{\"action\":\"approve\",\"id\":\"'$PENDING_ID'\"}' 'http://127.0.0.1:$LPORT/api/access' | grep '\"authorized\":\\[' >/dev/null"
   check "登录后能看首页" "curl -s -b '$JAR' '$LB/' | grep secretproj >/dev/null"
   check "登录后内容端口也能打开（cookie 同主机共享）" "test \"\$(curl -s -b '$JAR' -o /dev/null -w '%{http_code}' '$LCB/f/secretproj/lan-site/v1/index.html')\" = 200"
   check "登录后能用写接口" "curl -s -b '$JAR' -H 'X-Mydash: 1' -H 'Content-Type: application/json' -H 'Origin: $LB' -d '{\"id\":\"secretproj/lan-site\",\"v\":1}' '$LB/api/read' | grep '\"ok\":true' >/dev/null"
@@ -328,7 +331,7 @@ if [ -n "$LANIP" ]; then
   check "本机能看到访问码和二维码" "curl -s 'http://127.0.0.1:$LPORT/api/access' | grep '\"lan\":true' | grep '<svg' >/dev/null"
   check "本机不用登录" "test \"\$(curl -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:$LPORT/')\" = 200"
   check "局域网请求的 Host 也要对" "test \"\$(curl -s -b '$JAR' -o /dev/null -w '%{http_code}' -H 'Host: evil.example:$LPORT' '$LB/')\" = 421"
-  check "扫码链接直接登录" "curl -s -o /dev/null -w '%{http_code}' -D - '$LB/login?code=$CODE' | grep -i 'set-cookie: mydash_session' >/dev/null"
+  check "旧扫码链接创建待批准申请" "curl -s -o /dev/null -w '%{http_code}' -D - '$LB/login?code=$CODE' | grep -i 'set-cookie: mydash_session' >/dev/null"
   check "边栏有在其他设备上打开" "curl -s 'http://127.0.0.1:$LPORT/' | grep 'class=\"reach-btn\"' >/dev/null"
   env -u MYDASH_PORT MYDASH_HOME="$LH" MYDASH_DATA="$LH/data" $CLI lan reset >/dev/null
   check "换访问码后旧设备要重新登录" "curl -s -b '$JAR' -o /dev/null -w '%{http_code}' -H 'Accept: text/html' '$LB/' | grep 302 >/dev/null"

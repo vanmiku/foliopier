@@ -11,7 +11,7 @@ import { vapidKeys, subscriptions, addSubscription, removeSubscription, sendWebP
 import { t, htmlLang, lang, clientDict, withLang, defaultLang } from './lib/i18n.mjs';
 import { kindOf, mimeOf, VIEWABLE } from './lib/kinds.mjs';
 import { renderFile } from './lib/render.mjs';
-import { homePage, projectPage, digestPage, itemPage, notFoundPage, loginPage, setBuild, setNavSource, setReadSource, setNamesSource, setPinsSource, setResponsesSource, setTodosSource, settingsPage, channelRows, pushSummary, promptPage, sidebar, ACTIVE_RE } from './lib/views.mjs';
+import { homePage, projectPage, digestPage, itemPage, notFoundPage, loginPage, pairPage, setBuild, setNavSource, setReadSource, setNamesSource, setPinsSource, setResponsesSource, setTodosSource, settingsPage, channelRows, pushSummary, promptPage, sidebar, ACTIVE_RE } from './lib/views.mjs';
 import { setMuted, setArchived, autoArchiveDays } from './lib/quiet.mjs';
 import { readResponses, addApproval, addComment, deleteComment, latestApproval, setTodo, addAsk, ASK_MAX } from './lib/responses.mjs';
 import { versionTodos, todoProgress, checksAllowed } from './lib/todo.mjs';
@@ -39,14 +39,15 @@ import { pins, setPin } from './lib/pins.mjs';
 import { watchNode } from './lib/tailscale.mjs';
 import { checkForUpdate, startUpdate, status as updateStatus, readUpdate, writeUpdate } from './lib/update.mjs';
 import { setupStatus, allowCodexHooks, startBootSetup } from './lib/actions.mjs';
-import { classify, lanHostOk, validSession, checkCode, createSession, sessionCookie, rateLimited, noteFailure, accessCode, prettyCode, lanUrls, lanAddresses, loginUrl, qrSvg, deviceCount } from './lib/lan.mjs';
+import { classify, lanHostOk, validSession, checkCode, sessionCookie, rateLimited, noteFailure, accessCode, prettyCode, lanUrls, lanAddresses, loginUrl, qrSvg, deviceCount,
+  instanceId, sessionInfo, requestDevice, pairStatus, accessDevices, approveDevice, rejectDevice, revokeDevice, resetAccess, logoutSession, clearSessionCookies, withLanRequest } from './lib/lan.mjs';
 
 const APP = path.dirname(fileURLToPath(import.meta.url));
 const cfg = readConfig();
 const PORT = Number(process.env.MYDASH_PORT || cfg.port || 4870);
 // 始终监听本机；开了局域网访问（config.lan）再额外监听这台机器的局域网地址。
 // 不用 0.0.0.0 / '::'：tailscale serve 可能占着 tailnet 网卡上的同一个端口，监听全部网卡会冲突。
-const LAN = cfg.lan === true;
+let LAN = cfg.lan === true;
 const HOST = process.env.MYDASH_HOST || '127.0.0.1';
 const CONTENT_PORT = contentPort();
 const HTTPS_CONTENT_PORT = httpsContentPort();
@@ -84,7 +85,7 @@ const hostOk = h => ALLOWED_HOSTS.has(h) || Boolean(TAILNET_MAIN?.test(h));
 const contentHostOk = h => CONTENT_HOSTS.has(h) || Boolean(TAILNET_CONTENT?.test(h));
 
 // 静态资源版本号（每次部署变化）
-const BUILD = crypto.createHash('sha1').update(['static/app.css', 'static/app.js', 'static/pdf-view.mjs', 'static/icon.svg', 'static/favicon.ico', 'static/icon-180.png', 'lib/locales/zh.mjs'].map(f => { try { return fs.statSync(path.join(APP, f)).mtimeMs; } catch { return 0; } }).join('|') + lang()).digest('hex').slice(0, 8);
+const BUILD = crypto.createHash('sha1').update(['static/app.css', 'static/app.js', 'static/lan-auth.js', 'static/pdf-view.mjs', 'static/icon.svg', 'static/favicon.ico', 'static/icon-180.png', 'lib/locales/zh.mjs'].map(f => { try { return fs.statSync(path.join(APP, f)).mtimeMs; } catch { return 0; } }).join('|') + lang()).digest('hex').slice(0, 8);
 setBuild(BUILD);
 // 浏览器端用到的译文：只挑 app.js / pdf-view.mjs 里 T('...') 用到的
 // 浏览器端的译文，按语言各算一份（页面语言可以按设备选，见 withLang）
@@ -347,39 +348,63 @@ function routePath(u) { try { return new URL(u, 'http://local').pathname; } catc
 
 // ---------- 谁在访问：本机和 tailnet 直接放行；局域网要登录；公网拒绝 ----------
 // 返回 'ok'、'login'（局域网设备还没登录），或者已经回了错误时返回 null
+const lanResponses = new Map();
+function closeLanResponses(id = null, except = null) {
+  for (const [key, responses] of lanResponses) if (!id || key === id) {
+    for (const response of responses) if (response !== except) response.destroy();
+    lanResponses.delete(key);
+  }
+}
 function gate(req, res, port) {
-  const where = classify(req.socket.remoteAddress);
+  let where = classify(req.socket.remoteAddress);
+  // A company can use CGNAT addresses too. They are not proof of a Tailscale
+  // identity when the connection arrives on an ordinary LAN interface.
+  if (where === 'tailnet' && classify(req.socket.localAddress) === 'lan') where = 'lan';
   req.mydashWhere = where;
   if (where === 'local' || where === 'tailnet') return 'ok';
   // 别的机器带令牌来发布：tailnet 和局域网都行（令牌在 /api/remote/* 里再校验一次）
   if (where === 'lan' && port === PORT && routePath(req.url).startsWith('/api/remote/') && tokenName(req.headers.authorization)) return 'ok';
   if (where !== 'lan' || !LAN) { send(res, 403, 'Forbidden', 'text/plain; charset=utf-8'); return null; }
   if (!lanHostOk(req.headers.host, port)) { send(res, 421, 'Host not allowed', 'text/plain; charset=utf-8'); return null; }
-  return validSession(req.headers.cookie) ? 'ok' : 'login';
+  if (!validSession(req.headers.cookie)) return 'login';
+  const session = sessionInfo(req.headers.cookie); if (!session) return 'login';
+  req.mydashSession = session;
+  if (!lanResponses.has(session.id)) lanResponses.set(session.id, new Set());
+  const tracked = lanResponses.get(session.id); tracked.add(res);
+  res.once('close', () => { tracked.delete(res); if (!tracked.size) lanResponses.delete(session.id); });
+  return 'ok';
 }
 // 只跳本站：/\evil、/<Tab>/evil 在浏览器里都等于 //evil
 const safeNext = n => (typeof n === 'string' && /^\/(?![\/\\])/.test(n) && !/[\0-\x1f\\]/.test(n) && !n.startsWith('/login') ? n : '/');
 
-// 局域网设备登录：GET /login?code=…（二维码）或 POST 表单
+// 局域网设备申请：兼容旧二维码查询参数，新二维码使用片段；提交后等待批准。
 async function handleLogin(req, res, url) {
+  if (!['GET', 'HEAD', 'POST'].includes(req.method)) return send(res, 405, 'Method Not Allowed', 'text/plain; charset=utf-8');
   const ip = req.socket.remoteAddress;
   let code = url.searchParams.get('code'); let next = url.searchParams.get('next') || '/';
   if (req.method === 'POST') {
+    try { if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return send(res, 403, 'Origin not allowed', 'text/plain; charset=utf-8'); }
+    catch { return send(res, 403, 'Origin not allowed', 'text/plain; charset=utf-8'); }
     const form = new URLSearchParams(await readBody(req).catch(() => ''));
     code = form.get('code'); next = form.get('next') || next;
+    req.deviceForm = { name: form.get('device') || '', remember: form.get('remember') === 'on' };
   }
   if (req.mydashWhere !== 'lan' || validSession(req.headers.cookie)) { res.writeHead(303, { Location: safeNext(next) }); return res.end(); }
+  if (pairStatus(req.headers.cookie).state === 'pending') { res.writeHead(303, { Location: `/pair?next=${encodeURIComponent(safeNext(next))}` }); return res.end(); }
   if (code == null) return send(res, 200, loginPage({ next: safeNext(next) }));
   if (rateLimited(ip)) return send(res, 429, loginPage({ next: safeNext(next), error: t('Too many wrong codes. Try again in 15 minutes.') }));
   if (!checkCode(code)) { noteFailure(ip); return send(res, 401, loginPage({ next: safeNext(next), error: t('That code is not right.') })); }
-  res.writeHead(303, { Location: safeNext(next), 'Set-Cookie': sessionCookie(createSession(req.headers['user-agent'])), 'Cache-Control': 'no-store' });
+  const requested = requestDevice({ code, ...(req.deviceForm || {}), ua: req.headers['user-agent'] || '', ip });
+  if (requested.error) return send(res, requested.error === 'too-many' ? 429 : 401, loginPage({ next: safeNext(next), error: requested.error === 'too-many' ? t('Too many pending requests. Try again later.') : t('That code is not right.') }));
+  res.writeHead(303, { Location: `/pair?next=${encodeURIComponent(safeNext(next))}`, 'Set-Cookie': sessionCookie(requested.token, { remember: req.deviceForm?.remember === true }), 'Cache-Control': 'no-store' });
   res.end();
 }
 
 // 在其他设备上打开：只给本机和 tailnet 看（访问码不能让局域网里还没登录的人拿到）
 function accessInfo() {
-  const urls = LAN ? lanUrls(PORT) : [];
+  const urls = LAN && lanAddresses().length ? lanUrls(PORT) : [];
   return {
+    computer: os.hostname(), instance: instanceId().slice(0, 8), ...accessDevices(),
     lan: LAN, urls, code: LAN ? prettyCode(accessCode()) : null, devices: LAN ? deviceCount() : 0,
     qr: LAN && urls.length ? qrSvg(loginUrl(urls[urls.length - 1])) : null, qrUrl: LAN && urls.length ? urls[urls.length - 1] : null,
     tailnet: cfg.access && cfg.access !== 'local' ? baseUrl() + '/' : null,
@@ -396,6 +421,29 @@ async function handlePost(req, res) {
   if (origin) { try { if (!originOk(new URL(origin).host)) return json(403, { error: 'origin not allowed' }); } catch { return json(403, { error: 'origin not allowed' }); } }
   let body; try { body = JSON.parse(await readBody(req, 1024 * 1024) || '{}'); } catch (e) { return json(e.message === 'too large' ? 413 : 400, { error: e.message === 'too large' ? 'body too large (1 MB max)' : 'body is not JSON' }); }
   const url = new URL(req.url, 'http://local');
+  if (url.pathname === '/api/access') {
+    if (req.mydashWhere === 'lan') return json(403, { error: 'only on this computer or the tailnet' });
+    if (body.action === 'set') {
+      if (typeof body.enabled !== 'boolean') return json(400, { error: 'enabled must be boolean' });
+      if (!body.enabled) { resetAccess(); closeLanResponses(); }
+      else if (!LAN) resetAccess();
+      else accessCode();
+      updateConfig(c => ({ ...c, lan: body.enabled })); LAN = body.enabled; syncLan();
+    } else if (body.action === 'reset') { resetAccess(); closeLanResponses(); }
+    else if (body.action === 'approve' || body.action === 'reject' || body.action === 'revoke') {
+      if (!/^[a-f0-9]{64}$/.test(String(body.id || ''))) return json(400, { error: 'invalid device' });
+      const ok = body.action === 'approve' ? approveDevice(body.id) : body.action === 'reject' ? rejectDevice(body.id) : revokeDevice(body.id);
+      if (!ok) return json(409, { error: 'request expired or device no longer exists' });
+      if (body.action === 'revoke') closeLanResponses(body.id);
+    } else return json(400, { error: 'unknown access action' });
+    return json(200, accessInfo());
+  }
+  if (url.pathname === '/api/logout') {
+    const id = req.mydashSession?.id; logoutSession(req.headers.cookie);
+    res.setHeader('Set-Cookie', clearSessionCookies());
+    if (id) res.once('finish', () => closeLanResponses(id, res));
+    return json(200, { ok: true });
+  }
   // 更新：check 马上去问远端；start 开始更新（服务会重启，页面轮询 GET /api/update 等它回来）；seen 收起上次的结果
   if (url.pathname === '/api/update') {
     if (body.action === 'check') return json(200, await checkForUpdate({ force: true }));
@@ -790,6 +838,10 @@ async function handle(req, res) {
   if (up) { res.writeHead(302, { Location: up, 'Cache-Control': 'no-store' }); return res.end(); }
   if (url.pathname.startsWith('/api/remote/')) return handleRemote(req, res, url);
   if (url.pathname === '/login') return handleLogin(req, res, url);
+  if (['/api/pair', '/pair'].includes(url.pathname) && !['GET', 'HEAD'].includes(req.method)) return send(res, 405, 'Method Not Allowed', 'text/plain; charset=utf-8');
+  if (url.pathname === '/api/logout' && req.method === 'POST') return handlePost(req, res);
+  if (url.pathname === '/api/pair') return send(res, 200, JSON.stringify(pairStatus(req.headers.cookie)), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
+  if (url.pathname === '/pair') return send(res, 200, pairPage({ status: pairStatus(req.headers.cookie), next: safeNext(url.searchParams.get('next')), computer: os.hostname() }));
   if (g === 'login') {
     // 还没登录的局域网设备：只给登录页要用的静态资源，其余去登录
     const open = url.pathname === '/healthz' || url.pathname === '/i18n.js' || url.pathname === '/favicon.ico' || url.pathname === '/manifest.webmanifest' || url.pathname.startsWith('/static/');
@@ -829,7 +881,7 @@ async function handle(req, res) {
 
   if (url.pathname === '/api/access') {
     if (req.mydashWhere === 'lan') return send(res, 403, JSON.stringify({ error: 'only on this computer or the tailnet' }), 'application/json; charset=utf-8');
-    return send(res, 200, JSON.stringify(accessInfo()), 'application/json; charset=utf-8');
+    return send(res, 200, JSON.stringify(accessInfo()), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
   }
 
   if (url.pathname === '/healthz') return send(res, 200, 'ok', 'text/plain; charset=utf-8', { 'X-Mydash-Id': INSTALL_ID });
@@ -970,7 +1022,7 @@ async function handle(req, res) {
 // 页面语言：这台设备选过的（cookie mydash_lang，设置页和顶栏的切换按钮写的；/i18n.js?l= 也算），没选过就用安装时的
 const reqLang = req => (/[?&]l=(zh|en)\b/.exec(req.url || '') || /(?:^|;\s*)mydash_lang=(zh|en)\b/.exec(req.headers.cookie || '') || [])[1] || defaultLang();
 const wrap = fn => (req, res) => {
-  withLang(reqLang(req), () => fn(req, res)).catch(e => {
+  withLanRequest(req, () => withLang(reqLang(req), () => fn(req, res))).catch(e => {
     console.error(new Date().toISOString(), req.url, e);
     if (!res.headersSent) send(res, 500, 'Server error: ' + e.message, 'text/plain; charset=utf-8');
     else res.end();
@@ -993,14 +1045,21 @@ function open(handler, addr, port, required) {
 const hasContent = CONTENT_PORT && CONTENT_PORT !== PORT;
 // 跟着网络变化：换了 WiFi 或路由器重新分配地址时，补上新地址、关掉没了的
 function syncLan() {
+  const configured = readConfig().lan === true;
+  if (LAN && !configured) closeLanResponses();
+  LAN = configured;
   const want = new Set(LAN ? lanAddresses() : []);
-  for (const [key, srv] of listeners) { const addr = key.split('|')[0]; if (addr !== HOST && !want.has(addr)) { srv.close(); listeners.delete(key); } }
+  for (const [key, srv] of listeners) { const addr = key.split('|')[0]; if (addr !== HOST && !want.has(addr)) { srv.closeAllConnections(); srv.close(); listeners.delete(key); } }
   for (const a of want) { open(handle, a, PORT, false); if (hasContent) open(handleContent, a, CONTENT_PORT, false); }
 }
 open(handle, HOST, PORT, true);
 if (hasContent) open(handleContent, HOST, CONTENT_PORT, true);
 syncLan();
-if (LAN) setInterval(syncLan, 30_000).unref();
+setInterval(syncLan, 30_000).unref();
+setInterval(() => {
+  const active = new Set(accessDevices().authorized.map(x => x.id));
+  for (const id of lanResponses.keys()) if (!active.has(id)) closeLanResponses(id);
+}, 10_000).unref();
 console.log(`${new Date().toISOString()} mydash started http://${HOST}:${PORT}  content :${CONTENT_PORT}  data ${DATA_DIR}  url ${baseUrl()}${LAN ? '  lan ' + lanUrls(PORT).join(' ') : ''}`);
 // 独立 Tailscale 节点：登录批准后自动配好转发
 if (cfg.access === 'tailscale-node') watchNode({

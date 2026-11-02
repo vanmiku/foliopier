@@ -49,7 +49,7 @@ Ask everything in `questions` in one message, with the recommended answers pre-s
    - `local`: only on this computer, at `http://127.0.0.1:4870/`.
    - `tailscale`: on their other devices too, phone included, through the Tailscale they already use, at `http://<this-machine>/`. Recommended when `check` shows Tailscale running.
    - `tailscale-node`: through Tailscale under its own name, `http://mydash/`. This adds one device to their tailnet and needs one approval click. Every device that opens this address needs Tailscale, this computer included; without it, this computer uses `http://127.0.0.1:4870/`. If the tailnet already has a device called `mydash` (an old computer, say), Tailscale names this one `mydash-1`, and that becomes the address. On macOS it builds Tailscale from source, so it needs Go. Not available on Windows.
-2. **Same Wi-Fi?** Whether other devices on the same Wi-Fi (or wired network) may open it too. They log in once with an access code; this computer and the tailnet never need it. Add `--lan on` if yes. Recommend it only on a home network the user trusts.
+2. **Same Wi-Fi?** Whether other devices on the same Wi-Fi (or wired network) may open it too. New browsers need an access code and approval from this computer or a trusted Tailscale connection; this computer and the tailnet never need it. Add `--lan on` if yes. Recommend it only on a home network the user trusts.
 3. **Language** of the pages: `en` or `zh`. Default to the language the user writes in.
 4. **Timezone**, only when the server clock is UTC (common on cloud servers). Use an IANA name such as `Europe/London` or `Asia/Shanghai`.
 5. **Office previews**, only if LibreOffice is missing: offer to install it (a large download; on Linux it needs `sudo`).
@@ -129,7 +129,14 @@ If the instructions file already has the user's own rule for one of the blocks (
 
 ## Same Wi-Fi access
 
-`--lan on` (or later `mydash lan on`) also opens mydash on this computer's LAN addresses, for example `http://<name>.local:4870/`. Devices there get an access-code page once, then stay logged in for a year. On this computer, the user clicks **Open on another device** at the bottom of the sidebar: it shows a QR code that opens and logs in a phone in one scan. Tell the user the code from `mydash lan --json` only if they ask; `mydash lan reset` changes it and logs every device out; `mydash lan off` closes it again. Requests from public addresses are always refused. If the install result lists a `firewall` step, the user may have to click Allow once.
+The user can open **Open on another device** at the bottom of the sidebar and enable the same-Wi-Fi switch. It takes effect immediately without a command or service restart. `--lan on` / `mydash lan on` remain available for installers. The service listens on this computer's LAN addresses, for example `http://<name>.local:4870/`.
+
+Scan the QR code or enter the access code, optionally name the device, and submit a request. On this computer (or a trusted Tailscale connection), compare the pairing code and allow or deny it in the same panel. Pending requests expire in 10 minutes and cannot read any projects or files. Approval grants access to **all projects and workbench actions**, so only approve trusted devices. LAN clients cannot manage access codes or authorize other devices.
+
+Temporary access expires on the server after at most 12 hours; **Remember this device** extends it to 30 days. Use **Log out this device** when finished on a borrowed computer. Revoke one device from the owner panel, or change the code to disconnect all devices. Switching LAN access off also revokes all devices; switching it on again requires fresh approval. Existing sessions from versions before 0.1.6 remain trusted for at most 30 days from their original sign-in and appear in the device list; revoke them or change the code if the network is shared.
+
+Installations keep separate data and random instance identities: being on the same Wi-Fi does not combine their content. Plain LAN HTTP is **not encrypted**; use Tailscale for company/shared networks and restrict its access rules to trusted devices. Local and Tailscale access keep their existing trust model; this is personal device pairing, not per-user or per-project permissions. Requests from public addresses are refused. If the install result lists a `firewall` step, the user may have to click Allow once. Tell the user the access code from `mydash lan --json` only if they ask.
+
 
 ## Agents on another machine
 

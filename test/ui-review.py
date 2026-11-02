@@ -489,6 +489,105 @@ class ReviewUI(unittest.TestCase):
         self.assertIn('starts at boot', self.page.locator('.upd-dlg.upd-ok').inner_text())
         self.assertEqual(self.page.locator('.upd-cmd').count(), 0)
 
+    def open_access(self):
+        self.page.set_viewport_size({'width': 1280, 'height': 900})
+        self.go('/')
+        self.page.locator('.reach-btn').click()
+        self.page.wait_for_selector('#lan-toggle')
+
+    def test_access_switch_recovers_after_a_failed_save(self):
+        self.post('/api/access', {'action': 'set', 'enabled': False})
+        self.page.route('**/api/access', lambda r: r.fulfill(status=500, body='{}') if r.request.method == 'POST' else r.continue_())
+        self.go('/settings')
+        self.page.locator('.settings-access').click()
+        self.page.wait_for_selector('#lan-toggle')
+        self.page.locator('#lan-toggle').check()
+        self.page.wait_for_function("() => document.querySelector('.access-error').textContent.length > 0")
+        self.assertFalse(self.page.locator('#lan-toggle').is_checked())
+        self.assertTrue(self.page.locator('#lan-toggle').is_enabled())
+        self.assertIn('try again', self.page.locator('.access-error').inner_text())
+
+    def test_access_dialog_handles_long_devices_and_mobile_themes(self):
+        info = {'computer': 'My computer', 'instance': 'a1b2c3d4', 'lan': True, 'code': 'ABCD-EFGH',
+                'urls': ['http://computer.local:4870/'], 'tailnet': None, 'qr': None,
+                'pending': [{'id': 'a'*64, 'name': '<script>' + 'A'*52, 'pairCode': 'ABCDEF', 'ip': '192.168.1.20'}],
+                'authorized': [{'id': 'b'*64, 'name': 'Borrowed computer', 'expires': '2026-12-01T10:00:00Z'}]}
+        self.page.route('**/api/access', lambda r: r.fulfill(status=200, content_type='application/json', body=json.dumps(info)))
+        self.open_access()
+        self.assertEqual(self.page.locator('.access-device script').count(), 0)
+        self.assertIn('ABC-DEF', self.page.locator('.access-pair-code').inner_text())
+        for theme in ['light', 'dark']:
+            self.page.evaluate("theme => window.mydashSetThemeMode(theme)", theme)
+            for width in [320, 390, 1280]:
+                self.page.set_viewport_size({'width': width, 'height': 900})
+                self.assertLessEqual(self.page.locator('dialog.access-dlg').evaluate('(e)=>e.scrollWidth-e.clientWidth'), 1)
+                self.assertLessEqual(self.page.evaluate('document.documentElement.scrollWidth'), width)
+                self.assertGreaterEqual(self.page.locator('.access-switch').bounding_box()['height'], 34)
+        self.shot('lan-owner-authorization')
+
+    def test_access_reset_requires_confirmation(self):
+        self.post('/api/access', {'action': 'set', 'enabled': True})
+        self.addCleanup(lambda: self.post('/api/access', {'action': 'set', 'enabled': False}))
+        self.open_access()
+        code = self.page.locator('.ad-code').inner_text()
+        self.page.locator('[data-access=reset]').click()
+        self.page.wait_for_selector('[data-reset-go]')
+        self.page.keyboard.press('Escape')
+        self.assertEqual(self.page.locator('.ad-code').inner_text(), code)
+        self.page.locator('[data-access=reset]').click()
+        self.page.locator('[data-reset-go]').click()
+        self.page.wait_for_function('(old) => document.querySelector(".ad-code").textContent !== old', arg=code)
+
+    def test_lan_browser_pairing_approval_revoke_and_logout(self):
+        ip = subprocess.check_output(['node', '--input-type=module', '-e',
+            "import {lanAddresses} from './lib/lan.mjs'; console.log(lanAddresses()[0]||'')"], cwd=ROOT, env=self.env, text=True).strip()
+        if not ip: self.skipTest('No private LAN interface')
+        visitor = self.browser.new_context(viewport={'width': 390, 'height': 844})
+        self.addCleanup(visitor.close)
+        self.addCleanup(lambda: self.post('/api/access', {'action': 'set', 'enabled': False}))
+        page = visitor.new_page(); page.on('pageerror', lambda e: self.errors.append(str(e)))
+        self.open_access(); self.page.locator('#lan-toggle').check()
+        self.page.wait_for_selector('.ad-code')
+        code = self.page.locator('.ad-code').inner_text()
+        base = self.base.replace('127.0.0.1', ip)
+        response = page.goto(base + '/login#code=' + code, wait_until='domcontentloaded')
+        self.assertEqual(response.status, 200, page.locator('body').inner_text())
+        page.wait_for_selector('#lan-login')
+        self.assertEqual(page.locator('#lan-login').count(), 1)
+        page.wait_for_function("() => !location.hash")
+        self.assertEqual(page.locator('[name=code]').input_value(), code)
+        self.assertFalse(page.locator('[name=remember]').is_checked())
+        page.locator('[name=device]').fill('My phone')
+        with page.expect_navigation(wait_until='domcontentloaded') as navigation:
+            page.get_by_role('button', name='Request access', exact=True).click()
+        self.assertEqual(navigation.value.status, 200, page.locator('body').inner_text())
+        self.assertEqual(page.locator('#lan-pair').count(), 1, page.locator('body').inner_text())
+        page.wait_for_selector('#lan-pair')
+        pair = page.locator('.pair-code').inner_text()
+        self.page.wait_for_selector('[data-access=approve]')
+        self.assertEqual(pair, self.page.locator('.access-pair-code').inner_text())
+        self.shot('lan-matching-request')
+        if os.environ.get('MYDASH_UI_SHOTS'):
+            page.screenshot(path=str(Path(os.environ['MYDASH_UI_SHOTS']) / 'lan-visitor-pairing.png'), full_page=True)
+        self.page.locator('[data-access=approve]').click()
+        page.wait_for_selector('.lan-logout')
+        self.page.wait_for_selector('[data-access=revoke]')
+        page.locator('.lan-logout').click()
+        page.wait_for_selector('#lan-login')
+        self.assertEqual(len(self.post('/api/access', {'action': 'set', 'enabled': True})['authorized']), 0)
+        page.locator('[name=code]').fill(code); page.locator('[name=device]').fill('Revoke test')
+        page.get_by_role('button', name='Request access', exact=True).click()
+        self.page.wait_for_selector('[data-access=approve]'); self.page.locator('[data-access=approve]').click()
+        page.wait_for_selector('.lan-logout')
+        self.page.wait_for_selector('[data-access=revoke]'); self.page.locator('[data-access=revoke]').click()
+        page.goto(base + '/', wait_until='domcontentloaded'); page.wait_for_selector('#lan-login')
+        self.assertNotIn('search-report', page.content())
+        page.locator('[name=code]').fill(code)
+        page.get_by_role('button', name='Request access', exact=True).click()
+        page.wait_for_selector('#pair-cancel'); page.locator('#pair-cancel').click()
+        page.wait_for_selector('#lan-login')
+        self.assertEqual(self.post('/api/access', {'action': 'set', 'enabled': True})['pending'], [])
+
     def test_semantic_text_contrast_in_both_themes(self):
         self.publish('color-approval', self.approval(), 'approval'); self.go('/')
         contrast = '''([selector,rootBg])=>{const e=document.querySelector(selector),s=getComputedStyle(e),root=getComputedStyle(document.documentElement);

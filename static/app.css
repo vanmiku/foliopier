@@ -699,7 +699,7 @@ pre.mermaid.failed { color: var(--text-2); text-align: left; white-space: pre-wr
 .reach-btn { display: inline-flex; align-items: center; gap: 7px; min-width: 0; padding: 4px 8px; margin: -4px -8px; border: 0; border-radius: 7px; background: none; color: var(--text-3); font: 500 12.5px/1.3 var(--sans); cursor: pointer; text-align: left; }
 .reach-btn:hover { background: var(--surface-2); color: var(--text); }
 .reach-btn .ic { width: 16px; height: 16px; }
-dialog.access-dlg { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 0; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--text); box-shadow: 0 24px 60px rgba(0, 0, 0, .25); }
+dialog.access-dlg { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overscroll-behavior: contain; padding: 0; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--text); box-shadow: 0 24px 60px rgba(0, 0, 0, .25); }
 dialog.access-dlg::backdrop { background: rgba(10, 10, 14, .45); }
 .access-dlg .ad-body { padding: 20px 22px 18px; }
 .access-dlg h3 { margin: 0 0 14px; font-size: 18px; }
@@ -1180,3 +1180,35 @@ mark.cm-hl { background: var(--pin-soft); color: inherit; border-bottom: 2px sol
 .upd-ok h3 { color: var(--ok); }
 .upd-bad h3 { color: var(--unread); }
 @keyframes upd-sheen { to { transform: translateX(100%); } }
+
+/* LAN access: explicit authorization and stable controls in the device drawer. */
+.access-switch { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; font-weight: 600; }
+.access-switch input { width: 36px; height: 22px; accent-color: var(--accent); flex: none; cursor: pointer; }
+.access-dlg .access-notice { padding: 8px 10px; border-radius: 8px; background: var(--accent-soft); color: var(--text); }
+.access-device { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.access-device > div:first-child { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.access-device strong, .access-device small { display: block; }
+.access-device small { color: var(--text-3); font-size: 12.5px; }
+.access-actions { display: flex; flex-wrap: wrap; gap: 4px; flex: none; }
+.access-device .act, .access-reset { min-height: 34px; height: auto; white-space: normal; }
+.access-reset { margin-top: 12px; }
+.access-pair-code { display: block; font: 600 14px/1.6 var(--mono); color: var(--accent); letter-spacing: .06em; }
+.access-error { color: var(--unread) !important; }
+.lan-logout { border: 0; background: transparent; padding: 6px; color: var(--accent); font: inherit; cursor: pointer; }
+.login-card form > label:not(.lan-remember) { display: block; text-align: left; font-size: 13.5px; margin: 10px 0 4px; }
+.login-card input:not([type=checkbox]) { box-sizing: border-box; width: 100%; font-size: 16px; }
+.login-card .lan-remember { display: flex; text-align: left; align-items: center; gap: 8px; margin: 14px 0; font-size: 13.5px; }
+.login-card .lan-remember input { flex: none; width: 18px; height: 18px; }
+.login-card .pair-code { font: 600 26px/1.4 var(--mono); color: var(--accent); letter-spacing: .08em; }
+.login-card #pair-cancel { padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; cursor: pointer; }
+
+.login-card #lan-device { font-family: var(--sans); letter-spacing: normal; text-transform: none; text-align: left; }
+.lan-logout { min-height: 34px; }
+
+.access-switch input { appearance: none; position: relative; border: 1px solid var(--border-2); border-radius: 20px; background: var(--surface-3); }
+.access-switch input::before { content: ''; position: absolute; width: 16px; height: 16px; top: 2px; left: 2px; border-radius: 50%; background: var(--text-3); }
+.access-switch input:checked { background: var(--accent-solid); border-color: var(--accent-solid); }
+.access-switch input:checked::before { transform: translateX(14px); background: #fff; }
+.access-switch input:disabled { opacity: .55; cursor: wait; }
+
+.settings-access { min-height: 34px; margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--border); background: var(--surface); font-size: 13.5px; }

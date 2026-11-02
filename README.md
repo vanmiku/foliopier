@@ -56,7 +56,7 @@ Install mydash for me by following https://github.com/vanmiku/mydash/blob/main/I
 The agent checks your machine and asks you a few questions: where mydash should open (only this computer, or your phone too through Tailscale), which language, and your timezone if it's on a server. Then it installs everything and gives you the link. You only step in for what needs you, such as approving a new Tailscale device or typing a `sudo` password.
 
 **Needs:** macOS, Linux or Windows 10/11, and Node.js 20 or newer.<br>
-**Optional:** [Tailscale](https://tailscale.com) to open it from your phone anywhere (every device that opens it needs Tailscale); or `--lan on` to open it on the same Wi-Fi with an access code; LibreOffice for Word and PowerPoint previews.
+**Optional:** [Tailscale](https://tailscale.com) to open it from your phone anywhere (every device that opens it needs Tailscale); or enable same-Wi-Fi access in **Open on another device** (access code and device approval); LibreOffice for Word and PowerPoint previews.
 
 <details>
 <summary>Installing by hand</summary>
@@ -118,7 +118,7 @@ Claude Code can [publish pages to claude.ai](https://code.claude.com/docs/en/art
 
 ## Security
 
-- The server listens on `127.0.0.1`. Other devices reach it through `tailscale serve` inside your tailnet, or, with `--lan on`, on this computer's LAN addresses, where each device logs in once with an access code (rate-limited, revocable with `mydash lan reset`). Requests from public addresses are refused. Do not expose it to the internet.
+- The server listens on `127.0.0.1`. Other devices reach it through `tailscale serve` inside your tailnet, or, after enabling the switch in **Open on another device**, on this computer's LAN addresses. New LAN browsers need an access code and approval from this computer or a trusted Tailscale connection; compare the pairing code before allowing a device. Approval covers all projects and workbench actions, not a single shared item. Each installation keeps independent content and authorization state; sharing Wi-Fi does not merge it. Revoke individual devices in the same panel; turning the switch off or changing the code disconnects all LAN devices. Temporary access lasts at most 12 hours, or 30 days with **Remember this device**; borrowed computers should log out when finished. LAN HTTP traffic is unencrypted: use Tailscale on company/shared networks and restrict its access rules to trusted devices. Requests from public addresses are refused. Do not expose it to the internet.
 - Published HTML and SVG run from a separate port (a different origin), so a page's scripts cannot call the workbench. Workbench pages carry a Content Security Policy that allows only mydash's own scripts, so script inside a Markdown or Word document never runs there. The `Host` header is checked against DNS rebinding, and write requests need a custom header, JSON and a same-origin `Origin`.
 - `mydash publish` refuses `.env` files, private keys and files that contain API tokens, unless you pass `--allow-secret`.
 - A to-do item can tick itself by running a command; that only happens in lists the agent explicitly published as to-dos, the command is shown on the page, and it is never run for items published from another machine.
@@ -132,7 +132,7 @@ mydash only listens on this computer (and, if you turn it on, your LAN), so anyt
 | Option | Good for | Note |
 |---|---|---|
 | Tailscale (built in) | your own devices, anywhere | no login page needed; free for personal use |
-| Same Wi-Fi (built in, `--lan on`) | phones and laptops at home | access code once per device; plain HTTP on the local network |
+| Same Wi-Fi (built in, switch in the sidebar) | trusted phones and laptops at home | access code + owner approval; revocable; plain HTTP on the local network |
 | [ZeroTier](https://www.zerotier.com) | the closest alternative to Tailscale | also a private mesh network |
 | [NetBird](https://netbird.io), or [Headscale](https://github.com/juanfont/headscale) with Tailscale apps | self-hosting the coordination server | open source |
 | [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) + Access | any browser, no app to install | needs your own domain; put Cloudflare Access login in front, and give the content port its own hostname |

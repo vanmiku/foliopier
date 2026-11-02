@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.6 (2026-11-02)
+
+- **Open on another device** now has a same-Wi-Fi switch. It opens/closes LAN listeners immediately without a terminal or service restart.
+- New LAN browsers need both the access code and approval from this computer or a trusted Tailscale connection. Match the pairing code before allowing a device. Approval covers all projects and workbench actions; it is not per-project sharing. Pending devices cannot read projects, files or live updates, or approve other devices.
+- Name devices, deny requests, revoke individual devices, log out a borrowed computer, or change the code to disconnect everyone. Switching LAN access off revokes all LAN devices; active streams are disconnected on revocation. Expired requests cannot later be approved.
+- Temporary access is limited to 12 hours on the server; **Remember this device** permits 30 days. Installations have independent identities and cookie names. Existing sessions retain trust for at most 30 days from their original sign-in and can be revoked in the device list; use **Change code and disconnect all devices** after updating if old devices should lose access immediately.
+- LAN HTTP is still unencrypted. The panel explains the authorization scope and recommends Tailscale with trusted-device access rules on company/shared networks. No content is merged between installations on the same Wi-Fi, and there is no new runtime dependency.
+
 ## 0.1.5 (2026-11-02)
 
 - Already-correct Mac boot services refresh obsolete staged plists, so the home page no longer asks for administrator approval again after an update.

@@ -28,7 +28,7 @@ This file is for coding agents changing mydash itself. To install mydash for a u
 | `lib/actions.mjs` | The two setup steps the home page does with one tap: allowing the mydash hooks in Codex (`trustCodexHooks()` in `lib/integrate.mjs` writes Codex's fingerprint) and starting at boot on macOS (the macOS password prompt runs `mydash service boot`) |
 | `lib/update.mjs`, `lib/dependencies.mjs` | Updates: hourly checks against the source repository's release tags, the state in `state/update.json`, validated dependency reuse and starting an update from the page so it outlives the service restart. `mydash update` itself is in `lib/setup.mjs` |
 | `lib/remote.mjs` | Publishing from another machine with a token (client, token store); server side is `/api/remote/*` in `server.mjs` |
-| `lib/lan.mjs` | Same-Wi-Fi access with an access code |
+| `lib/lan.mjs`, `static/lan-auth.js` | Same-Wi-Fi switch, access codes, device pairing/approval, expiring sessions and revocation |
 | `lib/maintain.mjs` | `rebuild --dedup`, `rebuild --categories`, `prune` |
 | `lib/i18n.mjs`, `lib/locales/zh.mjs` | Interface language |
 | `static/` | `app.css`, `app.js`, `pdf-view.mjs`, icons, Geist fonts |
@@ -48,6 +48,7 @@ npm ci
 bash test/smoke.sh                # must end with 0 failures; never touches ~/.mydash
 node test/i18n-check.mjs          # every UI / CLI string has a Chinese translation
 node test/e2e.mjs --service none  # cross-platform install test; CI also runs it on Windows
+node --test test/lan-access.mjs    # pending/approved/expired devices, concurrent state changes and both-port access gates
 node --test test/review-regressions.mjs # approval IDs, retry deduplication, bounded diff
 node --test test/update-release.mjs test/boot-setup.mjs # dependency reuse/repair, release gates, hourly checks, boot authorization
 python -m pip install -r test/requirements-ui.txt
@@ -84,6 +85,7 @@ gh release create v0.1.2 --title "mydash 0.1.2" --notes-file <notes>
 - **Strings.** User-facing text goes through `t('English text')` (server, CLI) or `T('English text')` (browser). Add the Chinese to `lib/locales/zh.mjs` under the same key. `'one|other'` is a plural pair, `{name}` a placeholder, and `'key@@context'` separates two meanings of the same English word. Run `node test/i18n-check.mjs`.
 - **Agent-facing output.** Commands an installer agent runs need `--json`, with `ok`, `fix` hints and `human` steps. Keep them re-runnable.
 - **No new runtime dependencies** without a strong reason. The server is plain `node:http`. Avoid packages that pull in frameworks; check `npm ls` after installing anything.
+- **LAN authorization.** The sidebar switch takes effect without restarting. LAN browsers require a code and approval from local/trusted Tailnet access; pending browsers cannot read content or manage access. Approval covers the entire workbench. Temporary sessions last at most 12 hours, remembered sessions 30 days; turning LAN off rotates the code and revokes all devices. Keep both workbench and content ports behind the same gate. LAN HTTP is unencrypted; company/shared networks should use Tailscale with trusted-device access rules.
 - **Security.** The server listens on 127.0.0.1 only and checks the `Host` header. Write APIs require `X-Mydash: 1`, JSON, and a same-origin `Origin`. Anything that can run script (HTML, SVG) is served to the browser from the content port; on the workbench port it gets `Content-Security-Policy: sandbox`.
 - **Comments** may be in Chinese or English; match the surrounding code.
 - **Windows.** Never shell out to Unix-only tools without a fallback; use `which()` from `lib/sys.mjs`. `.cmd` files need `shell: true`. Line endings are pinned in `.gitattributes`.
