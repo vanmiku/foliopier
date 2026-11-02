@@ -29,7 +29,7 @@ import { readResponses as readResp, openComments as openCm, resolveComments as r
 import os from 'node:os';
 import { isMuted } from './lib/quiet.mjs';
 import { CATEGORY_LABEL } from './lib/categories.mjs';
-import { approvalState, todoState, PAGE_CSP } from './lib/views.mjs';
+import { approvalState, approvalData, readState, todoState, PAGE_CSP } from './lib/views.mjs';
 import { pipeline } from 'node:stream';
 // 能逐行对比的格式
 const DIFFABLE = new Set(['md', 'text', 'code', 'json', 'table']);
@@ -151,7 +151,8 @@ function watchData() {
       const parts = filename.split(path.sep);
       if (parts.length < 2 || parts[0].startsWith('.')) return;
       const base = parts[parts.length - 1];
-      if (parts.length > 2 && base !== 'meta.json') return; // 只关心 meta.json 和整个条目被删
+      if (parts.length === 3 && base === 'responses.json') { broadcast('response', { id: `${parts[0]}/${parts[1]}` }); return; }
+      if (parts.length > 2 && base !== 'meta.json') return; // 其余只关心 meta.json 和整个条目被删
       noteChange(parts[0], parts[1]);
     });
     w.on('error', e => { console.error(new Date().toISOString(), 'fs.watch lost track of a folder (', e.code || e.message, '), watching again'); try { w.close(); } catch {} INDEX = null; setTimeout(watchData, 1000).unref(); });
@@ -463,7 +464,9 @@ async function handlePost(req, res) {
     if (st && ['chat', 'superseded', 'expired'].includes(st.state)) return json(409, { error: 'closed', how: st.state });
     const r = validateAnswers(questions, body.answers || {});
     if (!r.ok) return json(422, { error: 'missing answers', missing: r.errors });
-    const submission = await addApproval(project, slug, { v: ver.v, answers: r.answers, from: req.mydashWhere });
+    const requestId = String(body.requestId || '');
+    if (requestId && !/^[A-Za-z0-9_-]{8,100}$/.test(requestId)) return json(400, { error: 'invalid request ID' });
+    const submission = await addApproval(project, slug, { v: ver.v, answers: r.answers, from: req.mydashWhere, requestId });
     await syncOpen(project, slug);
     broadcast('response', { id: `${project}/${slug}` });
     return json(200, { ok: true, submission, summary: summarize(ver.title, ver.v, questions, r.answers) });
@@ -843,7 +846,15 @@ async function handle(req, res) {
   // 全文搜索
   if (url.pathname === '/api/search') {
     const proj = url.searchParams.get('project') || '';
-    const hits = search(index().filter(m => !proj || m.project === proj), url.searchParams.get('q') || '');
+    const cat = url.searchParams.get('cat') || 'all', agent = url.searchParams.get('agent') || 'all';
+    const inList = url.searchParams.get('scope') === 'list', archived = url.searchParams.has('archived');
+    const hits = search(index().filter(m => {
+      const l = latest(m), rs = readState(m);
+      const ag = !l.agent ? '' : agentInfo(l.agent).known ? l.agent : 'other';
+      return (!proj || m.project === proj) && (cat === 'all' || (l.category || m.category || 'other') === cat) &&
+        (agent === 'all' || ag === agent) && (url.searchParams.get('show') !== 'unread' || rs.unread) &&
+        (!inList || rs.archived === archived);
+    }), url.searchParams.get('q') || '');
     return send(res, 200, JSON.stringify(hits.map(h => ({ id: `${h.m.project}/${h.m.slug}`, title: h.m.title, project: h.m.project, url: `/p/${encodeURIComponent(h.m.project)}/${encodeURIComponent(h.m.slug)}`, hits: h.hits, snippet: h.snippet }))), 'application/json; charset=utf-8');
   }
   if (url.pathname === '/api/sidebar') return send(res, 200, sidebar(url.searchParams.get('current') || ''));
@@ -877,6 +888,16 @@ async function handle(req, res) {
     const [project, slug] = String(url.searchParams.get('id') || '').split('/');
     if (!project || !slug || !readMeta(project, slug)) return send(res, 404, '{}', 'application/json; charset=utf-8');
     return send(res, 200, JSON.stringify({ asks: readResponses(project, slug).asks }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
+  }
+  if (url.pathname === '/api/approval') {
+    const [project, slug] = String(url.searchParams.get('id') || '').split('/');
+    const meta = project && slug ? readMeta(project, slug) : null;
+    const ver = meta?.versions.find(x => x.v === Number(url.searchParams.get('v'))) || (meta ? latest(meta) : null);
+    if (!meta || !ver) return send(res, 404, '{}', 'application/json; charset=utf-8');
+    meta.project = project; meta.slug = slug;
+    const responses = readResponses(project, slug), sub = latestApproval(responses, ver.v);
+    const summary = sub ? summarize(ver.title, ver.v, questionsOf(mainText(project, slug, ver)), sub.answers) : '';
+    return send(res, 200, JSON.stringify(approvalData(meta, ver, responses, summary)), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
   }
   // 待办的勾选状态（自动检测勾上后，打开着的页面据此刷新）
   if (url.pathname === '/api/todos') {
@@ -923,7 +944,7 @@ async function handle(req, res) {
     if (fromVer && fromVer.v !== ver.v && DIFFABLE.has(kindOf(rel))) {
       const read = v => { const abs = safeJoin(path.join(DATA_DIR, project, slug, `v${v}`), rel); try { const b = fs.readFileSync(abs); return b.length > 2 * 1024 * 1024 ? null : b.toString('utf8'); } catch { return ''; } };
       const oldT = read(fromVer.v), newT = read(ver.v);
-      diff = oldT == null || newT == null ? { html: `<p class="diff-big">${t('This file is too large to compare.')}</p>`, added: 0, removed: 0 } : renderDiff(oldT, newT, { fromV: fromVer.v, toV: ver.v });
+      diff = oldT == null || newT == null ? { html: `<p class="diff-big">${t('This file is too large to compare.')}</p>`, added: 0, removed: 0, limited: true } : renderDiff(oldT, newT, { fromV: fromVer.v, toV: ver.v });
       Object.assign(diff, { fromV: fromVer.v, toV: ver.v });
     }
     if (versionTodos(project, slug, latest(meta)).some(x => x.check)) checkSoon(`${project}/${slug}`);

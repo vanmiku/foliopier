@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.2 (2026-11-02)
+
+No data migration or new runtime dependencies are needed; the update notice on the home page installs it.
+
+- Multiple approval blocks use consistent question IDs, including omitted or repeated IDs. Confirmation disables while submitting, retries are deduplicated, and pages follow approvals closed or handled from the command line.
+- Incoming versions keep comments, questions and approval drafts on their original version while you are editing. Comment drafts survive reloads in the same tab; approval drafts also recover when editing a submitted answer. Leaving unsaved edits shows the browser's warning.
+- Full-text results follow the selected type, agent, unread and archive filters. Live list updates preserve search focus, project renaming and expanded controls.
+- Extensive file comparisons stop within a memory and work budget and offer links to read each version separately.
+- Mobile project switching manages focus and background interaction. Text contrast, approval field labels, summary time and to-do progress names are improved. Notification passwords are masked with an explicit show/hide control.
+- Settings explain which changes save automatically, show unsaved notification edits, and fit narrow screens. Waiting lists show three items initially; the rest expand with a remembered choice.
+- Item headers separate labeled metadata from version history, file lists and publication details. Expanding details keeps every toggle in place, with keyboard access and Escape to collapse.
+- The **Update** button on the home page keeps working after the list refreshes itself, for example when an agent publishes while the page is open; before, it did nothing until you reloaded the page.
+- Added Node regressions and isolated browser tests; the browser suite also runs in CI.
+- A new README with current screenshots.
+
 ## 0.1.1 (2026-10-31)
 
 **If you installed 0.1.0, run `mydash update` once** (or ask your agent to). 0.1.0 cannot look for new versions; from 0.1.1 on, mydash tells you itself.

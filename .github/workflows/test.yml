@@ -16,6 +16,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - run: npm ci --omit=dev
       - run: node test/i18n-check.mjs --missing-only
+      - run: node --test test/review-regressions.mjs
       - run: bash test/smoke.sh
       - run: node test/e2e.mjs --service none
   windows:
@@ -27,6 +28,7 @@ jobs:
           node-version: 22
       - run: npm ci --omit=dev
       - run: node test/i18n-check.mjs --missing-only
+      - run: node --test test/review-regressions.mjs
       - name: e2e, plain background process
         run: node test/e2e.mjs --service none --port 4890
       - name: e2e, Startup folder service
@@ -34,3 +36,17 @@ jobs:
       - name: setup.cmd entry point
         shell: cmd
         run: setup.cmd check --json
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci --omit=dev
+      - run: python -m pip install -r test/requirements-ui.txt
+      - run: python -m playwright install --with-deps chromium
+      - run: python test/ui-review.py

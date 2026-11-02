@@ -51,10 +51,19 @@
 
   // ---------- 本地偏好与请求 ----------
   const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+  const dirty = new Set();
+  const setDirty = (key, on) => on ? dirty.add(key) : dirty.delete(key);
+  const drafts = {
+    get(key) { try { return JSON.parse(sessionStorage.getItem(key) || 'null'); } catch { return null; } },
+    set(key, value) { try { if (value == null) sessionStorage.removeItem(key); else sessionStorage.setItem(key, JSON.stringify(value)); } catch {} },
+  };
+  window.addEventListener('beforeunload', e => { if (dirty.size) { e.preventDefault(); e.returnValue = ''; } });
   async function post(url, data) {
     const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Mydash': '1' }, body: JSON.stringify(data) });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
+    let body;
+    try { body = await r.json(); } catch (e) { if (r.ok) throw e; body = {}; }
+    if (!r.ok) { const error = new Error('HTTP ' + r.status); error.status = r.status; error.body = body; throw error; }
+    return body;
   }
 
   {
@@ -108,12 +117,17 @@
   let bsTimer = null, bsSeq = 0;
   function bodySearch() {
     clearTimeout(bsTimer);
+    const seq = ++bsSeq; // 清空输入或切筛选时立即作废旧请求，不等下一次定时器。
+    $('.ft-results')?.remove();
     bsTimer = setTimeout(async () => {
-      const q = $('#q')?.value.trim() || ''; const seq = ++bsSeq;
+      const q = $('#q')?.value.trim() || '';
       let box = $('.ft-results');
       if (q.length < 2) { box?.remove(); return; }
       let hits = [];
-      try { hits = await (await fetch(`/api/search?q=${encodeURIComponent(q)}`, { cache: 'no-store' })).json(); } catch { return; }
+      const query = new URLSearchParams({ q, scope: 'list', cat: catMode(), agent: agentMode(), show: showMode() });
+      if (body.dataset.project) query.set('project', body.dataset.project);
+      if (new URLSearchParams(location.search).has('archived')) query.set('archived', '1');
+      try { hits = await (await fetch(`/api/search?${query}`, { cache: 'no-store' })).json(); } catch { return; }
       if (seq !== bsSeq) return;
       const shown = new Set($$('.entry:not([hidden])').map(e => e.dataset.id));
       const extra = hits.filter(h => !shown.has(h.id));
@@ -122,16 +136,28 @@
       box.innerHTML = `<h2 class="sec-h">${T('Mentioned in the text')}<em>${extra.length}</em></h2><ol class="dg-list">${extra.map(h => `<li class="dg-row"><a href="${h.url}"><span class="dg-t">${h.title.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</span><span class="dg-x">${h.snippet}</span></a></li>`).join('')}</ol>`;
     }, 280);
   }
+  const boundSearch = new WeakSet();
+  function bindWaiting() {
+    const more = $('#waiting-more'); if (!more || more.dataset.bound) return;
+    const key = `mydash.waiting.${page}.${body.dataset.project || ''}`;
+    more.open = store.get(key) === 'open'; more.dataset.bound = '1';
+    // toggle 事件会被浏览器合并、延后；点击时即保存，紧接着刷新也不会丢掉选择。
+    $(':scope > summary', more).addEventListener('click', e => { e.preventDefault(); more.open = !more.open; store.set(key, more.open ? 'open' : 'closed'); });
+    more.addEventListener('toggle', () => { if (more.isConnected) store.set(key, more.open ? 'open' : 'closed'); });
+  }
   function bindList() {
     const q = $('#q');
     if (q) {
       try { const saved = sessionStorage.getItem('mydash.q'); if (saved && !q.value) q.value = saved; } catch {}
-      q.addEventListener('input', () => { applyFilter(); try { sessionStorage.setItem('mydash.q', q.value); } catch {} bodySearch(); });
+      if (!boundSearch.has(q)) {
+        boundSearch.add(q);
+        q.addEventListener('input', () => { applyFilter(); try { sessionStorage.setItem('mydash.q', q.value); } catch {} bodySearch(); });
+      }
       if (q.value) bodySearch();
     }
-    for (const b of $$('.seg button[data-show]')) b.addEventListener('click', () => { store.set('mydash.show', b.dataset.show); applyFilter(); });
-    for (const b of $$('.agent-seg button')) b.addEventListener('click', () => { store.set('mydash.agent', b.dataset.agent); applyFilter(); });
-    for (const b of $$('.cat-seg button')) b.addEventListener('click', () => { store.set('mydash.cat', b.dataset.cat); applyFilter(); });
+    for (const b of $$('.seg button[data-show]')) b.addEventListener('click', () => { store.set('mydash.show', b.dataset.show); applyFilter(); bodySearch(); });
+    for (const b of $$('.agent-seg button')) b.addEventListener('click', () => { store.set('mydash.agent', b.dataset.agent); applyFilter(); bodySearch(); });
+    for (const b of $$('.cat-seg button')) b.addEventListener('click', () => { store.set('mydash.cat', b.dataset.cat); applyFilter(); bodySearch(); });
     // 手机上的「筛选」：打开 / 收起类型、来源那一块
     const fb = $('.filter-btn');
     fb?.addEventListener('click', () => { const tools = fb.closest('.list-tools'); const open = !tools.classList.contains('open'); tools.classList.toggle('open', open); fb.setAttribute('aria-expanded', String(open)); });
@@ -145,6 +171,7 @@
       } catch { ma.disabled = false; toast(T('That did not work. Try again in a moment.')); }
     });
     applyFilter();
+    bindWaiting();
   }
   bindList();
 
@@ -228,16 +255,38 @@
   bindTitle();
 
   // ---------- 项目边栏 ----------
+  let sideTrigger = null;
+  function sideSemantics() {
+    const side = $('#side'); if (!side) return;
+    const modal = innerWidth < 960 && body.classList.contains('side-open');
+    const col = $('.col'), tabs = $('.tabbar'); if (col) col.inert = modal; if (tabs) tabs.inert = modal;
+    if (modal) { side.setAttribute('role', 'dialog'); side.setAttribute('aria-modal', 'true'); }
+    else { side.removeAttribute('role'); side.removeAttribute('aria-modal'); }
+  }
   function openSide(open) {
+    if (open) sideTrigger = document.activeElement;
     body.classList.toggle('side-open', open);
     $('.side-toggle')?.setAttribute('aria-expanded', String(open));
     $('.tb-proj')?.setAttribute('aria-expanded', String(open));
-    if (open) requestAnimationFrame(() => $('.side-proj.on')?.scrollIntoView({ block: 'nearest' }));
+    sideSemantics();
+    if (open) requestAnimationFrame(() => {
+      $('.side-proj.on')?.scrollIntoView({ block: 'nearest' });
+      if (innerWidth < 960) ($('#pf') || $('.side-close') || $('#side a'))?.focus({ preventScroll: true });
+    });
+    else if (innerWidth < 960 && sideTrigger?.isConnected) sideTrigger.focus({ preventScroll: true });
   }
   $('.side-toggle')?.addEventListener('click', () => openSide(!body.classList.contains('side-open')));
   $('.tb-proj')?.addEventListener('click', () => openSide(!body.classList.contains('side-open')));
   $('.side-mask')?.addEventListener('click', () => openSide(false));
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && body.classList.contains('side-open')) openSide(false); });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Tab' || innerWidth >= 960 || !body.classList.contains('side-open')) return;
+    const targets = $$('a[href], button:not(:disabled), input:not(:disabled), select, [tabindex="0"]', $('#side')).filter(el => el.getClientRects().length && !el.closest('[hidden]'));
+    const first = targets[0], last = targets.at(-1);
+    if (e.shiftKey && (document.activeElement === first || !$('#side').contains(document.activeElement))) { e.preventDefault(); last?.focus(); }
+    else if (!e.shiftKey && (document.activeElement === last || !$('#side').contains(document.activeElement))) { e.preventDefault(); first?.focus(); }
+  });
+  window.addEventListener('resize', () => { if (innerWidth >= 960 && body.classList.contains('side-open')) openSide(false); else sideSemantics(); });
   function sortSide(mode) {
     for (const list of $$('.side-list')) {
       const rows = $$('.side-row', list);
@@ -290,40 +339,86 @@
   }
   bindSide();
   if (innerWidth >= 960) $('.side-proj.on')?.scrollIntoView({ block: 'nearest' });
+  // 更新计数时保留用户的位置；快照在响应回来后才取，避免覆盖等待期间的新输入。
+  function rememberFocus(container) {
+    const el = document.activeElement;
+    if (!container?.contains(el)) return () => {};
+    const attr = ['id', 'name', 'data-show', 'data-cat', 'data-agent', 'data-sort', 'aria-label', 'href'].find(k => el.getAttribute(k));
+    if (!attr) return () => {};
+    const selector = `${el.tagName.toLowerCase()}[${attr}="${CSS.escape(el.getAttribute(attr))}"]`;
+    let start = null, end = null; try { start = el.selectionStart; end = el.selectionEnd; } catch {}
+    return root => {
+      const target = el.isConnected ? el : root?.querySelector(selector);
+      if (!target?.getClientRects().length) return;
+      if (document.activeElement !== target) target.focus({ preventScroll: true });
+      if (start != null) { try { target.setSelectionRange(start, end); } catch {} }
+    };
+  }
+  let sideSeq = 0;
   async function refreshSide() {
+    const seq = ++sideSeq;
     const old = $('#side'); if (!old) return;
-    const q = $('#pf')?.value || ''; const top = old.scrollTop;
     const html = await (await fetch('/api/sidebar?current=' + encodeURIComponent(body.dataset.project || ''), { cache: 'no-store' })).text();
+    if (seq !== sideSeq || !old.isConnected) return;
+    const restore = rememberFocus(old), q = $('#pf')?.value || '', top = old.scrollTop;
     const tpl = document.createElement('template'); tpl.innerHTML = html.trim();
     const fresh = tpl.content.firstElementChild; if (!fresh) return;
     old.replaceWith(fresh); fresh.scrollTop = top;
     const pf = $('#pf'); if (pf && q) pf.value = q;
-    bindSide(); filterSide(); updateBadge(); setLive();
+    bindSide(); filterSide(); updateBadge(); setLive(); sideSemantics(); restore(fresh);
   }
 
   // ---------- 实时更新 ----------
   let connected = false;
   function setLive() { $$('.live').forEach(l => l.classList.toggle('on', connected)); }
+  let listSeq = 0;
   async function refreshList(changedId) {
+    const seq = ++listSeq;
     const before = new Set($$('.entry').map(e => e.dataset.id + '@' + e.querySelector('.ver')?.textContent));
-    const q = $('#q')?.value || '';
     const html = await (await fetch(location.href, { cache: 'no-store' })).text();
+    if (seq !== listSeq) return;
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const fresh = doc.querySelector('#main'); if (!fresh) return;
-    $('#main').replaceWith(fresh);
+    const main = $('#main'), restore = rememberFocus(main);
+    const openFilters = Boolean($('.list-tools.open'));
+    const expanded = new Map($$('details[id]', main).map(el => [el.id, el.open]));
+    const header = $(':scope > .page-head', main), nextHeader = $(':scope > .page-head', fresh);
+    if (header && nextHeader) {
+      // 搜索框、正在改名的表单不离开 DOM。只刷新页头里的计数与显示名。
+      for (const selector of ['.page-sub', '.eyebrow', '.head-actions']) {
+        const old = $(selector, header), next = $(selector, nextHeader);
+        if (old && next) old.replaceWith(next);
+      }
+      const display = $('.proj-display', header), nextDisplay = $('.proj-display', nextHeader);
+      if (display && nextDisplay) display.textContent = nextDisplay.textContent;
+      for (const child of [...main.childNodes]) if (child !== header) child.remove();
+      for (const child of [...fresh.childNodes]) if (child !== nextHeader) main.appendChild(child);
+    } else main.replaceChildren(...fresh.childNodes);
     // 顶栏面包屑、网页标题、显示名也跟着更新（项目改名后）
     const nc = doc.querySelector('.crumbs'); if (nc && $('.crumbs')) $('.crumbs').innerHTML = nc.innerHTML;
     const nt = doc.querySelector('meta[name="mydash-title"]'); if (nt) $('meta[name="mydash-title"]')?.setAttribute('content', nt.content);
     if (doc.body.dataset.display) body.dataset.display = doc.body.dataset.display;
     updateBadge(); bindRename(); bindTitle();
-    const nq = $('#q'); if (nq) nq.value = q;
     bindList();
+    if ($('#upd-bar.upd-running')) waitForUpdate();
+    if (openFilters) { $('.list-tools')?.classList.add('open'); $('.filter-btn')?.setAttribute('aria-expanded', 'true'); }
+    for (const [id, open] of expanded) { const el = document.getElementById(id); if (el) el.open = open; }
+    restore(main);
     for (const e of $$('.entry')) {
       e.style.animation = 'none';
       const key = e.dataset.id + '@' + e.querySelector('.ver')?.textContent;
       if (!before.has(key) || e.dataset.id === changedId) e.classList.add('fresh');
     }
     tickTimes();
+  }
+  function showVersionUpdate() {
+    if ($('.version-update')) return;
+    const banner = document.createElement('div'); banner.className = 'banner version-update'; banner.setAttribute('role', 'status');
+    const text = document.createElement('span'); text.textContent = T('A new version is available. Your draft stays with this version.');
+    const view = document.createElement('button'); view.type = 'button'; view.className = 'act'; view.textContent = T('View new version');
+    view.addEventListener('click', () => { location.href = location.pathname; });
+    banner.append(text, view);
+    const head = $('.doc-head'); if (head) head.before(banner); else $('#main').prepend(banner);
   }
   function connect() {
     if (!window.EventSource) return;
@@ -366,8 +461,11 @@
       if (page === 'home' || (page === 'project' && body.dataset.project === d.project)) {
         refreshList(id).catch(() => {});
       } else if (page === 'item' && body.dataset.project === d.project && body.dataset.slug === d.slug && body.dataset.latest === '1') {
-        toast(T('New version, reloading…'));
-        setTimeout(() => location.reload(), 700);
+        if (dirty.size || $('dialog[open]')) showVersionUpdate();
+        else {
+          toast(T('New version, reloading…'));
+          setTimeout(() => { if (dirty.size || $('dialog[open]')) showVersionUpdate(); else location.reload(); }, 700);
+        }
       } else if (page === 'item') {
         toast(T('New in {project}', { project: d.project }));
       }
@@ -457,7 +555,8 @@
     dlg.innerHTML = `<div class="ad-body">${html}</div>`;
     document.body.appendChild(dlg);
     dlg.addEventListener('close', () => dlg.remove());
-    dlg.addEventListener('click', ev => { if (ev.target === dlg) dlg.close(); });
+    dlg.addEventListener('click', ev => { if (ev.target === dlg && dlg.getAttribute('aria-busy') !== 'true') dlg.close(); });
+    dlg.addEventListener('cancel', ev => { if (dlg.getAttribute('aria-busy') === 'true') ev.preventDefault(); });
     for (const b of $$('[data-close]', dlg)) b.addEventListener('click', () => dlg.close());
     dlg.showModal(); onOpen?.(dlg);
     return dlg;
@@ -471,6 +570,7 @@
     const draftKey = `mydash.ap.${apForm.dataset.id}.v${apForm.dataset.v}`;
     const qs = $$('.ap-q');
     const stateBox = $('.ap-state', apForm), sendBtn = $('.ap-send', apForm);
+    let submitting = false, stateSeq = 0;
     const OTHER = '__other__';
     function collect() {
       const out = {};
@@ -484,15 +584,15 @@
     }
     function fill(ans) {
       for (const q of qs) {
-        const a = ans?.[q.dataset.q]; if (a == null) continue;
-        const list = Array.isArray(a) ? a : [a];
+        const a = ans?.[q.dataset.q];
+        const list = a == null ? [] : Array.isArray(a) ? a : [a];
         if (q.dataset.type === 'choice' || q.dataset.type === 'multi') {
           for (const el of $$('input[type=radio], input[type=checkbox]', q)) {
             const o = list.find(x => (x && typeof x === 'object' ? el.value === OTHER : x === el.value));
             el.checked = Boolean(o);
-            if (o && typeof o === 'object') { const ot = $('.ap-other-text', q); if (ot) ot.value = o.other; }
+            if (el.value === OTHER) { const ot = $('.ap-other-text', q); if (ot) ot.value = o && typeof o === 'object' ? o.other : ''; }
           }
-        } else { const el = $('textarea:not(.ask-text), input[type=text]:not(.ask-text)', q); if (el) el.value = a; }
+        } else { const el = $('textarea:not(.ask-text), input[type=text]:not(.ask-text)', q); if (el) el.value = a || ''; }
       }
     }
     const blank = a => a == null || (typeof a === 'object' && !Array.isArray(a) && !String(a.other || '').trim());
@@ -516,43 +616,99 @@
         const msg = c.how === 'chat' ? T('Decided in the conversation {time}, so this form is closed.', { time: when(c.at) })
           : c.how === 'superseded' ? T('Replaced by a newer approval form, so this one is closed.')
           : T('Expired: nobody answered and the session that asked has stopped. If you still want to answer, tell your agent in a new conversation.');
-        stateBox.innerHTML = `<p class="ap-closed">${escH(msg)}</p>${c.note ? `<blockquote class="ap-closed-note">${escH(c.note)}</blockquote>` : ''}${c.by ? `<p><a href="${escH(c.by)}">${T('Open the newer one')}</a></p>` : ''}`;
+        stateBox.innerHTML = `<p class="ap-closed">${escH(msg)}</p>${c.note ? `<blockquote class="ap-closed-note">${escH(c.note)}</blockquote>` : ''}${dirty.has('approval') ? `<p class="ap-note">${T('Your draft is kept on this version.')}</p>` : ''}${c.by ? `<p><a href="${escH(c.by)}">${T('Open the newer one')}</a></p>` : ''}`;
       } else if (kind === 'editing') stateBox.innerHTML = `<p class="ap-note">${T('Change anything, then submit again. The latest answers count.')}</p>`;
       else if (kind === 'old') stateBox.innerHTML = `<p class="ap-note">${T('This is an older version. Answer on the latest version.')}</p>`;
       else stateBox.innerHTML = '';
       stateBox.hidden = !stateBox.innerHTML;
     }
-    if (data.closed && !data.submission) { lock(true); showState('closed'); }
+    let savedDraft = null; try { savedDraft = JSON.parse(localStorage.getItem(draftKey) || 'null'); } catch {}
+    const hasDraft = savedDraft && Object.keys(savedDraft).length > 0 && JSON.stringify(savedDraft) !== JSON.stringify(data.submission?.answers || {});
+    if (data.closed && !data.submission) { if (hasDraft) { fill(savedDraft); setDirty('approval', true); } lock(true); showState('closed'); }
+    else if (apForm.dataset.latest !== '1') { fill(savedDraft || data.submission?.answers); lock(true); showState('old'); }
+    else if (hasDraft) { fill(savedDraft); setDirty('approval', true); lock(false); showState(data.submission ? 'editing' : 'pending'); }
     else if (data.submission) { fill(data.submission.answers); lock(true); showState('submitted'); }
-    else if (apForm.dataset.latest !== '1') { lock(true); showState('old'); }
-    else { try { fill(JSON.parse(localStorage.getItem(draftKey) || 'null')); } catch {} }
+    async function syncApproval() {
+      if (submitting) return;
+      const seq = ++stateSeq;
+      try {
+        const r = await (await fetch(`/api/approval?id=${encodeURIComponent(apForm.dataset.id)}&v=${apForm.dataset.v}`, { cache: 'no-store' })).json();
+        if (seq !== stateSeq || submitting || r.version !== Number(apForm.dataset.v)) return;
+        const changed = JSON.stringify(r.submission) !== JSON.stringify(data.submission);
+        Object.assign(data, r);
+        if (data.closed) {
+          lock(true); showState('closed');
+          $('dialog[data-approval]')?.close();
+          $$('.ap-acts').forEach(el => el.hidden = true);
+          $$('.ap-q .ask-send').forEach(el => el.disabled = true);
+        } else if (changed && data.submission) {
+          if (dirty.has('approval')) {
+            stateBox.textContent = T('Answers changed elsewhere. Your draft is kept; review it before submitting again.'); stateBox.hidden = false;
+          } else { fill(data.submission.answers); lock(true); showState('submitted'); }
+        }
+      } catch {}
+    }
+    document.addEventListener('mydash-response', e => { if (!e.detail?.id || e.detail.id === apForm.dataset.id) syncApproval(); });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncApproval(); });
+    function markMissing(list) {
+      for (const q of qs) {
+        const invalid = list.includes(q);
+        q.classList.toggle('ap-missing', invalid);
+        let error = $(':scope > .ap-field-error', q);
+        if (invalid && !error) {
+          error = document.createElement('p'); error.className = 'ap-field-error'; error.id = `ap-error-${q.dataset.q}`;
+          error.textContent = T('Check this answer before submitting.'); q.appendChild(error);
+        }
+        if (error) error.hidden = !invalid;
+        for (const el of $$('input, textarea', q).filter(el => !el.classList.contains('ask-text'))) {
+          if (invalid) { el.setAttribute('aria-invalid', 'true'); el.setAttribute('aria-describedby', error.id); }
+          else { el.removeAttribute('aria-invalid'); el.removeAttribute('aria-describedby'); }
+        }
+      }
+      if (list.length) { list[0].scrollIntoView({ block: 'center' }); $('input, textarea', list[0])?.focus({ preventScroll: true }); }
+    }
     // 改了就存草稿；在"其他"里打字时自动勾上"其他"
     document.addEventListener('input', e => {
       const q = e.target.closest?.('.ap-q'); if (!q || e.target.classList.contains('ask-text')) return;
       if (e.target.classList.contains('ap-other-text')) { const box = $(`input[value="${OTHER}"]`, q); if (box && e.target.value) box.checked = true; }
       q.classList.remove('ap-missing');
-      if (!data.submission || !apForm.classList.contains('locked')) { try { localStorage.setItem(draftKey, JSON.stringify(collect())); } catch {} }
+      $(':scope > .ap-field-error', q)?.setAttribute('hidden', '');
+      for (const el of $$('[aria-invalid]', q)) { el.removeAttribute('aria-invalid'); el.removeAttribute('aria-describedby'); }
+      if (!data.submission || !apForm.classList.contains('locked')) {
+        setDirty('approval', JSON.stringify(collect()) !== JSON.stringify(data.submission?.answers || {}));
+        try { localStorage.setItem(draftKey, JSON.stringify(collect())); } catch {}
+      }
     });
     apForm.addEventListener('submit', e => {
       e.preventDefault();
+      if (submitting || apForm.classList.contains('locked') || $('dialog[data-approval]')) return;
       const ans = collect(); const miss = missing(ans);
-      qs.forEach(q => q.classList.toggle('ap-missing', miss.includes(q)));
-      if (miss.length) { miss[0].scrollIntoView({ behavior: 'smooth', block: 'center' }); toast(T('{n} required question is not answered yet.|{n} required questions are not answered yet.', { n: miss.length })); return; }
+      markMissing(miss);
+      if (miss.length) { toast(T('{n} required question is not answered yet.|{n} required questions are not answered yet.', { n: miss.length })); return; }
       const show = q => { const a = ans[q.dataset.q]; const label = v => (v && typeof v === 'object' ? `${$('.ap-other b', q)?.textContent || T('Other@@option')}: ${v.other}` : ($(`input[value="${CSS.escape(v)}"]`, q)?.closest('label')?.querySelector('b')?.textContent || v)); return a == null ? `<i>${T('(no answer)')}</i>` : escH(Array.isArray(a) ? a.map(label).join('、') : label(a)); };
       const rows = qs.map(q => `<li><b>${escH($('legend', q)?.childNodes[0]?.textContent || q.dataset.q)}</b><span>${show(q)}</span></li>`).join('');
+      const requestId = [...crypto.getRandomValues(new Uint8Array(16))].map(x => x.toString(16).padStart(2, '0')).join('');
       modal(`<h3>${T('Submit these answers?')}</h3><ul class="ap-review">${rows}</ul><p class="ap-note">${T('After you confirm, the answers are saved for your agent. You can still change them later.')}</p><div class="ap-btns"><button type="button" class="ap-confirm">${T('Confirm and submit')}</button><button type="button" data-close>${T('Keep editing')}</button></div>`, {
-        onOpen: dlg => $('.ap-confirm', dlg).addEventListener('click', async () => {
+        onOpen: dlg => { dlg.dataset.approval = '1'; $('.ap-confirm', dlg).addEventListener('click', async () => {
+          if (submitting) return;
+          submitting = true;
+          const button = $('.ap-confirm', dlg); button.textContent = T('Submitting…'); dlg.setAttribute('aria-busy', 'true');
+          $$('button', dlg).forEach(b => b.disabled = true);
           try {
-            const r = await post('/api/approval', { id: apForm.dataset.id, v: Number(apForm.dataset.v), answers: ans });
+            const r = await post('/api/approval', { id: apForm.dataset.id, v: Number(apForm.dataset.v), answers: ans, requestId });
             data.submission = r.submission; data.summary = r.summary;
             try { localStorage.removeItem(draftKey); } catch {}
-            dlg.close(); lock(true); showState('submitted'); toast(T('Submitted'));
+            setDirty('approval', false); dlg.close(); lock(true); showState('submitted'); toast(T('Submitted'));
           } catch (e) {
             // 409：这张单子已经在对话里定了（或被取代、过期），刷新看结局
-            if (/409/.test(e.message)) { toast(T('This form was already closed. Reloading…')); setTimeout(() => location.reload(), 1200); }
+            if (e.status === 409) { dlg.close(); toast(T('This form is closed. Your draft is kept.')); }
+            else if (e.status === 422) { dlg.close(); markMissing(qs.filter(q => e.body?.missing?.includes(q.dataset.q))); toast(T('Check the highlighted answers.')); }
             else toast(T('That did not work. Try again in a moment.'));
+          } finally {
+            submitting = false; dlg.removeAttribute('aria-busy'); button.textContent = T('Confirm and submit');
+            $$('button', dlg).forEach(b => b.disabled = false); syncApproval();
           }
-        }),
+        }); },
       });
     });
   }
@@ -641,13 +797,17 @@
   }
 
   // ---------- 新版本：首页顶上那条和设置页里的按钮。点「更新」后服务会重启，一直问到它回来、不在更新了，再刷新页面 ----------
+  let waitingUpdate = false;
   async function waitForUpdate() {
+    if (waitingUpdate) return; waitingUpdate = true;
     for (;;) {
       await new Promise(r => setTimeout(r, 2500));
       try { const r = await fetch('/api/update', { cache: 'no-store' }); if (r.ok && !(await r.json()).running) { location.reload(); return; } } catch {}
     }
   }
-  for (const b of $$('[data-upd]')) b.addEventListener('click', async () => {
+  // 首页列表实时刷新时会换掉这条，所以点击挂在 document 上
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-upd]'); if (!b || b.disabled) return;
     const act = b.dataset.upd; b.disabled = true;
     try {
       const r = await fetch('/api/update', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Mydash': '1' }, body: JSON.stringify({ action: act }) });
@@ -706,10 +866,22 @@
     const rowData = row => { try { return JSON.parse($('.set-chdata', row).textContent); } catch { return {}; } };
     const edFields = () => Object.fromEntries($$('.set-edbody [name]', ed).map(el => [el.name, el.value.trim()]));
     const edClear = () => $$('.set-edbody [data-clear]', ed).map(el => el.name);
+    let editorBaseline = '';
+    const editorValue = () => JSON.stringify({ name: ed.elements.name.value, fields: edFields(), clear: edClear() });
+    const editorState = text => { const state = $('.set-ed-state', ed); state.hidden = false; state.textContent = text; };
+    const editorChanged = () => {
+      const changed = editorValue() !== editorBaseline;
+      setDirty('channel', changed);
+      editorState(changed ? T('Not saved yet') : T('Use Add or Save to save this notification service.'));
+    };
     // 可以单独清掉的已存值（选填的那几个）
     const CLEARABLE = { webhook: ['secret'], email: ['pass'] };
     const markBad = field => { const el = field && ed.querySelector(`[name="${field}"]`); if (el) { el.classList.add('bad'); el.focus(); } };
-    function closeEditor() { ed.hidden = true; delete ed.dataset.id; types.hidden = true; $('.set-add', setForm).hidden = false; for (const r of $$('.set-chrow.editing', list)) r.classList.remove('editing'); }
+    function closeEditor() {
+      ed.hidden = true; delete ed.dataset.id; types.hidden = true; setDirty('channel', false);
+      $('.set-edbody', ed).replaceChildren(); ed.elements.name.value = '';
+      $('.set-add', setForm).hidden = false; for (const r of $$('.set-chrow.editing', list)) r.classList.remove('editing');
+    }
     // 打开表单：加新的（type）或改已有的（那一行的数据）。密钥和带密钥的网址不回填，只提示存着的样子，留空就不改
     function openEditor(type, cur = null) {
       const tpl = $(`#tpl-${type}`); if (!tpl) return;
@@ -725,28 +897,33 @@
           el.placeholder = T('Saved: {value} (leave blank to keep)', { value: cur.masked[el.name] });
           if ((CLEARABLE[type] || []).includes(el.name)) {
             const b = document.createElement('button'); b.type = 'button'; b.className = 'linkish set-clear'; b.textContent = T('Clear the saved one');
-            b.addEventListener('click', () => { el.value = ''; el.dataset.clear = '1'; el.placeholder = T('Cleared when you save'); b.remove(); });
+            b.addEventListener('click', () => { el.value = ''; el.dataset.clear = '1'; el.placeholder = T('Cleared when you save'); b.remove(); editorChanged(); });
             el.after(b);
           }
         }
       }
       $('.set-save', ed).textContent = cur ? T('Save') : T('Add');
       ed.hidden = false; types.hidden = true; $('.set-add', setForm).hidden = true;
+      editorBaseline = editorValue(); editorChanged();
       (cur ? ed.elements.name : $('.set-edbody input', ed))?.focus();
       ed.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
     $('.set-add', setForm)?.addEventListener('click', e => { types.hidden = false; e.currentTarget.hidden = true; });
     for (const b of $$('.set-type', setForm)) b.addEventListener('click', () => openEditor(b.dataset.type));
     $('.set-cancel', ed)?.addEventListener('click', closeEditor);
-    ed?.addEventListener('input', e => e.target.classList.remove('bad'));
+    ed?.addEventListener('input', e => { e.target.classList.remove('bad'); editorChanged(); });
+    ed?.addEventListener('change', editorChanged);
     ed?.addEventListener('submit', async e => {
       e.preventDefault();
+      const button = $('.set-save', ed); if (button.disabled) return; button.disabled = true;
       const id = ed.dataset.id;
+      editorState(T('Saving…'));
       try {
         const j = await send('/api/channels', id ? { op: 'update', id, name: ed.elements.name.value, fields: edFields(), clear: edClear() } : { op: 'add', type: ed.dataset.type, name: ed.elements.name.value, fields: edFields() });
-        if (!j.httpOk) { markBad(j.field); toast(j.status === 409 ? T('That one is already in the list.') : T('Check the highlighted field.')); return; }
+        if (!j.httpOk) { markBad(j.field); editorState(T('Not saved. Check the highlighted field.')); toast(j.status === 409 ? T('That one is already in the list.') : T('Check the highlighted field.')); return; }
         applyList(j); closeEditor(); toast(id ? T('Saved') : T('Added. Tap “Send a test” to check.'));
-      } catch { oops(); }
+      } catch { editorState(T('Not saved. Try again.')); oops(); }
+      finally { button.disabled = false; }
     });
     $('.set-edtest', ed)?.addEventListener('click', async e => {
       const b = e.currentTarget; b.disabled = true;
@@ -758,23 +935,30 @@
     });
     // 表单里的小工具：ntfy 随机话题、Telegram 找 chat id
     ed?.addEventListener('click', async e => {
+      const password = e.target.closest('.set-password');
+      if (password) {
+        const field = ed.querySelector('[name="pass"]'), show = field.type === 'password';
+        field.type = show ? 'text' : 'password'; password.textContent = show ? T('Hide password') : T('Show password');
+        password.setAttribute('aria-pressed', String(show)); return;
+      }
       // 邮箱教程里的「填入这些设置」：服务器、端口、加密方式
       const fillBtn = e.target.closest('.set-fill');
       if (fillBtn) {
         for (const k of ['host', 'port', 'secure']) { const el = ed.querySelector(`[name="${k}"]`); if (el && fillBtn.dataset[k]) { el.value = fillBtn.dataset[k]; el.classList.remove('bad'); } }
-        ed.querySelector('[name="user"]')?.focus();
+        editorChanged(); ed.querySelector('[name="user"]')?.focus();
         toast(T('Filled in the server, port and encryption.')); return;
       }
       if (e.target.closest('.set-gen')) {
         const a = new Uint8Array(10); crypto.getRandomValues(a);
         ed.querySelector('[name="url"]').value = 'https://ntfy.sh/mydash-' + [...a].map(x => 'abcdefghijkmnpqrstuvwxyz23456789'[x % 32]).join('');
+        editorChanged();
       }
       const tg = e.target.closest('.set-tg'); if (!tg) return;
       tg.disabled = true;
       try {
         const j = await send('/api/telegram-chat', { token: ed.querySelector('[name="token"]').value.trim(), id: ed.dataset.id });
         if (!j.httpOk) { markBad('token'); toast(T('Paste the bot token first.')); return; }
-        if (j.ok) { ed.querySelector('[name="chat"]').value = j.chat; toast(j.name ? T('Found: {name}', { name: j.name }) : T('Found it.')); }
+        if (j.ok) { ed.querySelector('[name="chat"]').value = j.chat; editorChanged(); toast(j.name ? T('Found: {name}', { name: j.name }) : T('Found it.')); }
         else toast(j.error === 'no messages yet' ? T('Send your bot a message in Telegram first, then try again.') : T('Failed: {err}', { err: j.error }));
       } catch { oops(); } finally { tg.disabled = false; }
     });
@@ -869,17 +1053,20 @@
     }
     function openComposer(sp, btn) {
       const old = $(':scope > .ask-new', sp.host); if (old) { old.remove(); return; }
+      const key = `mydash.ask.${askData.id}.v${askData.v}.${sp.kind}.${sp.key}`;
       const box = document.createElement('div'); box.className = 'ask-new';
       box.innerHTML = `<textarea class="ask-text" rows="2" maxlength="1000" placeholder="${escH(T('What is unclear, what you cannot do, or where you are stuck?'))}"></textarea><div class="ask-btns"><button type="button" class="ask-send">${escH(T('Send to agent'))}</button><button type="button" class="ask-cancel">${escH(T('Cancel'))}</button></div>`;
       sp.host.appendChild(box);
-      const ta = $('textarea', box); ta.focus();
-      $('.ask-cancel', box).addEventListener('click', () => box.remove());
+      const ta = $('textarea', box); ta.value = drafts.get(key) || ''; ta.focus();
+      setDirty(key, Boolean(ta.value.trim()));
+      ta.addEventListener('input', () => { drafts.set(key, ta.value || null); setDirty(key, Boolean(ta.value.trim())); });
+      $('.ask-cancel', box).addEventListener('click', () => { drafts.set(key, null); setDirty(key, false); box.remove(); });
       const send = async () => {
         const text = ta.value.trim(); if (!text) { ta.focus(); return; }
         $('.ask-send', box).disabled = true;
         try {
           const r = await post('/api/ask', { id: askData.id, v: askData.v, kind: sp.kind, key: sp.key, text });
-          asks.push(r.ask); box.remove(); renderThread(sp);
+          drafts.set(key, null); setDirty(key, false); asks.push(r.ask); box.remove(); renderThread(sp);
           toast(T('Sent. The agent replies here after finishing what it is doing.'));
         } catch (e) { $('.ask-send', box).disabled = false; toast(/409/.test(e.message) ? T('This form was already closed. Reloading…') : T('That did not work. Try again in a moment.')); }
       };
@@ -913,6 +1100,7 @@
     let comments = JSON.parse($('#cm-data')?.textContent || '[]');
     const prose = cmPanel.dataset.prose === '1' ? $('.sheet .prose') : null;
     const itemId = cmPanel.dataset.id, curV = Number(cmPanel.dataset.v), file = cmPanel.dataset.file;
+    const commentKey = `mydash.comment.${itemId}.v${curV}.${file}`;
     function highlight() {
       if (!prose) return;
       for (const m of $$('mark.cm-hl', prose)) m.replaceWith(...m.childNodes);
@@ -944,12 +1132,24 @@
       catch { toast(T('That did not work. Try again in a moment.')); return false; }
     }
     function openEditor(quote = '', heading = '') {
+      const saved = drafts.get(commentKey);
+      const resume = saved && (!quote || saved.quote === quote);
+      if (resume) { quote = saved.quote || ''; heading = saved.heading || ''; }
       modal(`<h3>${quote ? T('Comment on this passage') : T('Add a comment')}</h3>${quote ? `<blockquote class="cm-q">${escH(quote)}</blockquote>` : ''}<textarea class="cm-text" rows="5" placeholder="${escH(T('What should the agent change or know?'))}"></textarea><div class="ap-btns"><button type="button" class="ap-confirm">${T('Save comment')}</button><button type="button" data-close>${T('Cancel')}</button></div>`, {
         onOpen: dlg => {
-          const ta = $('.cm-text', dlg); setTimeout(() => ta.focus(), 50);
+          const ta = $('.cm-text', dlg); if (resume) ta.value = saved.text || '';
+          setDirty(commentKey, Boolean(ta.value.trim())); setTimeout(() => ta.focus(), 50);
+          ta.addEventListener('input', () => {
+            drafts.set(commentKey, ta.value ? { text: ta.value, quote, heading } : null);
+            setDirty(commentKey, Boolean(ta.value.trim()));
+          });
+          $('[data-close]', dlg).addEventListener('click', () => { drafts.set(commentKey, null); setDirty(commentKey, false); });
           $('.ap-confirm', dlg).addEventListener('click', async () => {
             if (!ta.value.trim()) { ta.focus(); return; }
-            if (await save({ v: curV, file, quote, heading, text: ta.value })) { dlg.close(); toast(T('Saved. Your agent will see it.')); }
+            const button = $('.ap-confirm', dlg); if (button.disabled) return; button.disabled = true;
+            if (await save({ v: curV, file, quote, heading, text: ta.value })) {
+              drafts.set(commentKey, null); setDirty(commentKey, false); dlg.close(); toast(T('Saved. Your agent will see it.'));
+            } else button.disabled = false;
           });
         },
       });
@@ -1008,10 +1208,12 @@
   // ---------- 项目改名：只改网页上的显示名，Claude Code 照常用文件夹名 ----------
   function bindRename() {
     const btn = $('.rename'), form = $('.rename-form'), title = $('.proj-title');
-    if (!btn || !form || !title) return;
+    if (!btn || !form || !title || form.dataset.bound) return;
+    form.dataset.bound = '1';
     const input = form.elements.name;
     const open = () => { title.hidden = true; form.hidden = false; input.value = body.dataset.display || ''; input.focus(); input.select(); };
-    const close = () => { form.hidden = true; title.hidden = false; };
+    const close = () => { form.hidden = true; title.hidden = false; setDirty('rename', false); };
+    input.addEventListener('input', () => setDirty('rename', input.value !== (body.dataset.display || '')));
     btn.addEventListener('click', open);
     form.querySelector('.rename-cancel').addEventListener('click', close);
     input.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
@@ -1021,12 +1223,34 @@
       try {
         const r = await post('/api/project-name', { project: body.dataset.project, name: input.value });
         body.dataset.display = r.name;
+        close();
         toast(r.name === body.dataset.project ? T('Back to the folder name') : T('Renamed to “{name}”', { name: r.name }));
         await Promise.all([refreshList(), refreshSide()]);
       } catch { toast(T('Rename failed. Try again in a moment.')); save.disabled = false; }
     });
   }
   bindRename();
+
+  // ---------- 条目详情：按钮固定在面板上方，同一时刻只展开一个 ----------
+  const inspector = $('.doc-inspector');
+  if (inspector) {
+    const toggles = $$('.doc-detail-toggle', inspector);
+    function showDetail(active) {
+      for (const toggle of toggles) {
+        const on = toggle === active;
+        toggle.setAttribute('aria-expanded', String(on));
+        document.getElementById(toggle.getAttribute('aria-controls')).hidden = !on;
+      }
+    }
+    for (const toggle of toggles) toggle.addEventListener('click', () => {
+      showDetail(toggle.getAttribute('aria-expanded') === 'true' ? null : toggle);
+    });
+    inspector.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      const active = toggles.find(toggle => toggle.getAttribute('aria-expanded') === 'true');
+      if (active) { e.preventDefault(); showDetail(null); active.focus(); }
+    });
+  }
 
   // ---------- 手机上条目页的「⋯」：其余操作收在菜单里，点外面或选了一项就收起 ----------
   const more = $('.more-btn');

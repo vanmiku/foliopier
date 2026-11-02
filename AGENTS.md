@@ -47,6 +47,10 @@ npm ci
 bash test/smoke.sh                # must end with 0 failures; never touches ~/.mydash
 node test/i18n-check.mjs          # every UI / CLI string has a Chinese translation
 node test/e2e.mjs --service none  # cross-platform install test; CI also runs it on Windows
+node --test test/review-regressions.mjs # approval IDs, retry deduplication, bounded diff
+python -m pip install -r test/requirements-ui.txt
+python -m playwright install chromium
+python test/ui-review.py         # isolated browser regressions; never touches ~/.mydash
 SMOKE_PORT=4880 bash test/smoke.sh   # if 4878 is busy
 ```
 

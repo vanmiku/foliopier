@@ -76,7 +76,7 @@ check "代码高亮" "echo \"\$I\" | grep -c 'hljs-keyword'"
 check "图片地址改写到原文件" "echo \"\$I\" | grep -c 'src=\"/f/smoke/battle-plan/v2/img/chart.png\"'"
 check "条目内 md 链接改为站内打开" "echo \"\$I\" | grep -c 'f=notes.md'"
 check "目录" "echo \"\$I\" | grep -c 'class=\"toc\"'"
-check "历史版本" "echo \"\$I\" | grep -c '历史版本 · 2'"
+check "版本记录" "echo \"\$I\" | grep -c '版本记录 <span class=\"detail-count\">2</span>'"
 check "备注" "echo \"\$I\" | grep -c '第二版：补了流程图'"
 check "frontmatter 收起" "echo \"\$I\" | grep -c '文档属性'"
 OLD=$(curl -s "$B/p/smoke/battle-plan?v=1")
