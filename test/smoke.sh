@@ -1169,6 +1169,8 @@ check "首页显示更新失败，顶栏不再转圈" "curl -s '$B/' | grep -q '
 check "点「知道了」收起结果" "POSTJ -H 'X-Mydash: 1' -d '{\"action\":\"seen\"}' '$B/api/update' >/dev/null && ! curl -s '$B/' | grep -q 'upd-failed'"
 git -C "$UG/src" -c user.name=t -c user.email=t@t commit -q --allow-empty -m mine
 check "源码目录里有自己的提交：不动它" "! $CLI update --json > '$UG/div.json' && grep -q 'v99.0.0' '$UG/div.json' && git -C '$UG/src' log -1 --format=%s | grep -qx mine"
+git -C "$UG/src" reset -q --hard v99.0.0 && git -C "$UG/src" -c user.name=t -c user.email=t@t commit -q --allow-empty -m newer
+check "源码目录比最新版本还新（开发用的目录）：不动它，说清楚" "! $CLI update --json > '$UG/ahead.json' && grep -q '已经比 v99.0.0 新' '$UG/ahead.json' && git -C '$UG/src' log -1 --format=%s | grep -qx newer && curl -s '$B/api/update' | grep -q '\"to\":\"99.0.0\"'"
 node -e 'const f=process.argv[1],c=JSON.parse(require("fs").readFileSync(f,"utf8"));delete c.source;delete c.sourceRemote;require("fs").writeFileSync(f,JSON.stringify(c))' "$MYDASH_HOME/config.json"
 rm -f "$MYDASH_HOME/state/update.json"
 
