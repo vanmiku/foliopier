@@ -59,8 +59,19 @@ try {
   ok('publish PDF', p2.ok);
   const p3 = json(mydash(['publish', 'site', '-p', 'e2e', '--slug', 'site', '--json'], { cwd: fx }));
   ok('publish an HTML folder', p3.ok);
-  const p4 = json(mydash(['publish', 'plan.md', '-p', 'e2e', '--slug', 'plan', '--note', 'second', '--json'], { cwd: fx }));
-  ok('same slug again makes v2', p4.version === 2);
+  const secondPublish = mydash(['publish', 'plan.md', '-p', 'e2e', '--slug', 'plan', '--note', 'second', '--json'], { cwd: fx });
+  const p4 = json(secondPublish);
+  ok('same slug again makes v2', p4.ok && p4.version === 2,
+    JSON.stringify({ result: p4, exitCode: secondPublish.status, stderr: secondPublish.stderr }).slice(0, 1500));
+  // Keep failures observable under Windows file watching, not only the first publish.
+  for (let v = 3; v <= 12; v++) {
+    const command = mydash(['publish', 'plan.md', '-p', 'e2e', '--slug', 'plan', '--note', `revision-${v}`, '--json'], { cwd: fx });
+    const result = json(command);
+    ok(`repeated publish keeps version ${v}`, result.ok && result.version === v,
+      JSON.stringify({ result, exitCode: command.status, stderr: command.stderr }).slice(0, 1500));
+  }
+  const history = JSON.parse(fs.readFileSync(path.join(env.MYDASH_HOME, 'data/e2e/plan/meta.json'), 'utf8'));
+  ok('repeated publishes retain the whole history', history.versions.length === 12 && history.versions.every((v, i) => v.v === i + 1));
   await sleep(400);
 
   console.log('pages');
