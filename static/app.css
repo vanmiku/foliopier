@@ -854,6 +854,10 @@ dialog.access-dlg::backdrop { background: rgba(10, 10, 14, .45); }
 .ap-row.pr-row { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
 .ap-row.pr-row > .ic { color: var(--accent); }
 .ap-row.pr-row .ap-go { background: var(--accent-solid); }
+.ap-row.su-row { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.ap-row.su-row > .ic { color: var(--accent); }
+.ap-row.su-row .ap-go { border: 0; background: var(--accent-solid); cursor: pointer; }
+.ap-row.su-row .ap-go:disabled { opacity: .55; cursor: default; }
 .pr-pill.pr-answered { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
 .pr-pill.pr-released, .pr-pill.pr-cancelled, .pr-pill.pr-terminal { background: var(--surface-2); color: var(--text-3); }
 .pr-head .eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

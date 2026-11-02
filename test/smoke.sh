@@ -918,13 +918,20 @@ check "Codex：命令审批的钩子写进 hooks.json，不重复" "node -e 'con
 check "Codex：选择题的钩子也写进去（命令行版的 request_user_input、桌面版的 request_user_input_async）" "node -e 'const h=require(\"$XH/hooks.json\").hooks;const m=new RegExp(h.PreToolUse[0].matcher);process.exit(h.PreToolUse.length===1&&m.test(\"request_user_input\")&&m.test(\"request_user_input_async\")&&!m.test(\"request_user_input_x\")&&/agent-ask\\.mjs\"? codex$/.test(h.PreToolUse[0].hooks[0].command)?0:1)'"
 check "Codex：装钩子时提醒要在 Codex 里信任" "rm -f '$XH/hooks.json'; $CLI integrate codex --hooks | grep '/hooks' >/dev/null"
 check "doctor：Codex 里还没信任，会报出来" "test \"\$(hookchk hooks-codex)\" = bad"
-# Codex 记信任时用的是规整过的绝对路径（临时目录可能带 //）
-XHJ=$(node -p 'require("path").join(process.argv[1],"hooks.json")' "$XH")
-for ev in user_prompt_submit stop pre_tool_use permission_request; do printf '[hooks.state."%s:%s:0:0"]\ntrusted_hash = "x"\n\n' "$XHJ" "$ev"; done > "$XH/config.toml"
+check "首页「等你处理」里出现「允许」Codex 钩子的按钮" "curl -s '$B/' | grep -q 'data-setup=\"codex-trust\"'"
+check "随便写的 trusted_hash 不算信任（Codex 比的是指纹）" "XHJ=\$(node -p 'require(\"path\").join(process.argv[1],\"hooks.json\")' '$XH'); printf '[hooks.state.\"%s:stop:0:0\"]\ntrusted_hash = \"x\"\n' \"\$XHJ\" > '$XH/config.toml'; test \"\$(hookchk hooks-codex)\" = bad"
+check "点「允许」：给 mydash 的四条钩子记上 Codex 的指纹，原来那一节原地改" "POSTJ -H 'X-Mydash: 1' -d '{\"action\":\"codex-trust\"}' '$B/api/setup' >/dev/null && test \"\$(grep -c '^trusted_hash = \"sha256:' '$XH/config.toml')\" = 4 && test \"\$(grep -c '^\[hooks.state' '$XH/config.toml')\" = 4"
 check "doctor：四条都信任了就是好的" "test \"\$(hookchk hooks-codex)\" = ok"
+check "允许之后首页不再显示那个按钮" "! curl -s '$B/' | grep -q 'data-setup=\"codex-trust\"'"
+check "Codex 钩子指纹的算法没变（和 Codex 自己记的对过）" "node -e 'import(process.argv[1]).then(m=>process.exit(m.codexHookHash(\"PermissionRequest\",\".*\",{type:\"command\",command:\"\\\"/usr/bin/node\\\" \\\"/x/bin/agent-ask.mjs\\\" codex\",timeout:86400,statusMessage:\"Waiting\"})===\"sha256:\"+require(\"crypto\").createHash(\"sha256\").update(JSON.stringify({event_name:\"permission_request\",hooks:[{async:false,command:\"\\\"/usr/bin/node\\\" \\\"/x/bin/agent-ask.mjs\\\" codex\",statusMessage:\"Waiting\",timeout:86400,type:\"command\"}],matcher:\".*\"})).digest(\"hex\")?0:1))' '$ROOT/lib/integrate.mjs'"
+# 钩子被改过（比如以前写的 node 路径不一样）、用户信任过：更新时换成新内容，信任一起换成新指纹，不用再点「允许」
+node -e 'const f=process.argv[1],fs=require("fs"),j=JSON.parse(fs.readFileSync(f));const g=j.hooks.Stop.find(g=>/agent-state/.test(g.hooks[0].command));g.hooks[0].command=g.hooks[0].command.replace(/^"[^"]*"/,"\"/old/node\"");fs.writeFileSync(f,JSON.stringify(j,null,2))' "$XH/hooks.json"
+check "改写自己信任过的钩子：信任跟着换成新指纹" "refreshj codex | grep -q '\"codexTrust\":false' && test \"\$(hookchk hooks-codex)\" = ok && ! grep -q '/old/node' '$XH/hooks.json'"
 node -e 'const f=process.argv[1],fs=require("fs"),j=JSON.parse(fs.readFileSync(f));delete j.hooks.PreToolUse;fs.writeFileSync(f,JSON.stringify(j,null,2))' "$XH/hooks.json"
 node -e 'const f=process.argv[1],fs=require("fs"),s=JSON.parse(fs.readFileSync(f));s.codex.hookIds=s.codex.hookIds.filter(x=>x!=="PreToolUse");fs.writeFileSync(f,JSON.stringify(s,null,2))' "$MYDASH_HOME/state/integrations.json"
-check "Codex：更新时补上新加的选择题钩子，并提醒重新信任" "refreshj codex | grep '\"codexTrust\":true' >/dev/null && node -e 'process.exit(require(\"$XH/hooks.json\").hooks.PreToolUse?0:1)'"
+# 新加的钩子、从没信任过（去掉它那一节）：要用户点「允许」
+node -e 'const f=process.argv[1],fs=require("fs");fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace(/\[hooks\.state\."[^"]*:pre_tool_use:0:0"\]\ntrusted_hash = "[^"]*"\n*/,""))' "$XH/config.toml"
+check "Codex：更新时补上新加的选择题钩子；没信任过的，提醒去允许" "refreshj codex | grep '\"codexTrust\":true' >/dev/null && node -e 'process.exit(require(\"$XH/hooks.json\").hooks.PreToolUse?0:1)' && curl -s '$B/' | grep -q 'data-setup=\"codex-trust\"'"
 check "Codex：--hooks 时 mydash ask 等也能从沙盒里连出来" "grep 'prefix_rule(pattern=\\[\"mydash\", \\[\"ask\"' '$XH/rules/mydash-ask.rules' >/dev/null"
 if command -v codex >/dev/null; then check "Codex 认得 ask 的放行规则" "codex execpolicy check --rules '$XH/rules/mydash-ask.rules' mydash ask hi | grep '\"decision\":\"allow\"' >/dev/null"; fi
 check "Codex 规则写进 AGENTS.md" "grep 'mydash:begin' '$XH/AGENTS.md' >/dev/null"

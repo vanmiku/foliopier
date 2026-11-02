@@ -417,6 +417,43 @@ class ReviewUI(unittest.TestCase):
         finally:
             config_path.write_text(config); state.unlink(missing_ok=True)
 
+    def test_codex_hooks_are_allowed_from_the_home_page(self):
+        codex = Path(self.env['MYDASH_CODEX_HOME']); codex.mkdir(exist_ok=True)
+        self.cli('integrate', 'codex')
+        try:
+            self.go('/')
+            card = self.page.locator('[data-setup=codex-trust]')
+            self.assertEqual(card.count(), 1)
+            card.click()
+            self.page.locator('[data-setup-go]').click()
+            self.page.wait_for_selector('[data-setup=codex-trust]', state='detached')
+            self.assertEqual((codex / 'config.toml').read_text().count('trusted_hash = "sha256:'), 4)
+            self.shot('codex-allowed')
+        finally:
+            self.cli('integrate', 'codex', '--remove')
+
+    def test_boot_setup_waits_for_the_mac_password_prompt(self):
+        posted, polls = [], []
+        def answer(route):
+            if route.request.method == 'POST':
+                posted.append(json.loads(route.request.post_data)['action'])
+                return route.fulfill(status=200, content_type='application/json', body='{"ok":true}')
+            polls.append(1)
+            if len(polls) == 1: return route.fulfill(status=200, content_type='application/json', body=json.dumps({'codexTrust': 0, 'boot': {'pending': True, 'running': True, 'last': None}}))
+            if len(polls) == 2: return route.abort('connectionrefused')  # 换成开机启动时服务重启了一下
+            return route.fulfill(status=200, content_type='application/json', body=json.dumps({'codexTrust': 0, 'boot': {'pending': False, 'running': False, 'last': {'ok': True}}}))
+        self.page.route('**/api/setup', answer)
+        self.go('/')
+        # 卡片要在装成开机启动、还没做管理员那一步时才出现；这里直接放一个按钮，看弹窗的流程
+        self.page.evaluate("document.querySelector('#main').insertAdjacentHTML('afterbegin', '<button type=button data-setup=boot>boot</button>')")
+        self.page.locator('[data-setup=boot]').click()
+        self.assertIn('password', self.page.locator('.upd-dlg').inner_text())
+        self.page.locator('[data-setup-go]').click()
+        self.page.wait_for_selector('.upd-dlg.upd-ok', timeout=15000)
+        self.assertEqual(posted, ['boot'])
+        with self.page.expect_navigation():
+            self.page.locator('.upd-dlg [data-close]').click()
+
     def test_semantic_text_contrast_in_both_themes(self):
         self.publish('color-approval', self.approval(), 'approval'); self.go('/')
         contrast = '''([selector,rootBg])=>{const e=document.querySelector(selector),s=getComputedStyle(e),root=getComputedStyle(document.documentElement);

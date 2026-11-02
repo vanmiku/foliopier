@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4 (2026-11-02)
+
+- No more terminal for the two steps after install or update. Under **Waiting on you**, the home page offers **Allow** for the mydash hooks in Codex (mydash records Codex's trust for exactly its own hooks, as `/hooks` would) and, on a Mac set to start at boot, **Set up**, which opens the macOS password prompt on that Mac.
+- When mydash rewrites its own Codex hooks during an update, the permission you gave carries over, so Codex keeps using them. `mydash doctor` now checks Codex's fingerprint, not only that one exists.
+- The node path written into hooks, services and the `mydash` command is the stable one (`/opt/homebrew/bin/node`), not the versioned Homebrew Cellar path. Before, an update from the page wrote the Cellar path and a terminal install wrote the other, so each rewrote the hooks (Codex then stopped trusting them), a Mac already starting at boot was told to run the administrator step again, and `brew upgrade node` would have broken them.
+
 ## 0.1.3 (2026-11-02)
 
 - New versions show as an **Update** button in the top bar of every page, instead of a line on the home page. Tapping it asks first, then shows a progress bar through each step (download, dependencies, restart, check); when it is done, **OK** reloads the page. Settings → Updates opens the same window. The home page still reports the result of a night-time or command-line update.

@@ -76,7 +76,7 @@ It takes 10–60 seconds. Building the Tailscale node on macOS can take several 
 
 On Linux with systemd, if `check` reported `linger` as disabled, ask the user to run `sudo loginctl enable-linger $USER`. Without it, mydash stops when they log out.
 
-On macOS, mydash starts when the user logs in. For a Mac that should come back after a power cut or restart without anyone logging in (a headless Mac mini, say), install with `--service launchd-boot`; the result then lists a `boot-service` step: the user runs `sudo mydash service boot` once. mydash and its Tailscale node then run at boot, as the user, before login. FileVault must be off for that, because with FileVault on the Mac waits at the unlock screen. `sudo mydash service login` switches back.
+On macOS, mydash starts when the user logs in. For a Mac that should come back after a power cut or restart without anyone logging in (a headless Mac mini, say), install with `--service launchd-boot`; the result then lists a `boot-service` step. The user does it once, without a terminal: at the Mac, the mydash home page shows **Start mydash at boot** under Waiting on you, and tapping it opens the macOS password prompt on that screen (the password goes to macOS, not to mydash). `sudo mydash service boot` does the same from a terminal. mydash and its Tailscale node then run at boot, as the user, before login. FileVault must be off for that, because with FileVault on the Mac waits at the unlock screen. `sudo mydash service login` switches back.
 
 ## 5. Verify
 
@@ -125,7 +125,7 @@ Run it for each agent the user uses (`check` lists which are installed), after t
 
 If the instructions file already has the user's own rule for one of the blocks (it mentions `mydash publish`, or `mydash approvals` / `mydash ask`), that block is skipped. `--remove` undoes exactly what was added. Updating mydash brings these up to date. New sessions pick the changes up; the current one may not.
 
-**Codex runs a new hook only after the user trusts it** (**user**). After `mydash integrate codex`, ask the user to open Codex in a terminal (`codex`), type `/hooks`, and trust the mydash hooks: their command runs `~/.mydash/app/bin/agent-ask.mjs` or `agent-state.mjs`. The Codex app uses the same settings, so trusting them once in the terminal covers it; new conversations in the app pick them up. `mydash doctor` shows whether they are trusted.
+**Codex runs a new hook only after the user allows it** (**user**). After `mydash integrate codex`, tell the user to open the mydash home page: under Waiting on you, **Let Codex bring its questions to mydash** has an **Allow** button. mydash then records Codex's trust for exactly its own hooks, the same record `/hooks` in Codex writes (a fingerprint of each hook's content in `~/.codex/config.toml`); hooks whose content is not what this version installs are never trusted this way. `/hooks` in Codex in a terminal works too. When an update rewrites the mydash hooks the user has allowed, the permission carries over. New conversations in the Codex app pick them up. `mydash doctor` shows whether they are trusted.
 
 ## Same Wi-Fi access
 

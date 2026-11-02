@@ -25,6 +25,7 @@ This file is for coding agents changing mydash itself. To install mydash for a u
 | `lib/quiet.mjs` | Muted projects, manual and automatic archive |
 | `lib/search.mjs` | Full-text search over the latest versions |
 | `lib/notify.mjs`, `lib/pushguide.mjs` | Notification channels (Bark, ntfy, Telegram, Pushover, group webhooks, email, web push) and the daily summary; the step-by-step setup guide for each channel on the settings page |
+| `lib/actions.mjs` | The two setup steps the home page does with one tap: allowing the mydash hooks in Codex (`trustCodexHooks()` in `lib/integrate.mjs` writes Codex's fingerprint) and starting at boot on macOS (the macOS password prompt runs `mydash service boot`) |
 | `lib/update.mjs` | Updates: the daily check against the source repository's release tags, the state in `state/update.json`, starting an update from the page so it outlives the service restart. `mydash update` itself is in `lib/setup.mjs` |
 | `lib/remote.mjs` | Publishing from another machine with a token (client, token store); server side is `/api/remote/*` in `server.mjs` |
 | `lib/lan.mjs` | Same-Wi-Fi access with an access code |

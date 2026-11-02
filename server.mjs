@@ -38,6 +38,7 @@ import { projectNames, setProjectName } from './lib/names.mjs';
 import { pins, setPin } from './lib/pins.mjs';
 import { watchNode } from './lib/tailscale.mjs';
 import { checkForUpdate, startUpdate, status as updateStatus, readUpdate, writeUpdate } from './lib/update.mjs';
+import { setupStatus, allowCodexHooks, startBootSetup } from './lib/actions.mjs';
 import { classify, lanHostOk, validSession, checkCode, createSession, sessionCookie, rateLimited, noteFailure, accessCode, prettyCode, lanUrls, lanAddresses, loginUrl, qrSvg, deviceCount } from './lib/lan.mjs';
 
 const APP = path.dirname(fileURLToPath(import.meta.url));
@@ -406,6 +407,12 @@ async function handlePost(req, res) {
       return r.ok ? json(200, updateStatus()) : json(409, r);
     }
     return json(400, { error: 'action must be check, start or seen' });
+  }
+  // 首页「等你处理」里的两件：允许 Codex 的钩子；开机就启动（弹 macOS 的密码框）
+  if (url.pathname === '/api/setup') {
+    if (body.action === 'codex-trust') { const r = allowCodexHooks(); return json(r.ok ? 200 : 500, { ...r, status: setupStatus() }); }
+    if (body.action === 'boot') { const r = startBootSetup(); return json(r.ok ? 200 : 409, { ...r, status: setupStatus() }); }
+    return json(400, { error: 'action must be codex-trust or boot' });
   }
   if (url.pathname === '/api/read') {
     const id = String(body.id || ''); const [project, slug] = id.split('/');
@@ -907,6 +914,7 @@ async function handle(req, res) {
     return send(res, 200, JSON.stringify({ v: latest(meta).v, done: Object.fromEntries(st.items.map(x => [x.key, x.done])) }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
   }
   if (url.pathname === '/api/update') return send(res, 200, JSON.stringify(updateStatus()), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
+  if (url.pathname === '/api/setup') return send(res, 200, JSON.stringify(setupStatus()), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
   if (url.pathname === '/api/webpush') return send(res, 200, JSON.stringify({ publicKey: vapidKeys().publicKey, devices: subscriptions().length, httpsUrl: readConfig().httpsUrl || '' }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
 
   if (segs[0] === 'p' && segs.length === 2) {

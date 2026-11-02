@@ -99,11 +99,11 @@ mydash doctor
 
 ### Runs on your machine
 
-- **Back after a restart, no login needed (macOS).** With `--service launchd-boot`, mydash and its Tailscale node start at boot, before anyone logs in, so a headless Mac mini comes back after a power cut. `mydash forward 22 5900` passes SSH and Screen Sharing through that node, so you can log in to the Mac from anywhere.
+- **Back after a restart, no login needed (macOS).** With `--service launchd-boot` (one tap on the home page, then the macOS password prompt), mydash and its Tailscale node start at boot, before anyone logs in, so a headless Mac mini comes back after a power cut. `mydash forward 22 5900` passes SSH and Screen Sharing through that node, so you can log in to the Mac from anywhere.
 - **Agents on other machines.** A cloud server's agent can publish to the mydash on your Mac with a token (`mydash remote token`); unchanged files are not uploaded twice.
 - **Small on disk.** Files that did not change between versions are stored once; `mydash prune` keeps only the latest versions.
 - **Updates when you say so.** Once a day mydash asks this repository whether there is a new release and, if so, puts an **Update** button in the top bar. Tap it, confirm, and watch the progress bar; when it is done, **OK** reloads the page. If the new version does not start, it goes back to the old one by itself. In settings you can have it install at night instead, or stop checking.
-- **Agents that know about it.** `mydash integrate claude` and `mydash integrate codex` add two short rules, a skill, the permissions they need and the hooks that bring their questions here. Every change is marked and can be undone with `--remove`; updating mydash keeps them current.
+- **Agents that know about it.** `mydash integrate claude` and `mydash integrate codex` add two short rules, a skill, the permissions they need and the hooks that bring their questions here. Codex asks once to allow the hooks: tap **Allow** on the home page. Every change is marked and can be undone with `--remove`; updating mydash keeps them current, permission included.
 
 ## Why not Claude Code Artifacts?
 

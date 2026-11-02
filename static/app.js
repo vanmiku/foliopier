@@ -898,6 +898,46 @@
   // 打开页面时正在更新（夜里自动装、别的设备点的）：后台跟着，装完弹出结果
   if ($('.upd-top.running')) updApi().then(s => { updSince = s.last?.at || ''; if (s.latest?.version) updTo = s.latest.version; if (s.running) updTrack(); }).catch(() => {});
 
+  // ---------- 首页「等你处理」里的两件：允许 Codex 的钩子；开机就启动（弹 macOS 的密码框）----------
+  const setupApi = async (action) => {
+    const r = await fetch('/api/setup', action ? { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Mydash': '1' }, body: JSON.stringify({ action }) } : { cache: 'no-store' });
+    const j = await r.json().catch(() => ({})); if (!r.ok) { const e = new Error('HTTP ' + r.status); e.body = j; throw e; }
+    return j;
+  };
+  const setupDialog = (title, text, go) => modal(`<div class="upd-dlg"><h3>${escH(title)}</h3>${text.map(p => `<p>${escH(p)}</p>`).join('')}
+    <div class="upd-dlg-acts"><button type="button" class="upd-btn quiet" data-close>${escH(T('Not now'))}</button><button type="button" class="upd-btn" data-setup-go>${escH(go)}</button></div></div>`);
+  async function bootWait(dlg) {
+    // 换成开机启动时服务会重启一下，问不通就接着等
+    for (let i = 0; i < 200; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      let s; try { s = await setupApi(); } catch { continue; }
+      if (s.boot.running) continue;
+      const last = s.boot.last; const ok = !s.boot.pending;
+      const msg = ok ? T('mydash now starts at boot, before anyone logs in.') : last?.canceled ? T('Cancelled. Nothing was changed.') : T('That did not work: {err}', { err: last?.error || '?' });
+      $('.ad-body', dlg).innerHTML = `<div class="upd-dlg ${ok ? 'upd-ok' : 'upd-bad'}"><h3>${escH(msg)}</h3>${ok || last?.canceled ? '' : `<p>${escH(T('You can also run this once on the Mac:'))}</p><pre class="upd-cmd"><code>sudo ~/.local/bin/mydash service boot</code></pre>`}
+        <div class="upd-dlg-acts"><button type="button" class="upd-btn" data-close>${escH(T('OK@@reload'))}</button></div></div>`;
+      $('[data-close]', dlg).addEventListener('click', () => dlg.close());
+      dlg.addEventListener('close', () => location.reload(), { once: true });
+      return;
+    }
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-setup]'); if (!b || b.disabled) return;
+    const act = b.dataset.setup;
+    const dlg = act === 'codex-trust'
+      ? setupDialog(T('Allow the mydash hooks in Codex?'), [T('They let Codex send its choice questions and command approvals to mydash as well, and note when it is busy. New Codex sessions use them; when mydash updates them later, your permission carries over.')], T('Allow'))
+      : setupDialog(T('Start mydash at boot?'), [T('This needs an administrator. When you continue, macOS shows its password prompt on this Mac’s screen; type your login password there. mydash never sees it.'), T('Not at the Mac? Use Screen Sharing, or tap this again when you are back.')], T('Continue'));
+    $('[data-setup-go]', dlg).addEventListener('click', async ev => {
+      const go = ev.currentTarget; go.disabled = true;
+      try { await setupApi(act); }
+      catch { go.disabled = false; toast(T('That did not work. Try again in a moment.')); return; }
+      if (act === 'codex-trust') { dlg.close(); toast(T('Allowed. New Codex sessions use mydash.')); refreshList().catch(() => {}); return; }
+      $('.ad-body', dlg).innerHTML = `<div class="upd-dlg"><h3>${escH(T('Type your password on the Mac'))}</h3><div class="upd-prog" role="progressbar" aria-label="${escH(T('Waiting'))}"><i style="width:100%"></i></div><p>${escH(T('A macOS password prompt is open on this Mac’s screen. mydash restarts once it is done.'))}</p></div>`;
+      dlg.setAttribute('aria-busy', 'true');
+      bootWait(dlg).finally(() => dlg.removeAttribute('aria-busy'));
+    });
+  });
+
   // ---------- 设置页：改了就自动保存；推送渠道可以加好几个，每个单独开关、试发、改、删 ----------
   const setForm = $('#set-form');
   if (setForm) {

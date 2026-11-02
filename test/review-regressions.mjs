@@ -58,3 +58,18 @@ test('concurrent retries save one approval, and a deliberate edit saves a new an
   assert.notEqual(edit.id, a.id);
   assert.equal(readResponses('test', 'approval').approvals.length, 2);
 });
+
+test('a node found in a versioned Homebrew Cellar folder is written as the stable link to the same file', { skip: process.platform === 'win32' }, async () => {
+  const { nodePath } = await import('../lib/sys.mjs');
+  const cellar = path.join(home, 'Cellar', 'node', '25.8.0', 'bin'), bin = path.join(home, 'bin');
+  fs.mkdirSync(cellar, { recursive: true }); fs.mkdirSync(bin, { recursive: true });
+  fs.writeFileSync(path.join(cellar, 'node'), '#!/bin/sh\n', { mode: 0o755 });
+  fs.symlinkSync(path.join(cellar, 'node'), path.join(bin, 'node'));
+  const saved = process.env.PATH;
+  try {
+    process.env.PATH = [cellar, bin].join(path.delimiter);  // 服务里的 PATH：node 所在的 Cellar 目录排在前面
+    assert.equal(nodePath(), path.join(bin, 'node'));
+    process.env.PATH = cellar;  // 找不到指向同一个文件的固定路径：就用找到的那个
+    if (!['/opt/homebrew/bin/node', '/usr/local/bin/node'].some(p => { try { return fs.realpathSync(p) === fs.realpathSync(path.join(cellar, 'node')); } catch { return false; } })) assert.equal(nodePath(), path.join(cellar, 'node'));
+  } finally { process.env.PATH = saved; }
+});
