@@ -102,7 +102,7 @@ mydash doctor
 - **Back after a restart, no login needed (macOS).** With `--service launchd-boot`, mydash and its Tailscale node start at boot, before anyone logs in, so a headless Mac mini comes back after a power cut. `mydash forward 22 5900` passes SSH and Screen Sharing through that node, so you can log in to the Mac from anywhere.
 - **Agents on other machines.** A cloud server's agent can publish to the mydash on your Mac with a token (`mydash remote token`); unchanged files are not uploaded twice.
 - **Small on disk.** Files that did not change between versions are stored once; `mydash prune` keeps only the latest versions.
-- **Updates when you say so.** Once a day mydash asks this repository whether there is a new release and, if so, shows it at the top of the home page. One tap installs it; if the new version does not start, it goes back to the old one by itself. In settings you can have it install at night instead, or stop checking.
+- **Updates when you say so.** Once a day mydash asks this repository whether there is a new release and, if so, puts an **Update** button in the top bar. Tap it, confirm, and watch the progress bar; when it is done, **OK** reloads the page. If the new version does not start, it goes back to the old one by itself. In settings you can have it install at night instead, or stop checking.
 - **Agents that know about it.** `mydash integrate claude` and `mydash integrate codex` add two short rules, a skill, the permissions they need and the hooks that bring their questions here. Every change is marked and can be undone with `--remove`; updating mydash keeps them current.
 
 ## Why not Claude Code Artifacts?
@@ -158,7 +158,7 @@ Your agent runs most of these; you rarely need them yourself.
 | `mydash forward 22 5900` · `mydash forward off` | pass SSH / Screen Sharing through mydash's own Tailscale node |
 | `mydash doctor [--json]` | check that everything works, with fixes |
 | `mydash integrate claude\|codex [--dry-run] [--remove] [--no-hooks]` | set up an agent to use mydash |
-| `mydash update [--check]` · `mydash uninstall [--purge]` | update to the latest release (mydash also tells you on the home page), remove |
+| `mydash update [--check]` · `mydash uninstall [--purge]` | update to the latest release (the top bar also shows an Update button), remove |
 
 ## Status
 

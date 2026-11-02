@@ -125,7 +125,7 @@ mydash doctor
 - **重启后不用登录就能用（macOS）。** 装的时候加 `--service launchd-boot`，mydash 和它的 Tailscale 节点开机就启动，不用等人登录：放在家里的 Mac mini 停电重启后照样能连。`mydash forward 22 5900` 让这个节点转发 SSH 和屏幕共享，在外面也能连回这台 Mac 登录。
 - **其他机器上的 agent 也能发。** 云服务器上的 agent 带着令牌（`mydash remote token`），就能发到你 Mac 上的 mydash；没变的文件不会重复上传。
 - **省空间。** 版本之间没变的文件只存一份；`mydash prune` 只保留最近几个版本。
-- **更新由你决定。** mydash 每天问一次这个仓库有没有新的正式版本，有的话显示在首页顶上，点一下就装好；新版本起不来会自己退回旧版本。在设置里也可以改成夜里自动装，或者不再检查。
+- **更新由你决定。** mydash 每天问一次这个仓库有没有新的正式版本，有的话顶栏会出现「更新」按钮。点一下、确认，就能看着进度条装好，装完点「确定」刷新页面；新版本起不来会自己退回旧版本。在设置里也可以改成夜里自动装，或者不再检查。
 - **agent 自己会用。** `mydash integrate claude` 和 `mydash integrate codex` 会写进两小段规则、一个 skill、需要的权限，以及把它们的提问带到这里的钩子。所有改动都带标记，用 `--remove` 可以原样撤销；更新 mydash 时会一起更新。
 
 ## 和 Claude Code Artifacts 有什么不同？
@@ -186,7 +186,7 @@ mydash 只在本机监听（开了局域网访问后，也在局域网里监听�
 | `mydash forward 22 5900` · `mydash forward off` | 让 mydash 自己的 Tailscale 节点转发 SSH、屏幕共享 |
 | `mydash doctor [--json]` | 检查是否正常，并给出修法 |
 | `mydash integrate claude\|codex [--dry-run] [--remove] [--no-hooks]` | 让 agent 用上 mydash |
-| `mydash update [--check]` · `mydash uninstall [--purge]` | 更新到最新的正式版本（有新版本时首页也会提醒）、卸载 |
+| `mydash update [--check]` · `mydash uninstall [--purge]` | 更新到最新的正式版本（有新版本时顶栏也会出现「更新」按钮）、卸载 |
 
 ## 状态
 

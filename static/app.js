@@ -400,7 +400,6 @@
     if (doc.body.dataset.display) body.dataset.display = doc.body.dataset.display;
     updateBadge(); bindRename(); bindTitle();
     bindList();
-    if ($('#upd-bar.upd-running')) waitForUpdate();
     if (openFilters) { $('.list-tools')?.classList.add('open'); $('.filter-btn')?.setAttribute('aria-expanded', 'true'); }
     for (const [id, open] of expanded) { const el = document.getElementById(id); if (el) el.open = open; }
     restore(main);
@@ -796,31 +795,108 @@
     document.addEventListener('mydash-prompt', e => { if (e.detail?.id === prData.id && prData.status === 'pending') location.reload(); });
   }
 
-  // ---------- 新版本：首页顶上那条和设置页里的按钮。点「更新」后服务会重启，一直问到它回来、不在更新了，再刷新页面 ----------
-  let waitingUpdate = false;
-  async function waitForUpdate() {
-    if (waitingUpdate) return; waitingUpdate = true;
+  // ---------- 新版本：顶栏的「更新」按钮 → 确认 → 进度条 → 结果，点「确定」刷新 ----------
+  // 更新进程把走到哪一步记在 running.stage；服务重启那一会儿问不通，算「正在重启」
+  const UPD_STAGES = {
+    queued: [3, 10, T('Starting…')], fetch: [10, 24, T('Downloading the new version…')], switch: [24, 38, T('Switching to the new version…')],
+    deps: [38, 62, T('Installing dependencies…')], install: [62, 80, T('Installing and restarting mydash…')], restart: [80, 90, T('mydash is restarting…')],
+    check: [90, 97, T('Checking that it works…')], rollback: [70, 95, T('That did not work. Going back to the old version…')],
+  };
+  const updApi = async (action) => {
+    const r = await fetch('/api/update', action ? { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Mydash': '1' }, body: JSON.stringify({ action }) } : { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  };
+  let updDlg = null, updTracking = false, updSince = '', updPct = 0, updStage = 'queued', updTo = '';
+  function updDialog(html) {
+    if (updDlg?.open) { $('.ad-body', updDlg).innerHTML = html; for (const b of $$('[data-close]', updDlg)) b.addEventListener('click', () => updDlg.close()); }
+    else { updDlg = modal(html); updDlg.classList.add('upd-dialog'); }
+    return updDlg;
+  }
+  function updTop(running) {
+    const b = $('.upd-top'); if (!b) return;
+    b.classList.toggle('running', running); $('span', b).textContent = running ? T('Updating…') : T('Update');
+  }
+  function updPaint() {
+    if (!updDlg?.open) return;
+    const bar = $('.upd-prog', updDlg); if (!bar) return;
+    bar.setAttribute('aria-valuenow', String(Math.round(updPct))); $('i', bar).style.width = updPct.toFixed(1) + '%';
+    $('.upd-stage', updDlg).textContent = UPD_STAGES[updStage][2];
+  }
+  function updProgress() {
+    updDialog(`<div class="upd-dlg"><h3>${escH(T('Updating to {v}', { v: updTo }))}</h3>
+      <div class="upd-prog" role="progressbar" aria-label="${escH(T('Update progress'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+      <p class="upd-stage" aria-live="polite"></p><p class="upd-hint">${escH(T('You can close this; the update carries on and this window comes back when it is done.'))}</p>
+      <div class="upd-dlg-acts"><button type="button" class="upd-btn quiet" data-close>${escH(T('Hide'))}</button></div></div>`);
+    updPaint();
+  }
+  function updResult(last) {
+    const ok = Boolean(last?.ok);
+    const notes = ok ? last.human || [] : [last?.error || T('The update stopped without a result. See ~/.mydash/logs/update.log.')];
+    const dlg = updDialog(`<div class="upd-dlg ${ok ? 'upd-ok' : 'upd-bad'}" role="status"><h3>${escH(ok ? T('mydash was updated to {v}.', { v: last.to }) : T('mydash could not update to {v}.', { v: last?.to || updTo || '?' }))}</h3>
+      ${ok ? '<div class="upd-prog done" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><i style="width:100%"></i></div>' : ''}
+      ${notes.length ? `<ul class="upd-notes">${notes.map(n => `<li>${escH(n)}</li>`).join('')}</ul>` : ''}
+      ${ok && last.url ? `<a class="upd-link" href="${escH(last.url)}" target="_blank" rel="noopener">${escH(T('What’s new'))}</a>` : ''}
+      <p class="upd-hint">${escH(T('Press OK to reload the page.'))}</p>
+      <div class="upd-dlg-acts"><button type="button" class="upd-btn" data-upd-ok>${escH(T('OK@@reload'))}</button></div></div>`);
+    // 不管怎么关掉，都记成看过并刷新，换上新版本的页面
+    const done = async () => { try { await updApi('seen'); } catch {} location.reload(); };
+    $('[data-upd-ok]', dlg).addEventListener('click', () => dlg.close());
+    dlg.addEventListener('close', done, { once: true });
+  }
+  async function updTrack() {
+    updTop(true);
+    if (updTracking) return; updTracking = true;
+    let down = false, idle = 0;
     for (;;) {
-      await new Promise(r => setTimeout(r, 2500));
-      try { const r = await fetch('/api/update', { cache: 'no-store' }); if (r.ok && !(await r.json()).running) { location.reload(); return; } } catch {}
+      let s = null;
+      try { s = await updApi(); } catch { down = true; }
+      if (s) {
+        if (s.latest?.version) updTo = s.latest.version;
+        if (s.running) { idle = 0; const st = s.running.stage || 'queued'; updStage = st === 'install' && down ? 'check' : UPD_STAGES[st] ? st : 'queued'; }
+        else if (s.last && s.last.at !== updSince) { updTracking = false; updResult(s.last); return; }
+        else if (++idle >= 3) { updTracking = false; updResult(null); return; }
+      } else if (updStage !== 'rollback') updStage = 'restart';
+      const [a, b] = UPD_STAGES[updStage];
+      updPct = Math.max(updPct, a); updPct += (b - updPct) * 0.12;
+      updPaint();
+      await new Promise(r => setTimeout(r, 1500));
     }
   }
-  // 首页列表实时刷新时会换掉这条，所以点击挂在 document 上
+  async function updOpen() {
+    if (updDlg?.open) return;
+    let s; try { s = await updApi(); } catch { toast(T('That did not work. Try again in a moment.')); return; }
+    if (s.latest?.version) updTo = s.latest.version;
+    if (s.running) { if (!updTracking) updSince = s.last?.at || ''; updProgress(); updTrack(); return; }
+    if (!s.available) { toast(T('mydash is up to date ({v}).', { v: s.current })); updTop(false); return; }
+    const news = s.latest.url ? `<a class="upd-link" href="${escH(s.latest.url)}" target="_blank" rel="noopener">${escH(T('What’s new in {v}', { v: s.latest.version }))}</a>` : '';
+    const body = s.canUpdate
+      ? `<p>${escH(T('You have {cur}. Updating takes a minute or two and mydash restarts by itself. If the new version does not start, it goes back to {cur}.', { cur: s.current }))}</p>${news}
+        <div class="upd-dlg-acts"><button type="button" class="upd-btn quiet" data-close>${escH(T('Not now'))}</button><button type="button" class="upd-btn" data-upd-go>${escH(T('Update'))}</button></div>`
+      : `<p>${escH(T('This copy cannot update itself from the page. On the computer running mydash, run:'))}</p><pre class="upd-cmd"><code>mydash update</code></pre>${news}
+        <div class="upd-dlg-acts"><button type="button" class="upd-btn quiet" data-close>${escH(T('Close'))}</button></div>`;
+    const dlg = updDialog(`<div class="upd-dlg"><h3>${escH(T('Update mydash to {v}?', { v: s.latest.version }))}</h3>${body}</div>`);
+    $('[data-upd-go]', dlg)?.addEventListener('click', async e => {
+      const go = e.currentTarget; go.disabled = true;
+      updSince = s.last?.at || '';
+      try { await updApi('start'); } catch { go.disabled = false; toast(T('That did not work. Try again in a moment.')); return; }
+      updPct = 0; updStage = 'queued'; updProgress(); updTrack();
+    });
+  }
+  // 按钮在顶栏、设置页和首页那条里；首页列表实时刷新会换掉那条，所以点击挂在 document 上
   document.addEventListener('click', async e => {
     const b = e.target.closest('[data-upd]'); if (!b || b.disabled) return;
-    const act = b.dataset.upd; b.disabled = true;
+    const act = b.dataset.upd;
+    if (act === 'open') { updOpen(); return; }
+    b.disabled = true;
     try {
-      const r = await fetch('/api/update', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Mydash': '1' }, body: JSON.stringify({ action: act }) });
-      if (!r.ok) { toast(T('That did not work. Try again in a moment.')); b.disabled = false; return; }
+      await updApi(act);
       if (act === 'seen') { $('#upd-bar')?.remove(); return; }
-      if (act === 'check') { location.reload(); return; }
-      const bar = $('#upd-bar');
-      if (bar) { bar.className = 'upd-bar upd-running'; $('.upd-t', bar).textContent = T('Updating mydash… This page comes back by itself in a minute or two.'); $('.upd-acts', bar).remove(); }
-      else toast(T('Updating mydash… This page comes back by itself in a minute or two.'), 120_000);
-      waitForUpdate();
+      if (act === 'check') location.reload();
     } catch { toast(T('That did not work. Try again in a moment.')); b.disabled = false; }
   });
-  if ($('#upd-bar.upd-running')) waitForUpdate();
+  // 打开页面时正在更新（夜里自动装、别的设备点的）：后台跟着，装完弹出结果
+  if ($('.upd-top.running')) updApi().then(s => { updSince = s.last?.at || ''; if (s.latest?.version) updTo = s.latest.version; if (s.running) updTrack(); }).catch(() => {});
 
   // ---------- 设置页：改了就自动保存；推送渠道可以加好几个，每个单独开关、试发、改、删 ----------
   const setForm = $('#set-form');

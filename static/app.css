@@ -1146,3 +1146,33 @@ mark.cm-hl { background: var(--pin-soft); color: inherit; border-bottom: 2px sol
 .set-upd-state a { color: var(--accent); text-decoration: none; }
 .set-upd-btns { display: flex; gap: 8px; margin-top: 14px; }
 .set-upd-btns .upd-go { background: var(--accent-solid); border-color: var(--accent-solid); color: #fff; }
+/* 顶栏的「更新」：实心胶囊加一个红点，比首页那条更显眼；正在更新时转圈 */
+.upd-top { position: relative; flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; margin-left: auto; padding: 0 13px 0 10px; border: 0; border-radius: 999px; background: var(--accent-solid); color: #fff; font: 600 13px/1 var(--sans); white-space: nowrap; cursor: pointer; box-shadow: 0 0 0 3px var(--accent-soft); -webkit-tap-highlight-color: transparent; }
+.upd-top:hover { filter: brightness(1.1); }
+.upd-top .ic { width: 16px; height: 16px; stroke-width: 2.1; }
+.upd-top + .lang-btn { margin-left: 0; }
+.upd-dot { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--unread-solid); box-shadow: 0 0 0 2px var(--bg); animation: upd-pulse 2.4s ease-out infinite; }
+.upd-top.running { background: var(--accent-soft); color: var(--accent); box-shadow: none; }
+.upd-top.running .ic { animation: upd-spin 1.2s linear infinite; }
+.upd-top.running .upd-dot { display: none; }
+@keyframes upd-pulse { 0% { box-shadow: 0 0 0 2px var(--bg), 0 0 0 2px color-mix(in srgb, var(--unread-solid) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 2px var(--bg), 0 0 0 9px transparent; } }
+@media (prefers-reduced-motion: reduce) { .upd-dot, .upd-top.running .ic, .upd-prog i::after { animation: none; } }
+@media (max-width: 380px) { .upd-top { padding: 0 9px; } }
+/* 更新的弹窗：确认、进度、结果 */
+.upd-dlg h3 { margin: 0 0 10px; font-size: 17px; line-height: 1.35; letter-spacing: -.01em; }
+.upd-dlg p { margin: 0 0 10px; font-size: 14px; line-height: 1.55; color: var(--text-2); }
+.upd-dlg .upd-link { display: inline-block; margin: 2px 0 6px; font-size: 14px; }
+.upd-dlg .upd-notes { margin: 4px 0 10px; font-size: 13.5px; line-height: 1.55; }
+.upd-dlg .upd-stage { margin-bottom: 4px; color: var(--text); font-weight: 550; }
+.upd-dlg .upd-hint { font-size: 12.5px; color: var(--text-3); }
+.upd-dlg-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.upd-dlg-acts .upd-btn { height: 36px; min-width: 76px; padding: 0 16px; font-size: 14px; }
+.upd-cmd { margin: 0 0 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); font: 13px/1.4 var(--mono); }
+.upd-prog { position: relative; height: 8px; margin: 16px 0 12px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+.upd-prog i { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: inherit; background: var(--accent-solid); transition: width 1.4s ease-out; overflow: hidden; }
+.upd-prog i::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .38), transparent); transform: translateX(-100%); animation: upd-sheen 1.6s ease-in-out infinite; }
+.upd-prog.done i { background: var(--ok); }
+.upd-prog.done i::after { display: none; }
+.upd-ok h3 { color: var(--ok); }
+.upd-bad h3 { color: var(--unread); }
+@keyframes upd-sheen { to { transform: translateX(100%); } }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 (2026-11-02)
+
+- New versions show as an **Update** button in the top bar of every page, instead of a line on the home page. Tapping it asks first, then shows a progress bar through each step (download, dependencies, restart, check); when it is done, **OK** reloads the page. Settings → Updates opens the same window. The home page still reports the result of a night-time or command-line update.
+
 ## 0.1.2 (2026-11-02)
 
 No data migration or new runtime dependencies are needed; the update notice on the home page installs it.

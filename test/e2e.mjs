@@ -117,16 +117,18 @@ try {
   const seen = await post({ action: 'check' });
   ok(`sees v${next} in the repository`, seen.available && seen.latest?.version === next, JSON.stringify(seen).slice(0, 300));
   await post({ action: 'start' });
-  let st = {};
-  for (let i = 0; i < 150; i++) {
-    await sleep(2000);
+  let st = {}; const stages = new Set();
+  for (let i = 0; i < 600; i++) {
+    await sleep(500);
     const r = await get(`${B}/api/update`);
     try { st = JSON.parse(r.text); } catch { continue; }
+    if (st.running?.stage) stages.add(st.running.stage);
     if (st.current === next && !st.running) break;
   }
   const ulog = (() => { try { return fs.readFileSync(path.join(env.MYDASH_HOME, 'logs', 'update.log'), 'utf8').slice(-1500); } catch { return 'no update.log'; } })();
   ok(`one-tap update installs v${next} and the service comes back`, st.current === next && st.last?.ok === true, JSON.stringify(st).slice(0, 400) + '\n' + ulog);
   ok('page still answers after the update', (await get(`${B}/healthz`)).status === 200);
+  ok('the page can show how far the update got', stages.size > 0 && [...stages].every(x => ['fetch', 'switch', 'deps', 'install', 'rollback'].includes(x)), [...stages].join(', ') || 'no stage seen');
 
   console.log('uninstall');
   const un = json(mydash(['uninstall', '--purge', '--json']));

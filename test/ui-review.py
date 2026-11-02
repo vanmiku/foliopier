@@ -372,7 +372,7 @@ class ReviewUI(unittest.TestCase):
         self.page.wait_for_function('() => document.querySelector("#waiting-more").open')
         self.page.locator('#waiting-more > summary').click(); self.shot('waiting-mobile')
 
-    def test_update_button_works_after_live_refresh(self):
+    def test_update_from_the_top_bar_shows_progress_and_reloads(self):
         config_path, state = self.home / 'config.json', self.home / 'state' / 'update.json'
         config = config_path.read_text()
         state.parent.mkdir(exist_ok=True)
@@ -381,19 +381,39 @@ class ReviewUI(unittest.TestCase):
                 'source': str(self.tmp / 'no-source'), 'sourceRemote': 'https://example.invalid/mydash.git'}))
             state.write_text(json.dumps({'checkedAt': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
                 'latest': {'version': '99.0.0', 'tag': 'v99.0.0', 'url': None}}))
-            started = []
-            # 不真的更新：只看点了以后有没有发出请求
+            # 不真的更新：模拟更新进程依次走过几个阶段、服务重启时断一下、最后装好
+            base = {'current': '0.0.1', 'latest': {'version': '99.0.0', 'tag': 'v99.0.0', 'url': None}, 'available': True,
+                    'mode': 'notify', 'canCheck': True, 'canUpdate': True, 'running': None, 'last': None}
+            steps = ['fetch', 'deps', 'install', 'down', 'done']
+            posted = []
             def answer(route):
-                if route.request.method == 'POST' and json.loads(route.request.post_data)['action'] == 'start':
-                    started.append(1); return route.fulfill(status=200, content_type='application/json', body='{"ok":true}')
-                return route.continue_()
+                if route.request.method == 'POST':
+                    posted.append(json.loads(route.request.post_data)['action'])
+                    return route.fulfill(status=200, content_type='application/json', body='{"ok":true}')
+                if 'start' not in posted:
+                    return route.fulfill(status=200, content_type='application/json', body=json.dumps(base))
+                step = steps.pop(0) if len(steps) > 1 else steps[0]
+                if step == 'down': return route.abort('connectionrefused')
+                if step == 'done':
+                    body = {**base, 'available': False, 'last': {'ok': True, 'at': '2030-01-01T00:00:00Z', 'to': '99.0.0', 'human': [], 'url': None, 'seen': False}}
+                else:
+                    body = {**base, 'running': {'pid': 1, 'startedAt': '2030-01-01T00:00:00Z', 'stage': step}}
+                return route.fulfill(status=200, content_type='application/json', body=json.dumps(body))
             self.page.route('**/api/update', answer)
-            self.go('/'); self.page.wait_for_selector('#upd-bar [data-upd=start]')
+            self.go('/settings'); self.assertEqual(self.page.locator('.upd-top').count(), 1)
+            self.go('/')
             self.publish('arrives-live', '# Arrives live\n\nNew while the page is open.')
             self.page.wait_for_selector('.entry[data-id="test/arrives-live"]')
-            self.page.locator('#upd-bar [data-upd=start]').click()
-            self.page.wait_for_selector('#upd-bar.upd-running')
-            self.assertEqual(started, [1])
+            self.page.locator('.upd-top').click()
+            self.page.locator('[data-upd-go]').click()
+            self.page.wait_for_selector('.upd-prog[role=progressbar]')
+            self.assertIn('running', self.page.locator('.upd-top').get_attribute('class'))
+            self.page.wait_for_function('() => Number(document.querySelector(".upd-prog")?.getAttribute("aria-valuenow")) > 10')
+            self.page.wait_for_selector('[data-upd-ok]', timeout=20000)
+            self.assertIn('99.0.0', self.page.locator('.upd-dlg h3').inner_text())
+            with self.page.expect_navigation():
+                self.page.locator('[data-upd-ok]').click()
+            self.assertEqual(posted, ['start', 'seen'])
         finally:
             config_path.write_text(config); state.unlink(missing_ok=True)
 

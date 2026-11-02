@@ -1150,10 +1150,14 @@ OLD=$(git -C "$UG/src" rev-parse HEAD)
 node -e 'const f=process.argv[1],c=JSON.parse(require("fs").readFileSync(f,"utf8"));c.source=process.argv[2];c.sourceRemote=process.argv[3];require("fs").writeFileSync(f,JSON.stringify(c))' "$MYDASH_HOME/config.json" "$UG/src" "$UG/origin.git"
 check "设置页能看有没有新版本：问远端的标签" "POSTJ -H 'X-Mydash: 1' -d '{\"action\":\"check\"}' '$B/api/update' >/dev/null; curl -s '$B/api/update' | node -e 'const s=JSON.parse(require(\"fs\").readFileSync(0));process.exit(s.available&&s.latest.version===\"99.0.0\"&&s.canUpdate?0:1)'"
 check "mydash update --check 也看得到" "$CLI update --check --json | grep -q '\"available\":true'"
-check "首页顶上出现「可以更新了」和更新按钮" "curl -s '$B/' | grep -q 'upd-available' && curl -s '$B/' | grep -q 'data-upd=\"start\"'"
+check "顶栏出现「更新」按钮，每个页面都有" "curl -s '$B/' | grep -q 'class=\"upd-top\" data-upd=\"open\"' && curl -s '$B/settings' | grep -q 'class=\"upd-top\"' && curl -s '$B/today' | grep -q 'class=\"upd-top\"'"
+check "首页不再另起一条「可以更新了」" "! curl -s '$B/' | grep -q 'upd-available'"
+check "设置页的「立即更新」也打开同一个弹窗" "curl -s '$B/settings' | grep -q 'class=\"act upd-go\" data-upd=\"open\"'"
 check "设置页有更新一栏" "curl -s '$B/settings' | grep -q 'id=\"update\"'"
 check "doctor 里有版本这一行" "$CLI doctor --json | grep -q '可以更新到 99.0.0'"
 check "设置：有新版本时怎么做（只认三种）" "test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"updateMode\":\"auto\"}' '$B/api/settings')\" = 200 && grep -q '\"mode\": \"auto\"' '$MYDASH_HOME/config.json' && test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"updateMode\":\"weekly\"}' '$B/api/settings')\" = 400"
+POSTJ -H 'X-Mydash: 1' -d '{"updateMode":"off"}' "$B/api/settings" >/dev/null
+check "选了「什么都不做」：顶栏不显示更新按钮" "! curl -s '$B/' | grep -q 'class=\"upd-top'"
 POSTJ -H 'X-Mydash: 1' -d '{"updateMode":"notify"}' "$B/api/settings" >/dev/null
 check "开始更新要带 X-Mydash 头" "test \"\$(POSTJ -d '{\"action\":\"start\"}' '$B/api/update')\" = 403"
 # 真的点「更新」：更新进程和服务脱开跑；这个假仓库里没有 package.json，装不上，源码目录要退回原来的版本
@@ -1161,7 +1165,7 @@ POSTJ -H 'X-Mydash: 1' -d '{"action":"start"}' "$B/api/update" >/dev/null
 for i in $(seq 1 120); do curl -s "$B/api/update" | grep -q '"last":{' && ! curl -s "$B/api/update" | grep -q '"running":{' && break; sleep 0.5; done
 check "更新失败：记下结果，说明退回了" "curl -s '$B/api/update' | node -e 'const s=JSON.parse(require(\"fs\").readFileSync(0));process.exit(!s.running&&s.last&&s.last.ok===false&&s.last.rolledBack&&s.last.to===\"99.0.0\"&&!s.last.seen?0:1)'"
 check "更新失败：源码目录退回原来的提交，还在分支上" "[ \"\$(git -C '$UG/src' rev-parse HEAD)\" = '$OLD' ] && git -C '$UG/src' symbolic-ref -q HEAD >/dev/null"
-check "首页显示更新失败" "curl -s '$B/' | grep -q 'upd-failed'"
+check "首页显示更新失败，顶栏不再转圈" "curl -s '$B/' | grep -q 'upd-failed' && ! curl -s '$B/' | grep -q 'upd-top running'"
 check "点「知道了」收起结果" "POSTJ -H 'X-Mydash: 1' -d '{\"action\":\"seen\"}' '$B/api/update' >/dev/null && ! curl -s '$B/' | grep -q 'upd-failed'"
 git -C "$UG/src" -c user.name=t -c user.email=t@t commit -q --allow-empty -m mine
 check "源码目录里有自己的提交：不动它" "! $CLI update --json > '$UG/div.json' && grep -q 'v99.0.0' '$UG/div.json' && git -C '$UG/src' log -1 --format=%s | grep -qx mine"
