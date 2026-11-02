@@ -238,7 +238,7 @@ function mergeChannel(type, input, old, clear = []) {
 }
 function broadcast(event, data) { const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`; for (const c of clients) c.write(msg); }
 
-// 新版本：每小时看一眼（真正去问远端 20 小时才一次）。有新版本时推送一次；设置成自动的，夜里 3–5 点装上。
+// 新版本：每 15 分钟看一眼，远端结果缓存 1 小时。有新版本时推送一次；自动更新仍在夜里 3–5 点。
 // 自动更新完、新的服务起来以后，把结果推送给用户（手动点的在网页上就看到了）
 async function updateTick() {
   const c = readConfig(); if (c.client) return;
@@ -260,7 +260,7 @@ async function updateTick() {
   if (hour >= 3 && hour < 5) { writeUpdate(x => ({ ...x, autoTried: v })); const r = startUpdate({ auto: true }); console.log(new Date().toISOString(), `automatic update to ${v}: ${r.ok ? 'started' : r.error}`); }
 }
 setTimeout(() => updateTick().catch(e => console.log(new Date().toISOString(), 'update check:', e.message)), 60_000).unref();
-setInterval(() => updateTick().catch(e => console.log(new Date().toISOString(), 'update check:', e.message)), 3600_000).unref();
+setInterval(() => updateTick().catch(e => console.log(new Date().toISOString(), 'update check:', e.message)), 15 * 60_000).unref();
 
 // install.sh 更新代码后 touch 这个文件，服务自行退出、由 launchd 拉起新代码（系统级模式下不需要 sudo）
 const RESTART_FLAG = path.join(APP, '.restart');

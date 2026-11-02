@@ -26,7 +26,7 @@ This file is for coding agents changing mydash itself. To install mydash for a u
 | `lib/search.mjs` | Full-text search over the latest versions |
 | `lib/notify.mjs`, `lib/pushguide.mjs` | Notification channels (Bark, ntfy, Telegram, Pushover, group webhooks, email, web push) and the daily summary; the step-by-step setup guide for each channel on the settings page |
 | `lib/actions.mjs` | The two setup steps the home page does with one tap: allowing the mydash hooks in Codex (`trustCodexHooks()` in `lib/integrate.mjs` writes Codex's fingerprint) and starting at boot on macOS (the macOS password prompt runs `mydash service boot`) |
-| `lib/update.mjs` | Updates: the daily check against the source repository's release tags, the state in `state/update.json`, starting an update from the page so it outlives the service restart. `mydash update` itself is in `lib/setup.mjs` |
+| `lib/update.mjs`, `lib/dependencies.mjs` | Updates: hourly checks against the source repository's release tags, the state in `state/update.json`, validated dependency reuse and starting an update from the page so it outlives the service restart. `mydash update` itself is in `lib/setup.mjs` |
 | `lib/remote.mjs` | Publishing from another machine with a token (client, token store); server side is `/api/remote/*` in `server.mjs` |
 | `lib/lan.mjs` | Same-Wi-Fi access with an access code |
 | `lib/maintain.mjs` | `rebuild --dedup`, `rebuild --categories`, `prune` |
@@ -49,6 +49,7 @@ bash test/smoke.sh                # must end with 0 failures; never touches ~/.m
 node test/i18n-check.mjs          # every UI / CLI string has a Chinese translation
 node test/e2e.mjs --service none  # cross-platform install test; CI also runs it on Windows
 node --test test/review-regressions.mjs # approval IDs, retry deduplication, bounded diff
+node --test test/update-release.mjs # dependency reuse/repair, release gates, hourly checks
 python -m pip install -r test/requirements-ui.txt
 python -m playwright install chromium
 python test/ui-review.py         # isolated browser regressions; never touches ~/.mydash
@@ -67,6 +68,8 @@ Services installed outside the default `~/.mydash` get a suffixed name (`mydash.
 ## Releasing
 
 Installed copies only see releases: the tags `vX.Y.Z` (no suffix). A push to `main` reaches nobody until it is tagged; a tag reaches everyone, either as a notice or, for users who chose it, as a night-time install. So tag only what passed CI on all three systems.
+
+The `test` workflow validates pull requests and pushes to `main`. On a push to `main`, after Linux, macOS, both Windows service modes and browser tests all pass, its release job creates the tag and GitHub Release automatically if the package version is newer than every existing stable tag. Keep `package.json`, `package-lock.json` and the matching version section in `CHANGELOG.md` in sync. Release notes come from that section. Existing versions and superseded main commits are skipped; pull requests and manual workflow runs cannot publish. Normal releases only need the version/changelog commit pushed to main. The commands below remain a manual fallback after CI has passed.
 
 ```bash
 npm version 0.1.2 --no-git-tag-version   # package.json and package-lock.json
