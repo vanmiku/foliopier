@@ -454,6 +454,41 @@ class ReviewUI(unittest.TestCase):
         with self.page.expect_navigation():
             self.page.locator('.upd-dlg [data-close]').click()
 
+    def test_boot_interaction_failure_has_an_accurate_message(self):
+        def answer(route):
+            if route.request.method == 'POST':
+                return route.fulfill(status=200, content_type='application/json', body='{"ok":true}')
+            return route.fulfill(status=200, content_type='application/json', body=json.dumps({'codexTrust': 0,
+                'boot': {'pending': True, 'running': False, 'last': {'ok': False, 'error': '管理员用户名或密码不正确。 (-60007)'}}}))
+        self.page.route('**/api/setup', answer); self.go('/?l=zh')
+        self.page.evaluate("document.querySelector('#main').insertAdjacentHTML('afterbegin', '<button type=button data-setup=boot>boot</button>')")
+        self.page.locator('[data-setup=boot]').click(); self.page.locator('[data-setup-go]').click()
+        self.page.wait_for_selector('.upd-dlg.upd-bad')
+        text = self.page.locator('.upd-dlg.upd-bad').inner_text()
+        self.assertIn('macOS 无法打开系统授权窗口', text)
+        self.assertNotIn('密码不正确', text); self.assertNotIn('-60007', text)
+        self.shot('boot-authorization-error-zh')
+
+    def test_boot_without_a_gui_session_can_show_recovery(self):
+        self.page.route('**/api/setup', lambda route: route.fulfill(status=409, content_type='application/json',
+            body='{"ok":false,"error":"interaction-unavailable"}'))
+        self.go('/')
+        self.page.evaluate("document.querySelector('#main').insertAdjacentHTML('afterbegin', '<button type=button data-setup=boot>boot</button>')")
+        self.page.locator('[data-setup=boot]').click(); self.page.locator('[data-setup-go]').click()
+        self.page.wait_for_selector('.upd-dlg.upd-bad')
+        self.assertIn('Sign in or unlock this Mac', self.page.locator('.upd-dlg.upd-bad').inner_text())
+        self.assertIn('mydash service boot', self.page.locator('.upd-cmd').inner_text())
+
+    def test_stale_boot_card_reports_the_service_is_already_set_up(self):
+        self.page.route('**/api/setup', lambda route: route.fulfill(status=409, content_type='application/json',
+            body='{"ok":false,"error":"nothing to do","status":{"boot":{"pending":false,"running":false,"last":null}}}'))
+        self.go('/')
+        self.page.evaluate("document.querySelector('#main').insertAdjacentHTML('afterbegin', '<button type=button data-setup=boot>boot</button>')")
+        self.page.locator('[data-setup=boot]').click(); self.page.locator('[data-setup-go]').click()
+        self.page.wait_for_selector('.upd-dlg.upd-ok')
+        self.assertIn('starts at boot', self.page.locator('.upd-dlg.upd-ok').inner_text())
+        self.assertEqual(self.page.locator('.upd-cmd').count(), 0)
+
     def test_semantic_text_contrast_in_both_themes(self):
         self.publish('color-approval', self.approval(), 'approval'); self.go('/')
         contrast = '''([selector,rootBg])=>{const e=document.querySelector(selector),s=getComputedStyle(e),root=getComputedStyle(document.documentElement);

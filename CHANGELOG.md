@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5 (2026-11-02)
+
+- Already-correct Mac boot services refresh obsolete staged plists, so the home page no longer asks for administrator approval again after an update.
+- Boot authorization runs in the logged-in user's GUI session through a one-shot LaunchAgent. A system daemon no longer tries to open its own password prompt. Passwords remain in the native macOS authorization dialog.
+- Authorization error -60007 is explained as unavailable user interaction instead of a wrong password. Missing GUI sessions and timeouts provide clear recovery steps.
+
 ## 0.1.4 (2026-11-02)
 
 - New versions on main are tagged and released automatically after all platform and browser checks pass. CI cancels superseded runs, caches npm/pip downloads and tests the two Windows service modes in parallel.

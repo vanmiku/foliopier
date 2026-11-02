@@ -31,7 +31,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - run: npm ci --omit=dev
       - run: node test/i18n-check.mjs --missing-only
-      - run: node --test test/review-regressions.mjs test/update-release.mjs
+      - run: node --test test/review-regressions.mjs test/update-release.mjs test/boot-setup.mjs
       - run: bash test/smoke.sh
       - run: node test/e2e.mjs --service none
   windows:
@@ -50,7 +50,7 @@ jobs:
           cache: npm
       - run: npm ci --omit=dev
       - run: node test/i18n-check.mjs --missing-only
-      - run: node --test test/review-regressions.mjs test/update-release.mjs
+      - run: node --test test/review-regressions.mjs test/update-release.mjs test/boot-setup.mjs
       - name: e2e, ${{ matrix.service }} service
         run: node test/e2e.mjs --service ${{ matrix.service }} --port 4890
       - name: setup.cmd entry point

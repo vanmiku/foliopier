@@ -906,20 +906,28 @@
   };
   const setupDialog = (title, text, go) => modal(`<div class="upd-dlg"><h3>${escH(title)}</h3>${text.map(p => `<p>${escH(p)}</p>`).join('')}
     <div class="upd-dlg-acts"><button type="button" class="upd-btn quiet" data-close>${escH(T('Not now'))}</button><button type="button" class="upd-btn" data-setup-go>${escH(go)}</button></div></div>`);
+  function bootResult(dlg, boot) {
+    const last = boot.last; const ok = !boot.pending;
+    const unavailable = last?.code === 'interaction-unavailable' || /-60007\b/.test(last?.error || '');
+    const msg = ok ? T('mydash now starts at boot, before anyone logs in.') : last?.canceled ? T('Cancelled. Nothing was changed.')
+      : unavailable ? T('macOS could not open its authorization prompt. Sign in or unlock this Mac, or run the local command below.')
+      : last?.code === 'timeout' ? T('The authorization request timed out. Try again on this Mac.')
+      : T('That did not work: {err}', { err: last?.error || '?' });
+    $('.ad-body', dlg).innerHTML = `<div class="upd-dlg ${ok ? 'upd-ok' : 'upd-bad'}"><h3>${escH(msg)}</h3>${ok || last?.canceled ? '' : `<p>${escH(T('You can also run this once on the Mac:'))}</p><pre class="upd-cmd"><code>sudo ~/.local/bin/mydash service boot</code></pre>`}
+      <div class="upd-dlg-acts"><button type="button" class="upd-btn" data-close>${escH(T('OK@@reload'))}</button></div></div>`;
+    $('[data-close]', dlg).addEventListener('click', () => dlg.close());
+    dlg.addEventListener('close', () => location.reload(), { once: true });
+  }
   async function bootWait(dlg) {
     // 换成开机启动时服务会重启一下，问不通就接着等
     for (let i = 0; i < 200; i++) {
       await new Promise(r => setTimeout(r, 2000));
       let s; try { s = await setupApi(); } catch { continue; }
       if (s.boot.running) continue;
-      const last = s.boot.last; const ok = !s.boot.pending;
-      const msg = ok ? T('mydash now starts at boot, before anyone logs in.') : last?.canceled ? T('Cancelled. Nothing was changed.') : T('That did not work: {err}', { err: last?.error || '?' });
-      $('.ad-body', dlg).innerHTML = `<div class="upd-dlg ${ok ? 'upd-ok' : 'upd-bad'}"><h3>${escH(msg)}</h3>${ok || last?.canceled ? '' : `<p>${escH(T('You can also run this once on the Mac:'))}</p><pre class="upd-cmd"><code>sudo ~/.local/bin/mydash service boot</code></pre>`}
-        <div class="upd-dlg-acts"><button type="button" class="upd-btn" data-close>${escH(T('OK@@reload'))}</button></div></div>`;
-      $('[data-close]', dlg).addEventListener('click', () => dlg.close());
-      dlg.addEventListener('close', () => location.reload(), { once: true });
+      bootResult(dlg, s.boot);
       return;
     }
+    bootResult(dlg, { pending: true, last: { code: 'timeout' } });
   }
   document.addEventListener('click', e => {
     const b = e.target.closest('[data-setup]'); if (!b || b.disabled) return;
@@ -930,7 +938,14 @@
     $('[data-setup-go]', dlg).addEventListener('click', async ev => {
       const go = ev.currentTarget; go.disabled = true;
       try { await setupApi(act); }
-      catch { go.disabled = false; toast(T('That did not work. Try again in a moment.')); return; }
+      catch (e) {
+        if (act === 'boot' && e.body?.status?.boot?.pending === false) {
+          bootResult(dlg, e.body.status.boot);
+        } else if (act === 'boot' && e.body?.error === 'interaction-unavailable') {
+          bootResult(dlg, { pending: true, last: { code: 'interaction-unavailable' } });
+        } else { go.disabled = false; toast(T('That did not work. Try again in a moment.')); }
+        return;
+      }
       if (act === 'codex-trust') { dlg.close(); toast(T('Allowed. New Codex sessions use mydash.')); refreshList().catch(() => {}); return; }
       $('.ad-body', dlg).innerHTML = `<div class="upd-dlg"><h3>${escH(T('Type your password on the Mac'))}</h3><div class="upd-prog" role="progressbar" aria-label="${escH(T('Waiting'))}"><i style="width:100%"></i></div><p>${escH(T('A macOS password prompt is open on this Mac’s screen. mydash restarts once it is done.'))}</p></div>`;
       dlg.setAttribute('aria-busy', 'true');
