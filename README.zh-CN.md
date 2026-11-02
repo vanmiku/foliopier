@@ -1,16 +1,49 @@
+<div align="center">
+
+<img src="static/icon.svg" width="64" height="64" alt="mydash 图标">
+
 # mydash
 
-[English](README.md) · 中文
+**Claude Code 和 Codex 产物的自托管工作台。**
 
-**编程 agent 产物的自托管工作台。** Claude Code 和 Codex 每天都在写方案、报告、截图、PDF、网页原型和 Office 文件，最后只在终端里留下一串文件路径。用了 mydash，agent 运行 `mydash publish`，你就拿到一个链接，在电脑或手机上直接看排好版的内容。条目按项目归类，有版本记录和未读标记，所有东西都留在你自己的机器上。
+agent 写好的方案、报告、PDF、网页原型和 Office 文件，一条命令发布出来。你在电脑或手机上直接看排好版的内容，在页面上回答 agent 的提问、写批注交回给它。所有东西都留在你自己的机器上。
 
-<p>
-<img src="docs/screenshots/zh-phone-home.png" width="250" alt="手机上的首页">
-<img src="docs/screenshots/zh-phone-doc-dark.png" width="250" alt="深色模式下的 Markdown 方案">
-<img src="docs/screenshots/zh-phone-word.png" width="250" alt="Word 文件的排版预览">
-<img src="docs/screenshots/zh-phone-approval.png" width="250" alt="agent 发来的审批单">
-</p>
-<img src="docs/screenshots/zh-desktop-html.png" width="770" alt="电脑上的网页原型">
+[![版本](https://img.shields.io/github/v/release/vanmiku/mydash?color=294ae8&label=%E7%89%88%E6%9C%AC)](https://github.com/vanmiku/mydash/releases)
+[![测试](https://github.com/vanmiku/mydash/actions/workflows/test.yml/badge.svg)](https://github.com/vanmiku/mydash/actions/workflows/test.yml)
+[![支持 macOS、Linux、Windows](https://img.shields.io/badge/%E6%94%AF%E6%8C%81-macOS_%C2%B7_Linux_%C2%B7_Windows-555)](#安装)
+[![MIT 许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-555)](LICENSE)
+
+[安装](#安装) · [怎么用](#怎么用) · [能做什么](#能做什么) · [安全](#安全) · [命令](#命令) · [English](README.md)
+
+</div>
+
+<br>
+
+<img src="docs/readme/zh-hero.png" width="100%" alt="电脑和手机上的 mydash。电脑上是首页：三个项目、一张等你处理的审批单、一份置顶的方案，每条都标着是 Claude Code 还是 Codex 发的。手机上是深色模式下的 Markdown 方案。">
+
+## 怎么用
+
+1. **agent 发布。** 它做完一件需要你看的东西，就运行 `mydash publish plan.md --slug launch-plan`，把链接给你。同一个 slug 再发一次就是 v2。
+2. **你在哪都能看。** 页面把文件排好版，归到 agent 当时所在的项目里。设置了推送的话，手机会提醒你。
+3. **你在页面上回复。** 对某一段写批注、填审批单、勾待办、回答提问，agent 会接着往下做。
+
+这些命令不用你自己敲。安装时 `mydash integrate` 会告诉 Claude Code 和 Codex 什么时候该发布、怎么读你的回复。
+
+<details>
+<summary>工作原理</summary>
+
+```mermaid
+flowchart LR
+  A[Claude Code / Codex] -- mydash publish --> B[(~/.mydash/data)]
+  B --> C[mydash 服务<br/>127.0.0.1:4870 · 4871]
+  C -- tailscale serve --> D[手机和其他设备]
+  C --> E[这台电脑]
+```
+
+- **存储：** 文件复制到 `~/.mydash/data/<项目>/<slug>/v<N>/`，旁边放一份 `meta.json`。都是普通文件，方便备份。
+- **服务：** 一个不依赖框架的小型 Node.js 服务负责渲染。macOS 上由 launchd、Linux 上由 systemd、Windows 上由"启动"文件夹保持运行。
+- **预览：** 发布时就生成好。LibreOffice 把 Office 文件转成 PDF，PDF 再渲染成逐页图片（macOS 用 CoreGraphics，Linux 用 `pdftoppm`）。
+</details>
 
 ## 安装
 
@@ -22,7 +55,7 @@
 
 agent 会先检查你的机器，问你几个问题：mydash 在哪里打开（只在这台电脑，还是手机也能通过 Tailscale 打开），网页用什么语言，装在服务器上时再问时区。然后装好并把链接给你。只有必须你本人做的事才需要你动手，比如批准一台新的 Tailscale 设备，或者输一次 `sudo` 密码。
 
-**需要：** macOS、Linux 或 Windows 10/11，以及 Node.js 20 或更新版本。
+**需要：** macOS、Linux 或 Windows 10/11，以及 Node.js 20 或更新版本。<br>
 **可选：**
 - [Tailscale](https://tailscale.com)：用来在手机上随时随地打开（打开它的每台设备都要装 Tailscale）。
 - `--lan on`：同一 WiFi 下的设备凭访问码打开。
@@ -44,6 +77,10 @@ mydash doctor
 
 ## 能做什么
 
+<img src="docs/readme/zh-phones.png" width="100%" alt="四个手机界面：有审批单在等的首页、按原排版显示的 Word 报告、原样运行的定价页网页原型、带选项的审批单。">
+
+### 什么都能看
+
 - **什么格式都能看。**
   - Markdown：目录、表格、代码、Mermaid 流程图。
   - PDF：逐页显示。
@@ -52,10 +89,13 @@ mydash doctor
   - CSV、Excel：显示成表格，CSV 能自动识别 GBK 编码。
   - Word、PPT：显示排版预览。
   - 音频、视频、源代码也能看。
-- **项目按文件夹归类。** 项目就是 agent 会话启动时所在的文件夹，从 Claude Code 和 Codex 的会话记录里读出来。中途 `cd` 到子目录、进 worktree 都不会分错。
-- **版本记录和对比。** 同一个 `--slug` 再发一次就是 v2、v3。开着的页面会自己刷新，并告诉你上次看过之后改了什么。任意两个版本都能逐行对比，改了的字会标出来。
+- **版本记录和对比。** 同一个 `--slug` 再发一次就是 v2、v3，开着的页面会自己刷新。正在写批注、提问或填审批时，页面停在你看的那个版本，草稿留着，提示你去看新版；刷新页面草稿也还在。任意两个版本都能逐行对比，改了的字会标出来；改动太多显示不了时，可以分别打开两个版本阅读。
+- **为手机阅读设计。** 手机上用底部导航；小屏幕上，筛选和不常用的按钮收起来，正文更靠前；深色模式按时间自动切换。任何文档都能打印或存成 PDF，深色模式下也按浅色打印。
+- **中英文按设备切换。** 顶栏的按钮只切换这台设备上的页面；命令行和推送仍用安装时选的语言。
+
+### 不用回终端就能回复
+
 - **批注交回给 agent。** 在手机或电脑上选中一段写意见。agent 运行 `mydash feedback` 就能看到带原文引用的批注，改完发布时标记已处理。
-- **按类型归类。** 条目分成方案、汇报、审批、待办、其他，按标题推断或由 agent 指定，每个列表都能按类型筛选。
 - **要你拍板、动手的事放在一处。**
   - agent 要你连着定几件事时，会发一张审批单：单选、多选、填空都行，每道选择题都能写你自己的答案。
   - 只有你能做的事会变成待办清单，做完勾掉；能用命令判断的项做完会自己勾上。
@@ -68,28 +108,24 @@ mydash doctor
   - Claude Code 的题 30 秒没人答，也会推送到手机。
   - agent 在回复末尾用文字问你时，会被提醒一次，改成选择题再问。
   - 别的工具可以用 `mydash ask` 问。
-- **未读不会失控。**
-  - 可以静音某个项目，也可以归档条目。
-  - 超过 14 天没看的未读条目会自动归档。
-  - 「今天」页面汇总当天收到的东西。
-- **全文搜索。** 在所有发布过的内容里搜索，命令行也能用（`mydash search`）。
-- **手机推送。** agent 发布了东西、或者在等你时推送到手机：Bark、ntfy、Telegram、Pushover、群机器人（企业微信、飞书、钉钉、Slack、Discord）、邮件，或者 HTTPS 下的浏览器推送。在设置页里想加几个加几个，同一种也能加两个（比如两台 iPhone 各一个 Bark），每个可以起名字、单独开关；也可以每天定点推一条摘要。每一种在页面上都附了一步步的设置教程。只有标题会离开你的机器。
-- **打印 / 存成 PDF。** 任何文档都能打印，深色模式下也按浅色打印。
+- **手机推送。** agent 发布了东西、或者在等你时推送到手机：Bark、ntfy、Telegram、Pushover、群机器人（企业微信、飞书、钉钉、Slack、Discord）、邮件，或者 HTTPS 下的浏览器推送。想加几个加几个，同一种也能加两个（比如两台 iPhone 各一个 Bark），每个可以起名字、单独开关；也可以每天定点推一条摘要。设置页里每一种都附了一步步的设置教程。只有标题会离开你的机器。
+
+### 不会乱
+
+- **项目按文件夹归类。** 项目就是 agent 会话启动时所在的文件夹，从 Claude Code 和 Codex 的会话记录里读出来。中途 `cd` 到子目录、进 worktree 都不会分错。项目可以改个好认的显示名。
+- **按类型、按工具筛选。**
+  - 条目分成方案、汇报、审批、待办、其他，按标题推断或由 agent 指定。
+  - 每个条目都记下是 Claude Code 还是 Codex 发的，列表里带一个小标记；有两个以上的工具发过东西时，可以按工具筛选。
+  - 别的工具可以用 `MYDASH_AGENT` 报上自己的名字。
+- **未读不会失控。** 有未读标记和置顶。可以静音某个项目、归档条目，超过 14 天没看的未读条目会自动归档。「今天」页面汇总当天收到的东西。
+- **全文搜索。** 在所有发布过的内容里搜索，结果跟着当前的筛选走（类型、工具、未读、归档）；命令行也能用（`mydash search`）。
+
+### 跑在你自己的机器上
+
 - **重启后不用登录就能用（macOS）。** 装的时候加 `--service launchd-boot`，mydash 和它的 Tailscale 节点开机就启动，不用等人登录：放在家里的 Mac mini 停电重启后照样能连。`mydash forward 22 5900` 让这个节点转发 SSH 和屏幕共享，在外面也能连回这台 Mac 登录。
 - **其他机器上的 agent 也能发。** 云服务器上的 agent 带着令牌（`mydash remote token`），就能发到你 Mac 上的 mydash；没变的文件不会重复上传。
 - **省空间。** 版本之间没变的文件只存一份；`mydash prune` 只保留最近几个版本。
-- **中英文按设备切换。** 顶栏的按钮只切换这台设备上的页面；命令行和推送仍用安装时选的语言。
-- **为手机阅读设计。**
-  - 未读标记、置顶、搜索。
-  - 小屏幕上，筛选和不常用的按钮收起来，正文更靠前。
-  - 可以给项目改显示名。
-  - 手机上用底部导航。
-  - 深色模式按时间自动切换。
-- **看得出是哪个工具发的。**
-  - 每个条目都记下是 Claude Code 还是 Codex 发的。
-  - 列表里每条带一个小标记，条目页写出工具全名。
-  - 有两个以上的工具发过东西时，可以按工具筛选。
-  - 别的工具可以用 `MYDASH_AGENT` 报上自己的名字。
+- **更新由你决定。** mydash 每天问一次这个仓库有没有新的正式版本，有的话显示在首页顶上，点一下就装好；新版本起不来会自己退回旧版本。在设置里也可以改成夜里自动装，或者不再检查。
 - **agent 自己会用。** `mydash integrate claude` 和 `mydash integrate codex` 会写进两小段规则、一个 skill、需要的权限，以及把它们的提问带到这里的钩子。所有改动都带标记，用 `--remove` 可以原样撤销；更新 mydash 时会一起更新。
 
 ## 和 Claude Code Artifacts 有什么不同？
@@ -116,7 +152,8 @@ Claude Code 自己也能[把页面发布到 claude.ai](https://code.claude.com/d
 - **待办的自动检测有边界。** 待办项可以靠运行一条命令自动勾上，但只在 agent 明确发成待办的清单里才会跑，命令会显示在页面上，别的机器传来的一律不跑。
 - **不加载第三方资源。** 字体、Mermaid 和 pdf.js 都由本地提供。
 
-## 其他访问方式
+<details>
+<summary>其他访问方式</summary>
 
 mydash 只在本机监听（开了局域网访问后，也在局域网里监听）。所以任何能把网址转发到 `127.0.0.1:4870` 的工具都能用。用到的域名写进 `~/.mydash/config.json` 的 `allowedHosts` 和 `contentOrigin`。
 
@@ -127,22 +164,11 @@ mydash 只在本机监听（开了局域网访问后，也在局域网里监听�
 | [ZeroTier](https://www.zerotier.com) | 和 Tailscale 最像的替代 | 同样是私有组网 |
 | [NetBird](https://netbird.io)，或 [Headscale](https://github.com/juanfont/headscale) 配 Tailscale 客户端 | 想自己托管协调服务器 | 开源 |
 | [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) + Access | 任何浏览器，不用装 App | 需要自己的域名；前面加 Cloudflare Access 登录；内容端口要单独一个子域名 |
-
-## 工作原理
-
-```mermaid
-flowchart LR
-  A[Claude Code / Codex] -- mydash publish --> B[(~/.mydash/data)]
-  B --> C[mydash 服务<br/>127.0.0.1:4870 · 4871]
-  C -- tailscale serve --> D[手机和其他设备]
-  C --> E[这台电脑]
-```
-
-- **存储：** 文件复制到 `~/.mydash/data/<项目>/<slug>/v<N>/`，旁边放一份 `meta.json`。都是普通文件，方便备份。
-- **服务：** 一个不依赖框架的小型 Node.js 服务负责渲染。macOS 上由 launchd、Linux 上由 systemd、Windows 上由"启动"文件夹保持运行。
-- **预览：** 发布时就生成好。LibreOffice 把 Office 文件转成 PDF，PDF 再渲染成逐页图片（macOS 用 CoreGraphics，Linux 用 `pdftoppm`）。
+</details>
 
 ## 命令
+
+大多数命令由 agent 来跑，你自己很少用到。
 
 | 命令 | 说明 |
 |---|---|
@@ -164,7 +190,7 @@ flowchart LR
 
 ## 状态
 
-v0.1，个人工具，原样分享。欢迎提 issue 和 PR，回复可能会慢一些。想改 mydash 本身，先看 [AGENTS.md](AGENTS.md)。
+0.1.x，个人工具，原样分享。欢迎提 issue 和 PR，回复可能会慢一些。每个版本改了什么见 [CHANGELOG.md](CHANGELOG.md)。想改 mydash 本身，先看 [AGENTS.md](AGENTS.md)。
 
 ## 许可证
 

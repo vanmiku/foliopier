@@ -1,16 +1,49 @@
+<div align="center">
+
+<img src="static/icon.svg" width="64" height="64" alt="mydash logo">
+
 # mydash
 
-English · [中文](README.zh-CN.md)
+**A self-hosted workbench for what Claude Code and Codex make.**
 
-**A self-hosted workbench for what your coding agents make.** Claude Code and Codex write plans, reports, screenshots, PDFs, HTML prototypes and Office files all day, and leave them as file paths in a terminal. With mydash, the agent runs `mydash publish` and you get a link. The page renders the file properly on your computer or your phone, grouped by project, with versions and unread markers. Everything stays on your machine.
+Your agents publish their plans, reports, PDFs, prototypes and Office files with one command. You open them properly rendered on your computer or your phone, answer the agents' questions there, and send comments back. Everything stays on your machine.
 
-<p>
-<img src="docs/screenshots/en-phone-home.png" width="250" alt="Home on a phone">
-<img src="docs/screenshots/en-phone-doc-dark.png" width="250" alt="A Markdown plan in dark mode">
-<img src="docs/screenshots/en-phone-word.png" width="250" alt="A Word file with a layout preview">
-<img src="docs/screenshots/en-phone-approval.png" width="250" alt="An approval form an agent published">
-</p>
-<img src="docs/screenshots/en-desktop-html.png" width="770" alt="An HTML prototype on the desktop">
+[![Release](https://img.shields.io/github/v/release/vanmiku/mydash?color=294ae8&label=release)](https://github.com/vanmiku/mydash/releases)
+[![Tests](https://github.com/vanmiku/mydash/actions/workflows/test.yml/badge.svg)](https://github.com/vanmiku/mydash/actions/workflows/test.yml)
+[![Runs on macOS, Linux and Windows](https://img.shields.io/badge/runs_on-macOS_%C2%B7_Linux_%C2%B7_Windows-555)](#install)
+[![MIT licence](https://img.shields.io/badge/license-MIT-555)](LICENSE)
+
+[Install](#install) · [How it works](#how-it-works) · [What you get](#what-you-get) · [Security](#security) · [Commands](#commands) · [中文](README.zh-CN.md)
+
+</div>
+
+<br>
+
+<img src="docs/readme/en-hero.png" width="100%" alt="mydash on a computer and a phone. The computer shows the home page: three projects, an approval form waiting, a pinned plan, and items marked as made by Claude Code or Codex. The phone shows a Markdown plan in dark mode.">
+
+## How it works
+
+1. **Your agent publishes.** When it finishes something you should look at, it runs `mydash publish plan.md --slug launch-plan` and gives you a link. Publishing the same slug again makes v2.
+2. **You read it wherever you are.** The page renders the file and files it under the project the agent was working in. If you set up notifications, your phone tells you.
+3. **You answer on the page.** Comment on a passage, fill in an approval form, tick off a to-do or answer a question. The agent picks it up and carries on.
+
+You don't run these commands yourself. During install, `mydash integrate` tells Claude Code and Codex when to publish and how to read your answers.
+
+<details>
+<summary>Under the hood</summary>
+
+```mermaid
+flowchart LR
+  A[Claude Code / Codex] -- mydash publish --> B[(~/.mydash/data)]
+  B --> C[mydash server<br/>127.0.0.1:4870 · 4871]
+  C -- tailscale serve --> D[Phone and other devices]
+  C --> E[This computer]
+```
+
+- Files are copied to `~/.mydash/data/<project>/<slug>/v<N>/`, next to a `meta.json`. They are plain files, easy to back up.
+- A small Node.js server with no framework renders them. launchd (macOS), systemd (Linux) or the Startup folder (Windows) keeps it running.
+- Previews are made when you publish: LibreOffice turns Office files into PDF, and PDFs become page images (CoreGraphics on macOS, `pdftoppm` on Linux).
+</details>
 
 ## Install
 
@@ -22,7 +55,7 @@ Install mydash for me by following https://github.com/vanmiku/mydash/blob/main/I
 
 The agent checks your machine and asks you a few questions: where mydash should open (only this computer, or your phone too through Tailscale), which language, and your timezone if it's on a server. Then it installs everything and gives you the link. You only step in for what needs you, such as approving a new Tailscale device or typing a `sudo` password.
 
-**Needs:** macOS, Linux or Windows 10/11, and Node.js 20 or newer.
+**Needs:** macOS, Linux or Windows 10/11, and Node.js 20 or newer.<br>
 **Optional:** [Tailscale](https://tailscale.com) to open it from your phone anywhere (every device that opens it needs Tailscale); or `--lan on` to open it on the same Wi-Fi with an access code; LibreOffice for Word and PowerPoint previews.
 
 <details>
@@ -41,23 +74,35 @@ mydash doctor
 
 ## What you get
 
+<img src="docs/readme/en-phones.png" width="100%" alt="Four phone screens: the home page with an approval waiting, a Word report shown as laid out, an HTML pricing prototype running as is, and an approval form with choices.">
+
+### Read anything
+
 - **Any format.** Markdown with contents, tables, code and Mermaid diagrams. PDFs page by page. Images, and galleries for a folder of images. HTML that runs as is. CSV and Excel tables, including GBK-encoded CSV. Word and PowerPoint as layout previews. Audio, video and source code too.
-- **Projects by folder.** The project is the folder the agent session started in, detected from Claude Code and Codex session records. It stays right even after `cd` into a subfolder or inside a worktree.
-- **Versions.** Publishing the same `--slug` again makes v2, v3. An open page refreshes itself, and tells you what changed since you last looked. **Compare** any two versions line by line, with the changed words marked.
+- **Versions you can compare.** Publishing the same `--slug` again makes v2, v3, and an open page refreshes itself. If you are in the middle of a comment, a question or an approval answer, the page stays on your version, keeps your draft and offers to open the new one; drafts also survive a reload. **Compare** any two versions line by line, with the changed words marked; when the changes are too extensive to show, it links to each version instead.
+- **Made for reading on a phone.** Bottom navigation, filters and less-used buttons tucked away on small screens, and dark mode that switches by time of day. Any document prints or saves as PDF, in light colours even in dark mode.
+- **Chinese or English, per device.** The button at the top switches the pages on that device; the command line and notifications keep the language chosen at install.
+
+### Answer without going back to the terminal
+
 - **Comments that go back to the agent.** Select a passage and comment on it, on your phone or computer. The agent runs `mydash feedback`, sees your comments with the quoted text, and marks them handled when it publishes the fix.
-- **Plans, reports and the rest.** Items are sorted into plans, reports, approvals, to-dos and other, guessed from the title or set by the agent, with a filter on every list.
-- **Decisions and to-dos in one place.** When an agent needs you to decide several things, it publishes an approval form: choices, multiple choice and text answers, and every choice also takes your own answer. Things only you can do arrive as a to-do list you tick off; items a command can check tick themselves. Tap **Ask** on any question or item and the agent answers right under it. Submitting wakes the agent, but only after it finishes what it is doing; if you answer in the chat instead, the form closes itself. Open forms and to-dos sit at the top under **Waiting on you**, and finished ones move to the project's records.
+- **Approval forms and to-dos.** When an agent needs you to decide several things, it publishes an approval form: choices, multiple choice and text answers, and every choice also takes your own answer. Things only you can do arrive as a to-do list you tick off; items a command can check tick themselves. Tap **Ask** on any question or item and the agent answers right under it. Submitting wakes the agent, but only after it finishes what it is doing; if you answer in the chat instead, the form closes itself. Open forms and to-dos sit at the top under **Waiting on you**, and finished ones move to the project's records.
 - **Every question your agents ask, here too.** Claude Code's choice questions, plan approvals and permission prompts show in the terminal and in mydash at the same time; answer wherever is handy and the other one closes. Codex asks its choice questions and command approvals in its own window first; if you do not answer within 30 seconds, mydash reminds you here and on your phone. Your phone is also notified when a Claude Code question waits that long. When an agent asks something in plain text at the end of a reply, it is asked once to put it as a choice question instead. Other tools can ask through `mydash ask`.
-- **Not drowning in unread.** Mute a project, archive items, or let unread items older than 14 days archive themselves. A **Today** page sums up what came in.
-- **Full-text search** across everything published, also from the command line (`mydash search`).
-- **Notifications** on your phone when an agent publishes or waits for you: Bark, ntfy, Telegram, Pushover, team chat bots (WeCom, Feishu, DingTalk, Slack, Discord), email, or browser push over HTTPS. Add as many as you like on the settings page, even two of the same kind (say, two iPhones with Bark), each with its own name and on/off switch, plus an optional daily summary. Each kind comes with a step-by-step setup guide on the page. Only titles leave your machine.
-- **Print or save as PDF** from any document, in light colours even in dark mode.
+- **Notifications** on your phone when an agent publishes or waits for you: Bark, ntfy, Telegram, Pushover, team chat bots (WeCom, Feishu, DingTalk, Slack, Discord), email, or browser push over HTTPS. Add as many as you like, even two of the same kind (say, two iPhones with Bark), each with its own name and on/off switch, plus an optional daily summary. Each kind comes with a step-by-step setup guide on the settings page. Only titles leave your machine.
+
+### Keep track
+
+- **Projects by folder.** The project is the folder the agent session started in, detected from Claude Code and Codex session records. It stays right even after `cd` into a subfolder or inside a worktree. You can give a project a friendlier name.
+- **Sorted by type and by tool.** Items are plans, reports, approvals, to-dos or other, guessed from the title or set by the agent. Each item also records whether Claude Code or Codex published it, shown as a small mark; once more than one tool has published, you can filter by tool. Other tools can label themselves with `MYDASH_AGENT`.
+- **Not drowning in unread.** Unread markers and pins. Mute a project, archive items, or let unread items older than 14 days archive themselves. A **Today** page sums up what came in.
+- **Full-text search** across everything published, narrowed by the filters you have on (type, tool, unread, archived); also from the command line (`mydash search`).
+
+### Runs on your machine
+
 - **Back after a restart, no login needed (macOS).** With `--service launchd-boot`, mydash and its Tailscale node start at boot, before anyone logs in, so a headless Mac mini comes back after a power cut. `mydash forward 22 5900` passes SSH and Screen Sharing through that node, so you can log in to the Mac from anywhere.
 - **Agents on other machines.** A cloud server's agent can publish to the mydash on your Mac with a token (`mydash remote token`); unchanged files are not uploaded twice.
 - **Small on disk.** Files that did not change between versions are stored once; `mydash prune` keeps only the latest versions.
-- **Made for reading on a phone.** Unread markers, pins, search, project renaming, bottom navigation on mobile, filters and less-used buttons tucked away on small screens, and dark mode that switches by time of day.
-- **Chinese or English, per device.** The button at the top switches the pages on that device; the command line and notifications keep the language chosen at install.
-- **You can see which tool made what.** Each item records whether Claude Code or Codex published it. Entries carry a small mark, the item page names the tool, and when more than one tool has published you can filter by tool. Other tools can label themselves with `MYDASH_AGENT`.
+- **Updates when you say so.** Once a day mydash asks this repository whether there is a new release and, if so, shows it at the top of the home page. One tap installs it; if the new version does not start, it goes back to the old one by itself. In settings you can have it install at night instead, or stop checking.
 - **Agents that know about it.** `mydash integrate claude` and `mydash integrate codex` add two short rules, a skill, the permissions they need and the hooks that bring their questions here. Every change is marked and can be undone with `--remove`; updating mydash keeps them current.
 
 ## Why not Claude Code Artifacts?
@@ -79,7 +124,8 @@ Claude Code can [publish pages to claude.ai](https://code.claude.com/docs/en/art
 - A to-do item can tick itself by running a command; that only happens in lists the agent explicitly published as to-dos, the command is shown on the page, and it is never run for items published from another machine.
 - Pages load nothing from third parties: fonts, Mermaid and pdf.js are served locally.
 
-## Other ways to reach it
+<details>
+<summary>Other ways to reach it</summary>
 
 mydash only listens on this computer (and, if you turn it on, your LAN), so anything that can forward a URL to `127.0.0.1:4870` works. Set `allowedHosts` and `contentOrigin` in `~/.mydash/config.json` to the names you use.
 
@@ -90,22 +136,11 @@ mydash only listens on this computer (and, if you turn it on, your LAN), so anyt
 | [ZeroTier](https://www.zerotier.com) | the closest alternative to Tailscale | also a private mesh network |
 | [NetBird](https://netbird.io), or [Headscale](https://github.com/juanfont/headscale) with Tailscale apps | self-hosting the coordination server | open source |
 | [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) + Access | any browser, no app to install | needs your own domain; put Cloudflare Access login in front, and give the content port its own hostname |
-
-## How it works
-
-```mermaid
-flowchart LR
-  A[Claude Code / Codex] -- mydash publish --> B[(~/.mydash/data)]
-  B --> C[mydash server<br/>127.0.0.1:4870 · 4871]
-  C -- tailscale serve --> D[Phone and other devices]
-  C --> E[This computer]
-```
-
-- Files are copied to `~/.mydash/data/<project>/<slug>/v<N>/`, next to a `meta.json`. They are plain files, easy to back up.
-- A small Node.js server with no framework renders them. launchd (macOS), systemd (Linux) or the Startup folder (Windows) keeps it running.
-- Previews are made when you publish: LibreOffice turns Office files into PDF, and PDFs become page images (CoreGraphics on macOS, `pdftoppm` on Linux).
+</details>
 
 ## Commands
+
+Your agent runs most of these; you rarely need them yourself.
 
 | Command | |
 |---|---|
@@ -127,7 +162,7 @@ flowchart LR
 
 ## Status
 
-v0.1, a personal tool shared as is. Issues and pull requests are welcome; replies may take a while. For changes to mydash itself, start with [AGENTS.md](AGENTS.md).
+0.1.x, a personal tool shared as is. Issues and pull requests are welcome; replies may take a while. What changed in each release is in [CHANGELOG.md](CHANGELOG.md). For changes to mydash itself, start with [AGENTS.md](AGENTS.md).
 
 ## License
 
