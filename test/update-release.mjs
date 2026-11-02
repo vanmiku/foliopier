@@ -7,6 +7,55 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { ensureDependencies, dependencyKey } from '../lib/dependencies.mjs';
 import { releasePlan } from '../.github/scripts/release.mjs';
+import fsp from 'node:fs/promises';
+import { writeMetaAtomic } from '../lib/store.mjs';
+
+test('Windows transient metadata replacement errors keep the old file and then commit', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mydash-meta-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'meta.json'); fs.writeFileSync(file, JSON.stringify({ v: 1 }));
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  const rename = fsp.rename; let attempts = 0;
+  t.mock.method(fsp, 'rename', async (from, to) => {
+    attempts++;
+    assert.deepEqual(JSON.parse(fs.readFileSync(file)), { v: 1 });
+    if (attempts < 3) throw Object.assign(new Error('file busy'), { code: 'EPERM' });
+    return rename(from, to);
+  });
+  try {
+    await writeMetaAtomic(dir, { v: 2 });
+    assert.equal(attempts, 3);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file)), { v: 2 });
+  } finally { Object.defineProperty(process, 'platform', descriptor); }
+});
+
+test('metadata replacement does not retry unrelated I/O errors', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mydash-meta-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'meta.json'); fs.writeFileSync(file, JSON.stringify({ v: 1 }));
+  let attempts = 0;
+  t.mock.method(fsp, 'rename', async () => { attempts++; throw Object.assign(new Error('disk failure'), { code: 'EIO' }); });
+  await assert.rejects(writeMetaAtomic(dir, { v: 2 }), { code: 'EIO' });
+  assert.equal(attempts, 1);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file)), { v: 1 });
+});
+
+test('a permanent Windows metadata lock stops retrying and retains old data', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mydash-meta-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'meta.json'); fs.writeFileSync(file, JSON.stringify({ v: 1 }));
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  let attempts = 0;
+  t.mock.method(fsp, 'rename', async () => { attempts++; throw Object.assign(new Error('locked'), { code: 'EACCES' }); });
+  try {
+    await assert.rejects(writeMetaAtomic(dir, { v: 2 }), { code: 'EACCES' });
+    assert.equal(attempts, 9);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file)), { v: 1 });
+    assert.deepEqual(fs.readdirSync(dir), ['meta.json']);
+  } finally { Object.defineProperty(process, 'platform', descriptor); }
+});
 
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mydash-deps-'));
