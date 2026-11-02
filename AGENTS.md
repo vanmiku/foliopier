@@ -34,7 +34,7 @@ This file is for coding agents changing mydash itself. To install mydash for a u
 | `static/` | `app.css`, `app.js`, `pdf-view.mjs`, icons, Geist fonts |
 | `skills/mydash/SKILL.md` | The skill agents get after `mydash integrate` |
 | `welcome/<lang>/` | The item published right after install |
-| `test/smoke.sh` | Detailed end-to-end test (bash; macOS and Linux) with a temp data folder and temp ports |
+| `test/smoke.sh`, `test/smoke-parallel.sh` | Detailed end-to-end test (bash; macOS and Linux) with a temp data folder and temp ports. Its sections are grouped into three parts (`if part N`); `smoke-parallel.sh` runs the parts at once on ports 100 apart (about 1.5 minutes instead of 4), and CI uses it. A new section goes in the part whose sections it depends on; helpers several parts use are defined at the top |
 | `test/e2e.mjs` | Install → publish → pages → doctor → integrate → uninstall, plain Node, also runs on Windows |
 
 Item folders have two locks: `.lock` for versions and `meta.json` (publish, `rm --version`, rebuild) and `.rlock` for `responses.json` (ticks, answers, comments), so the page stays usable while a slow Office conversion holds `.lock`. Holders refresh the lock every 15 seconds; a lock whose holder is gone is taken over at once. Pages on the workbench port carry a CSP that allows only mydash's own scripts, so script inside an item never runs there; if you add an inline `<script>` to a page template, add its hash to `PAGE_CSP` in `lib/views.mjs`.
@@ -45,7 +45,7 @@ Runtime files live in `~/.mydash` (`app/` code copy, `data/` items, `state/` rea
 
 ```bash
 npm ci
-bash test/smoke.sh                # must end with 0 failures; never touches ~/.mydash
+bash test/smoke-parallel.sh       # must end with 0 failures; never touches ~/.mydash (bash test/smoke.sh runs the same checks one after another)
 node test/i18n-check.mjs          # every UI / CLI string has a Chinese translation
 node test/e2e.mjs --service none  # cross-platform install test; CI also runs it on Windows
 node --test test/lan-access.mjs    # pending/approved/expired devices, concurrent state changes and both-port access gates

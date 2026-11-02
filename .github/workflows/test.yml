@@ -32,7 +32,7 @@ jobs:
       - run: npm ci --omit=dev
       - run: node test/i18n-check.mjs --missing-only
       - run: node --test test/review-regressions.mjs test/update-release.mjs test/boot-setup.mjs test/lan-access.mjs
-      - run: bash test/smoke.sh
+      - run: bash test/smoke-parallel.sh
       - run: node test/e2e.mjs --service none
   windows:
     timeout-minutes: 15

@@ -18,6 +18,17 @@ PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); echo "  ✓ $1"; }
 bad()  { FAIL=$((FAIL+1)); echo "  ✗ $1"; }
 check(){ if eval "$2" >/dev/null 2>&1; then ok "$1"; else bad "$1"; fi; }
+# 拆成几份同时跑（test/smoke-parallel.sh）：SMOKE_PART=1|2|3 只跑那一份；不设就从头跑到尾
+part() { [ -z "${SMOKE_PART:-}" ] || [ "$SMOKE_PART" = "$1" ]; }
+# 几节共用的小工具
+CH="$MYDASH_CLAUDE_HOME"; XH="$MYDASH_CODEX_HOME"
+POSTJ() { curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$@"; }
+POSTB() { curl -s -X POST -H 'Content-Type: application/json' "$@"; }
+CHID() { node -e 'const c=require(process.argv[1]).notify.channels.find(x=>x.type===process.argv[2]&&(!process.argv[3]||JSON.stringify(x).includes(process.argv[3])));process.stdout.write(c?c.id:"")' "$MYDASH_HOME/config.json" "$1" "${2:-}"; }
+PID1() { curl -s "$B/api/prompts" | node -e 'const j=JSON.parse(require("fs").readFileSync(0));process.stdout.write((j.prompts.at(-1)||{}).id||"")'; }
+waitgone() { for i in 1 2 3 4 5 6 7 8; do kill -0 $1 2>/dev/null || return 0; sleep 1; done; }
+refreshj() { node -e 'import(process.argv[1]).then(m=>process.stdout.write(JSON.stringify(m.refresh(process.argv[2]))))' "$ROOT/lib/integrate.mjs" "$1"; }
+hookchk() { $CLI doctor --json 2>/dev/null | node -e 'const c=JSON.parse(require("fs").readFileSync(0)).checks.find(x=>x.id===process.argv[1]);process.stdout.write(c?(c.ok?"ok":"bad"):"none")' "$1"; }
 
 node "$ROOT/test/fixtures.mjs" "$TMP/fx" >/dev/null
 iconv -f UTF-8 -t GBK "$TMP/fx/data-utf8.csv" > "$TMP/fx/data-gbk.csv"
@@ -36,6 +47,7 @@ curl -sN --max-time 6 "$B/events" > "$TMP/events.txt" &
 EV=$!
 sleep 0.5
 
+if part 1; then
 echo "发布"
 cd "$TMP/fx"
 OUT1=$($CLI publish plan.md -p smoke -t "对战分析方案" -s battle-plan -n "第一版")
@@ -115,8 +127,6 @@ check "边栏片段接口" "curl -s '$B/api/sidebar?current=smoke' | grep -c 'si
 check "边栏条目数正确" "curl -s '$B/api/sidebar' | grep -c '<em>1</em>'"
 
 echo "已读 / 未读"
-POSTJ() { curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$@"; }
-POSTB() { curl -s -X POST -H 'Content-Type: application/json' "$@"; }
 check "新条目默认未读" "curl -s '$B/' | grep -c 'class=\"entry unread\" data-id=\"smoke/battle-plan\"'"
 check "标题带未读数" "curl -s '$B/' | grep -c '<title>([0-9]*) mydash'"
 check "缺少 X-Mydash 头被拒（防跨站伪造）" "POSTJ -d '{\"id\":\"smoke/battle-plan\"}' '$B/api/read' | grep -c 403"
@@ -614,7 +624,6 @@ check "设置页加渠道：网址不对会拒，同一个加两次也拒" "test
 check "设置页保存：天数不对会拒" "test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"autoArchiveDays\":-1,\"bark\":\"\",\"ntfy\":\"\",\"daily\":\"\"}' '$B/api/settings')\" = 400"
 : > "$SINKF"
 check "设置页上发一条试试（还没存的表单）" "POSTB -H 'X-Mydash: 1' -d '{\"type\":\"ntfy\",\"fields\":{\"url\":\"http://127.0.0.1:'$SINKP'/try\"}}' '$B/api/notify-test' | grep '\"ok\":true' >/dev/null && grep '\"topic\":\"try\"' '$SINKF' >/dev/null"
-CHID() { node -e 'const c=require(process.argv[1]).notify.channels.find(x=>x.type===process.argv[2]&&(!process.argv[3]||JSON.stringify(x).includes(process.argv[3])));process.stdout.write(c?c.id:"")' "$MYDASH_HOME/config.json" "$1" "${2:-}"; }
 : > "$SINKF"
 check "设置页上发一条试试（存好的那一个，按编号）" "POSTB -H 'X-Mydash: 1' -d '{\"id\":\"'\$(CHID ntfy t2)'\"}' '$B/api/notify-test' | grep '\"ok\":true' >/dev/null && grep '\"topic\":\"t2\"' '$SINKF' >/dev/null && ! grep '\"topic\":\"mydash-test\"' '$SINKF' >/dev/null"
 # 更多渠道：Telegram、Pushover、群机器人、邮件（本机假的 SMTP 服务器）
@@ -714,11 +723,11 @@ check "全文搜索结果高亮" "curl -s \"$B/api/search?q=\$(node -e 'process.
 check "mydash search 命令" "$CLI search 背景说明 | grep 'approj/go-live' >/dev/null"
 check "太短的词不搜" "test \"\$(curl -s '$B/api/search?q=a')\" = '[]'"
 
+fi
+if part 2; then
 echo "终端里的提问"
 # 这一段测「先在 mydash 答，终端等着」（hold）；默认的「两边同时问」在后面
 export MYDASH_PROMPT_MODE=hold
-PID1() { curl -s "$B/api/prompts" | node -e 'const j=JSON.parse(require("fs").readFileSync(0));process.stdout.write((j.prompts.at(-1)||{}).id||"")'; }
-waitgone() { for i in 1 2 3 4 5 6 7 8; do kill -0 $1 2>/dev/null || return 0; sleep 1; done; }
 printf '%s' '{"hook_event_name":"PreToolUse","session_id":"sess-pr-1","cwd":"/x/prproj","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"午饭吃什么？","header":"午饭","multiSelect":false,"options":[{"label":"面","description":"牛肉面"},{"label":"饭","description":""}]},{"question":"喝什么？","header":"饮料","multiSelect":true,"options":[{"label":"茶","description":""},{"label":"咖啡","description":""}]}]}}' > "$TMP/pr-q.json"
 node "$ROOT/bin/agent-ask.mjs" claude < "$TMP/pr-q.json" > "$TMP/pr-q.out" 2>&1 & AP1=$!
 sleep 1; PQ=$(PID1)
@@ -807,6 +816,8 @@ printf '%s\n' '{"type":"event_msg","payload":{"type":"turn_aborted"}}' >> "$TMP/
 check "这一轮被打断了：mydash 那份也关掉" "curl -s '$B/prompts/$PCB' | grep 'pr-status pr-terminal' >/dev/null"
 check "设置页能选 Codex 的问法" "curl -s '$B/settings' | grep 'name=\"promptsCodex\"' >/dev/null"
 
+fi
+if part 1; then
 echo "跨机器发布"
 TOKEN=$($CLI remote token --name testbox --json | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0)).token)')
 check "生成令牌" "echo '$TOKEN' | grep '^md_' >/dev/null"
@@ -855,10 +866,7 @@ check ".env.example 可以发" "$CLI publish '$SEC/.env.example' -p sec -s envex
 check "--allow-secret 可以强制" "$CLI publish '$SEC/leak.md' -p sec -s leak --allow-secret >/dev/null 2>&1 && test -d '$MYDASH_DATA/sec/leak'"
 
 echo "接入 Claude Code / Codex（可撤销）"
-CH="$MYDASH_CLAUDE_HOME"; XH="$MYDASH_CODEX_HOME"
 # 更新时的刷新（lib/integrate.mjs 的 refresh），以及 doctor 里某一项的结果（ok / bad / none）
-refreshj() { node -e 'import(process.argv[1]).then(m=>process.stdout.write(JSON.stringify(m.refresh(process.argv[2]))))' "$ROOT/lib/integrate.mjs" "$1"; }
-hookchk() { $CLI doctor --json 2>/dev/null | node -e 'const c=JSON.parse(require("fs").readFileSync(0)).checks.find(x=>x.id===process.argv[1]);process.stdout.write(c?(c.ok?"ok":"bad"):"none")' "$1"; }
 printf '# 我的规则\n\n- 用中文\n' > "$CH/CLAUDE.md"; cp "$CH/CLAUDE.md" "$TMP/claude-orig.md"
 printf '{\n  "permissions": { "allow": ["Bash(ls:*)"] },\n  "theme": "dark"\n}\n' > "$CH/settings.json"
 DRY=$($CLI integrate claude --dry-run)
@@ -955,6 +963,8 @@ check "要装进系统的服务先放好：格式对、以本人身份运行、�
 check "不用 sudo 跑 service boot：说清楚要管理员权限，什么都不改" "! $CLI service boot >/dev/null 2>&1 && { $CLI service boot 2>&1 || true; } | grep 'needs root' >/dev/null"
 fi
 
+fi
+if part 3; then
 echo "代码审查修复（2026-10-29）"
 RV="$TMP/rv"; mkdir -p "$RV"
 fmode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
@@ -1118,6 +1128,8 @@ check "--service 写错了直接报错，不装" "! MYDASH_HOME='$RV/svc-home' n
 pid_ok() { sleep 60 & local sp=$!; local h="$RV/pid-home"; mkdir -p "$h/run"; local label; label=$(MYDASH_HOME="$h" node -e 'import(process.argv[1]).then(s=>process.stdout.write(s.SERVICES.server.launchd))' "$ROOT/lib/service.mjs"); echo $sp > "$h/run/$label.pid"; MYDASH_HOME="$h" node -e 'import(process.argv[1]).then(s=>s.removeService("server","none"))' "$ROOT/lib/service.mjs"; local alive=1; kill -0 $sp 2>/dev/null || alive=0; kill $sp 2>/dev/null; test $alive = 1; }
 check "pid 文件里记的进程号被别的程序用了：不会误杀它" "pid_ok"
 
+fi
+if part 1; then
 echo "英文界面"
 EP=$((PORT+2)); EN_HOME="$TMP/en-home"; mkdir -p "$EN_HOME"
 MYDASH_LANG=en MYDASH_PORT=$EP MYDASH_CONTENT_PORT=$((PORT+3)) MYDASH_BASE_URL="http://127.0.0.1:$EP" node "$ROOT/server.mjs" > "$TMP/server-en.log" 2>&1 &
@@ -1184,6 +1196,8 @@ check "源码目录比最新版本还新（开发用的目录）：不动它，�
 node -e 'const f=process.argv[1],c=JSON.parse(require("fs").readFileSync(f,"utf8"));delete c.source;delete c.sourceRemote;require("fs").writeFileSync(f,JSON.stringify(c))' "$MYDASH_HOME/config.json"
 rm -f "$MYDASH_HOME/state/update.json"
 
+fi
+if part 3; then
 echo "独立 Tailscale 节点的地址（假的 tailscale 命令）"
 fake_node() { # 目录 状态JSON
   mkdir -p "$1/ts/bin" "$1/ts/state"; printf '%s' "$2" > "$1/fake-status.json"
@@ -1222,6 +1236,9 @@ check "节点改名后内容端口也认真实名字" "[ \"\$(curl -s -o /dev/nu
 check "节点改名后旧名字不再放行" "[ \"\$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: mdfakenode' http://127.0.0.1:$LP/)\" = 421 ]"
 kill $LVP 2>/dev/null
 
+fi
+# 单跑第 2、3 份时，主服务的日志也要查（整份跑时在「命令」一节查）
+if [ -n "${SMOKE_PART:-}" ] && [ "$SMOKE_PART" != 1 ]; then check "服务日志无报错" "! grep -i 'error' '$TMP/server.log' | grep -v smoke-probe | grep -c ."; fi
 echo
 echo "通过 ${PASS}，失败 ${FAIL}"
 [ $FAIL -gt 0 ] && { echo "--- 服务日志 ---"; tail -20 "$TMP/server.log"; }

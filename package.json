@@ -29,7 +29,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test test/review-regressions.mjs test/update-release.mjs test/boot-setup.mjs test/lan-access.mjs && bash test/smoke.sh && node test/i18n-check.mjs --missing-only"
+    "test": "node --test test/review-regressions.mjs test/update-release.mjs test/boot-setup.mjs test/lan-access.mjs && bash test/smoke-parallel.sh && node test/i18n-check.mjs --missing-only"
   },
   "engines": {
     "node": ">=20"
