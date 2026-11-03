@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { SessionDiscovery } from '../lib/session-discovery.mjs';
+const realPath = process.platform === 'win32' ? fs.realpathSync.native : fs.realpathSync;
 
 test('project discovery finds pre-hook Codex sessions, excludes subagents, symlinks and same-name folders', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'md-discover-'));
@@ -200,7 +201,7 @@ test('ordinary project identity checks avoid Git subprocesses on the request pat
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   const d = JSON.parse(r.stdout);
-  assert.equal(d.root, fs.realpathSync(dir));
+  assert.equal(d.root, realPath(dir));
   assert.equal(d.calls, 0);
 });
 
@@ -228,11 +229,12 @@ test('fast project identity follows changed worktree metadata and removed folder
     'init'
   );
   git('-C', root, 'worktree', 'add', '-q', '-b', 'test', wt);
-  assert.equal(canonicalProject(wt), fs.realpathSync(root));
+  assert.equal(canonicalProject(wt), realPath(root));
+  assert.equal(canonicalProject(root), canonicalProject(realPath(root)));
   fs.renameSync(path.join(wt, '.git'), path.join(wt, '.git-saved'));
-  assert.equal(canonicalProject(wt), fs.realpathSync(wt));
+  assert.equal(canonicalProject(wt), realPath(wt));
   fs.renameSync(path.join(wt, '.git-saved'), path.join(wt, '.git'));
-  assert.equal(canonicalProject(wt), fs.realpathSync(root));
+  assert.equal(canonicalProject(wt), realPath(root));
   fs.rmSync(wt, { recursive: true, force: true });
   assert.equal(canonicalProject(wt), null);
 });
