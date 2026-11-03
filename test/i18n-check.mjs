@@ -10,7 +10,7 @@ import { CATEGORY_LABEL } from '../lib/categories.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const files = [
   ...['lib', 'bin'].flatMap(d => fs.readdirSync(path.join(ROOT, d)).filter(f => f.endsWith('.mjs')).map(f => path.join(ROOT, d, f))),
-  path.join(ROOT, 'server.mjs'), path.join(ROOT, 'static', 'app.js'), path.join(ROOT, 'static', 'pdf-view.mjs'),
+  path.join(ROOT, 'server.mjs'), path.join(ROOT, 'static', 'app.js'), path.join(ROOT, 'static', 'sessions.js'), path.join(ROOT, 'static', 'delivery-ui.js'), path.join(ROOT, 'static', 'article-sessions.js'), path.join(ROOT, 'static', 'pdf-view.mjs'),
 ];
 const used = new Map();
 for (const f of files) {

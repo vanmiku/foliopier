@@ -63,7 +63,7 @@ Ask everything in `questions` in one message, with the recommended answers pre-s
 It takes 10–60 seconds. Building the Tailscale node on macOS can take several minutes. The result has:
 
 - `ok`, and `url`: the address to give the user. With `tailscale-node` it is `http://127.0.0.1:<port>/` until the device is approved, then switches to the device's real name on its own.
-- `localUrl`: the address that always works on this computer.
+- `localUrl`: the address on the computer hosting mydash, independent of Tailscale. Always give this address to the user as well as `url`, and recommend bookmarking it on that computer. Turning Tailscale off makes its network address unavailable even on the hosting computer; `localUrl` still works while the mydash service is running. Other devices cannot use this loopback address. The address is also in Settings and “Open on another device”; `mydash url --local` prints it later.
 - `steps`: what was done. Any step with `ok: false` has the reason in `detail`.
 - `human`: things only the user can do. Show each one to the user, with its `url` or `command`, and wait for them:
   - `tailscale-node-login`: the user opens the link and approves the new device. Forwarding starts automatically within a minute.
@@ -201,3 +201,11 @@ If mydash was set to start at boot (`launchd-boot`), uninstall stops first and r
 | Word / PowerPoint show no preview | Install LibreOffice (see `check`), run `./setup.sh install` again, then `mydash rebuild` |
 | Wrong times on the pages | Reinstall with `--timezone <IANA name>` |
 | Ports 4870 / 4871 are taken | Reinstall with `--port <n> --content-port <m>` |
+
+## Optional conversation connections (0.2.1)
+
+Conversation viewing and sending are separately opt-in in Settings; do not enable them without the user's request. Give the user the [connection guide](docs/sessions.md) / [中文教程](docs/sessions.zh-CN.md) and explain which of their clients supports text, images, queues and platform-specific connections. This feature exposes original session text to workbench readers. Approved ordinary LAN clients remain view-only.
+
+Codex App uses a version-checked private local thread connection. CLI handoff requires a verified macOS/Linux tmux process and an empty input prompt. Claude App Code requires the original thread's Remote Control connection and native login; do not change organization policies, Trusted Devices or account permissions. The macOS background service may create a private per-install GUI credential helper, which uninstall removes.
+
+After installation, show both `url` and `localUrl`; recommend bookmarking the latter on the hosting computer. If testing conversation sending, use an isolated project and a harmless prompt, verify that the exact original thread received it and that a reply completed, and report any login, quota, locked-screen or unsupported-client limitation accurately. Do not call a simulated protocol test a completed real-client acceptance test.

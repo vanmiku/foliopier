@@ -73,3 +73,27 @@ test('a node found in a versioned Homebrew Cellar folder is written as the stabl
     if (!['/opt/homebrew/bin/node', '/usr/local/bin/node'].some(p => { try { return fs.realpathSync(p) === fs.realpathSync(path.join(cellar, 'node')); } catch { return false; } })) assert.equal(nodePath(), path.join(cellar, 'node'));
   } finally { process.env.PATH = saved; }
 });
+
+
+test('a local URL bypasses Tailscale without changing share URLs or remote clients', async () => {
+  const { execFileSync, spawnSync } = await import('node:child_process');
+  const config = path.join(home, 'config.json');
+  const saved = fs.existsSync(config) ? fs.readFileSync(config) : null;
+  const env = { ...process.env, MYDASH_HOME: home };
+  for (const key of ['MYDASH_PORT', 'MYDASH_BASE_URL', 'MYDASH_REMOTE', 'MYDASH_TOKEN']) delete env[key];
+  const cli = (...args) => execFileSync(process.execPath, ['bin/mydash.mjs', 'url', ...args], { env, encoding: 'utf8' }).trim();
+  try {
+    fs.writeFileSync(config, JSON.stringify({ port: 4915, access: 'tailscale-node', baseUrl: 'http://mydash', httpsUrl: 'https://mydash.example.ts.net' }));
+    assert.equal(cli('--local'), 'http://127.0.0.1:4915/');
+    assert.equal(cli('--local', 'project/article'), 'http://127.0.0.1:4915/p/project/article');
+    assert.equal(cli(), 'http://mydash/');
+    assert.equal(execFileSync(process.execPath, ['bin/mydash.mjs', 'url', '--local'], { env: { ...env, MYDASH_PORT: '4920' }, encoding: 'utf8' }).trim(), 'http://127.0.0.1:4920/');
+    fs.writeFileSync(config, JSON.stringify({ remote: { url: 'https://remote.example', token: 'test-only' } }));
+    assert.equal(cli(), 'https://remote.example/');
+    const remote = spawnSync(process.execPath, ['bin/mydash.mjs', 'url', '--local'], { env, encoding: 'utf8' });
+    assert.notEqual(remote.status, 0);
+    assert.match(remote.stderr, /remote/i);
+  } finally {
+    if (saved) fs.writeFileSync(config, saved); else fs.rmSync(config, { force: true });
+  }
+});

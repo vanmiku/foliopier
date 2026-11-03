@@ -17,6 +17,9 @@ CLI="node $ROOT/bin/mydash.mjs"
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); echo "  ✓ $1"; }
 bad()  { FAIL=$((FAIL+1)); echo "  ✗ $1"; }
+# Consume the full input: grep -q closes the pipe early and makes curl fail
+# with EPIPE under pipefail on macOS (even when the expected HTML is present).
+has() { grep "$@" >/dev/null; }
 check(){ if eval "$2" >/dev/null 2>&1; then ok "$1"; else bad "$1"; fi; }
 # 拆成几份同时跑（test/smoke-parallel.sh）：SMOKE_PART=1|2|3 只跑那一份；不设就从头跑到尾
 part() { [ -z "${SMOKE_PART:-}" ] || [ "$SMOKE_PART" = "$1" ]; }
@@ -60,7 +63,7 @@ check "md 链接的 PDF 被带上" "test -f '$MYDASH_DATA/smoke/battle-plan/v2/r
 check "md 链接的另一份 md 被带上" "test -f '$MYDASH_DATA/smoke/battle-plan/v2/notes.md'"
 $CLI publish report.pdf -p smoke -s pdf-report -t "PDF 报告" >/dev/null
 $CLI publish report.pdf -p smoke -s pdf-report >/dev/null
-check "再发同一 slug 不带标题时沿用上一版标题" "grep -q '\"title\": \"PDF 报告\"' '$MYDASH_DATA/smoke/pdf-report/meta.json'"
+check "再发同一 slug 不带标题时沿用上一版标题" "has '\"title\": \"PDF 报告\"' '$MYDASH_DATA/smoke/pdf-report/meta.json'"
 $CLI publish site -p smoke -s proto >/dev/null
 $CLI publish shots -p smoke -s screens -t "两张截图" >/dev/null
 $CLI publish data-gbk.csv -p smoke -s gbk-table >/dev/null
@@ -162,7 +165,7 @@ if [ -x "$HOME/.mydash/bin/pdfpages" ]; then
 fi
 check "前端错误回报接口" "POSTJ -H 'X-Mydash: 1' -d '{\"page\":\"/t\",\"message\":\"smoke-probe\"}' '$B/api/client-error' | grep -c 200"
 sleep 0.3
-check "前端错误写进服务日志" "grep -q 'smoke-probe' '$TMP/server.log'"
+check "前端错误写进服务日志" "has 'smoke-probe' '$TMP/server.log'"
 
 echo "项目改名（只改显示名）"
 check "改名缺少 X-Mydash 头被拒" "POSTJ -d '{\"project\":\"smoke\",\"name\":\"x\"}' '$B/api/project-name' | grep -c 403"
@@ -187,11 +190,11 @@ printf '# 一级标题甲\n\n正文\n' > "$TMP/fx/t.md"
 $CLI publish "$TMP/fx/t.md" -p smoke -s title-keep -t "手动标题" >/dev/null
 printf '# 一级标题乙\n\n正文\n' > "$TMP/fx/t.md"
 $CLI publish "$TMP/fx/t.md" -p smoke -s title-keep >/dev/null
-check "手动指定过的标题，再发时不被一级标题覆盖" "grep -q '\"title\": \"手动标题\"' '$MYDASH_DATA/smoke/title-keep/meta.json'"
+check "手动指定过的标题，再发时不被一级标题覆盖" "has '\"title\": \"手动标题\"' '$MYDASH_DATA/smoke/title-keep/meta.json'"
 $CLI publish "$TMP/fx/t.md" -p smoke -s title-follow >/dev/null
 printf '# 一级标题丙\n\n正文\n' > "$TMP/fx/t.md"
 $CLI publish "$TMP/fx/t.md" -p smoke -s title-follow >/dev/null
-check "标题本来取自一级标题的，跟着新标题走" "grep -q '\"title\": \"一级标题丙\"' '$MYDASH_DATA/smoke/title-follow/meta.json'"
+check "标题本来取自一级标题的，跟着新标题走" "has '\"title\": \"一级标题丙\"' '$MYDASH_DATA/smoke/title-follow/meta.json'"
 
 echo "项目按会话的启动文件夹认定"
 LP="$TMP/work/launchproj"; mkdir -p "$LP/sub/deeper" "$LP/.claude/worktrees/feat-x"
@@ -225,7 +228,7 @@ check "列表里这条带已置顶标记" "curl -s '$B/p/smoke' | grep -c 'class
 check "条目页按钮显示已置顶" "curl -s '$B/p/smoke/battle-plan' | grep -c 'class=\"pin-btn label on\"'"
 check "置顶项目" "POSTJ -H 'X-Mydash: 1' -d '{\"kind\":\"project\",\"id\":\"smoke\",\"pinned\":true}' '$B/api/pin' | grep -c 200"
 check "边栏置顶分组里有这个项目" "curl -s '$B/api/sidebar' | grep -A2 'side-list pinned' | grep -c 'data-search=\"smoke smoke\"'"
-check "置顶状态写进 state 文件" "grep -q 'smoke/battle-plan' '$MYDASH_HOME/state/pins.json'"
+check "置顶状态写进 state 文件" "has 'smoke/battle-plan' '$MYDASH_HOME/state/pins.json'"
 check "取消置顶条目" "POSTJ -H 'X-Mydash: 1' -d '{\"kind\":\"item\",\"id\":\"smoke/battle-plan\",\"pinned\":false}' '$B/api/pin' | grep -c 200 && ! curl -s '$B/' | grep -c 'class=\"pinned-sec\"'"
 check "取消置顶项目" "POSTJ -H 'X-Mydash: 1' -d '{\"kind\":\"project\",\"id\":\"smoke\",\"pinned\":false}' '$B/api/pin' | grep -c 200 && curl -s '$B/api/sidebar' | grep -c 'data-group=\"pinned\" hidden'"
 
@@ -661,9 +664,9 @@ POSTJ -H 'X-Mydash: 1' -d '{"op":"toggle","id":"'$(CHID ntfy mydash-test)'","on"
 (cd "$AP" && printf '# 关掉一个\n\n内容\n' > n5.md && $CLI publish n5.md -p notifproj -s note-5 >/dev/null); sleep 2
 check "设置页关掉一个渠道（不删）：它不再推，别的照推" "node -e 'process.exit(require(\"$MYDASH_HOME/config.json\").notify.channels.find(x=>x.url&&x.url.includes(\"mydash-test\")).off===true?0:1)' && ! grep '\"topic\":\"mydash-test\"' '$SINKF' >/dev/null && grep '\"topic\":\"t2\"' '$SINKF' >/dev/null"
 check "命令行：同一种再加一个、起名字，列表里带编号，按编号删" "$CLI notify bark http://127.0.0.1:$SINKP/k3 --name 太太 >/dev/null && $CLI notify | grep '太太' >/dev/null && test \"\$(node -e 'process.stdout.write(String(require(\"$MYDASH_HOME/config.json\").notify.channels.filter(x=>x.type===\"bark\").length))')\" = 2 && $CLI notify remove \$(CHID bark k3) >/dev/null && ! grep '/k3' '$MYDASH_HOME/config.json' >/dev/null"
-check "推送渠道：每一种都带一份点开才显示的设置教程，网页推送也有" "test \"\$(curl -s '$B/settings' | grep -o 'class=\"set-guide\"' | wc -l | tr -d ' ')\" = 7 && curl -s '$B/settings' | grep -q '怎么设置？看一步步的教程' && curl -s '$B/settings' | grep -q '@BotFather'"
-check "教程按页面语言显示（这台设备选了英文就是英文）" "curl -s -b 'mydash_lang=en' '$B/settings' | grep -q 'How to set it up, step by step' && ! curl -s -b 'mydash_lang=en' '$B/settings' | grep -q '怎么设置？看一步步的教程'"
-check "邮箱教程里有「填入这些设置」：Gmail、QQ、163 用 465 + TLS，iCloud 用 587 + STARTTLS" "curl -s '$B/settings' | grep -q 'data-host=\"smtp.gmail.com\" data-port=\"465\" data-secure=\"tls\"' && curl -s '$B/settings' | grep -q 'data-host=\"smtp.mail.me.com\" data-port=\"587\" data-secure=\"starttls\"'"
+check "推送渠道：每一种都带一份点开才显示的设置教程，网页推送也有" "test \"\$(curl -s '$B/settings' | grep -o 'class=\"set-guide\"' | wc -l | tr -d ' ')\" = 7 && curl -s '$B/settings' | has '怎么设置？看一步步的教程' && curl -s '$B/settings' | has '@BotFather'"
+check "教程按页面语言显示（这台设备选了英文就是英文）" "curl -s -b 'mydash_lang=en' '$B/settings' | has 'How to set it up, step by step' && ! curl -s -b 'mydash_lang=en' '$B/settings' | has '怎么设置？看一步步的教程'"
+check "邮箱教程里有「填入这些设置」：Gmail、QQ、163 用 465 + TLS，iCloud 用 587 + STARTTLS" "curl -s '$B/settings' | has 'data-host=\"smtp.gmail.com\" data-port=\"465\" data-secure=\"tls\"' && curl -s '$B/settings' | has 'data-host=\"smtp.mail.me.com\" data-port=\"587\" data-secure=\"starttls\"'"
 check "Telegram：改已有的渠道时，用它保存的 token 找出 chat id" "POSTB -H 'X-Mydash: 1' -d '{\"token\":\"\",\"id\":\"'\$(CHID telegram)'\"}' '$B/api/telegram-chat' | grep '\"chat\":\"4242\"' >/dev/null"
 check "Telegram：新加的（没有编号）不借用别的渠道保存的 token" "test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"token\":\"\"}' '$B/api/telegram-chat')\" = 400"
 check "设置页发一条试试：改的时候密码留空就用保存的" "POSTB -H 'X-Mydash: 1' -d '{\"id\":\"'\$(CHID email)'\",\"fields\":{\"host\":\"127.0.0.1\",\"port\":\"'$SMTPP'\",\"secure\":\"none\",\"user\":\"me@example.com\",\"pass\":\"\",\"to\":\"me@example.com\"}}' '$B/api/notify-test' | grep '\"ok\":true' >/dev/null && tail -20 '$SMTPF' | grep '> AUTH PLAIN' >/dev/null"
@@ -929,20 +932,20 @@ check "Codex：命令审批的钩子写进 hooks.json，不重复" "node -e 'con
 check "Codex：选择题的钩子也写进去（命令行版的 request_user_input、桌面版的 request_user_input_async）" "node -e 'const h=require(\"$XH/hooks.json\").hooks;const m=new RegExp(h.PreToolUse[0].matcher);process.exit(h.PreToolUse.length===1&&m.test(\"request_user_input\")&&m.test(\"request_user_input_async\")&&!m.test(\"request_user_input_x\")&&/agent-ask\\.mjs\"? codex$/.test(h.PreToolUse[0].hooks[0].command)?0:1)'"
 check "Codex：装钩子时提醒要在 Codex 里信任" "rm -f '$XH/hooks.json'; $CLI integrate codex --hooks | grep '/hooks' >/dev/null"
 check "doctor：Codex 里还没信任，会报出来" "test \"\$(hookchk hooks-codex)\" = bad"
-check "首页「等你处理」里出现「允许」Codex 钩子的按钮" "curl -s '$B/' | grep -q 'data-setup=\"codex-trust\"'"
+check "首页「等你处理」里出现「允许」Codex 钩子的按钮" "curl -s '$B/' | has 'data-setup=\"codex-trust\"'"
 check "随便写的 trusted_hash 不算信任（Codex 比的是指纹）" "XHJ=\$(node -p 'require(\"path\").join(process.argv[1],\"hooks.json\")' '$XH'); printf '[hooks.state.\"%s:stop:0:0\"]\ntrusted_hash = \"x\"\n' \"\$XHJ\" > '$XH/config.toml'; test \"\$(hookchk hooks-codex)\" = bad"
 check "点「允许」：给 mydash 的四条钩子记上 Codex 的指纹，原来那一节原地改" "POSTJ -H 'X-Mydash: 1' -d '{\"action\":\"codex-trust\"}' '$B/api/setup' >/dev/null && test \"\$(grep -c '^trusted_hash = \"sha256:' '$XH/config.toml')\" = 4 && test \"\$(grep -c '^\[hooks.state' '$XH/config.toml')\" = 4"
 check "doctor：四条都信任了就是好的" "test \"\$(hookchk hooks-codex)\" = ok"
-check "允许之后首页不再显示那个按钮" "! curl -s '$B/' | grep -q 'data-setup=\"codex-trust\"'"
+check "允许之后首页不再显示那个按钮" "! curl -s '$B/' | has 'data-setup=\"codex-trust\"'"
 check "Codex 钩子指纹的算法没变（和 Codex 自己记的对过）" "node -e 'import(process.argv[1]).then(m=>process.exit(m.codexHookHash(\"PermissionRequest\",\".*\",{type:\"command\",command:\"\\\"/usr/bin/node\\\" \\\"/x/bin/agent-ask.mjs\\\" codex\",timeout:86400,statusMessage:\"Waiting\"})===\"sha256:\"+require(\"crypto\").createHash(\"sha256\").update(JSON.stringify({event_name:\"permission_request\",hooks:[{async:false,command:\"\\\"/usr/bin/node\\\" \\\"/x/bin/agent-ask.mjs\\\" codex\",statusMessage:\"Waiting\",timeout:86400,type:\"command\"}],matcher:\".*\"})).digest(\"hex\")?0:1))' '$ROOT/lib/integrate.mjs'"
 # 钩子被改过（比如以前写的 node 路径不一样）、用户信任过：更新时换成新内容，信任一起换成新指纹，不用再点「允许」
 node -e 'const f=process.argv[1],fs=require("fs"),j=JSON.parse(fs.readFileSync(f));const g=j.hooks.Stop.find(g=>/agent-state/.test(g.hooks[0].command));g.hooks[0].command=g.hooks[0].command.replace(/^"[^"]*"/,"\"/old/node\"");fs.writeFileSync(f,JSON.stringify(j,null,2))' "$XH/hooks.json"
-check "改写自己信任过的钩子：信任跟着换成新指纹" "refreshj codex | grep -q '\"codexTrust\":false' && test \"\$(hookchk hooks-codex)\" = ok && ! grep -q '/old/node' '$XH/hooks.json'"
+check "改写自己信任过的钩子：信任跟着换成新指纹" "refreshj codex | has '\"codexTrust\":false' && test \"\$(hookchk hooks-codex)\" = ok && ! has '/old/node' '$XH/hooks.json'"
 node -e 'const f=process.argv[1],fs=require("fs"),j=JSON.parse(fs.readFileSync(f));delete j.hooks.PreToolUse;fs.writeFileSync(f,JSON.stringify(j,null,2))' "$XH/hooks.json"
 node -e 'const f=process.argv[1],fs=require("fs"),s=JSON.parse(fs.readFileSync(f));s.codex.hookIds=s.codex.hookIds.filter(x=>x!=="PreToolUse");fs.writeFileSync(f,JSON.stringify(s,null,2))' "$MYDASH_HOME/state/integrations.json"
 # 新加的钩子、从没信任过（去掉它那一节）：要用户点「允许」
 node -e 'const f=process.argv[1],fs=require("fs");fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace(/\[hooks\.state\."[^"]*:pre_tool_use:0:0"\]\ntrusted_hash = "[^"]*"\n*/,""))' "$XH/config.toml"
-check "Codex：更新时补上新加的选择题钩子；没信任过的，提醒去允许" "refreshj codex | grep '\"codexTrust\":true' >/dev/null && node -e 'process.exit(require(\"$XH/hooks.json\").hooks.PreToolUse?0:1)' && curl -s '$B/' | grep -q 'data-setup=\"codex-trust\"'"
+check "Codex：更新时补上新加的选择题钩子；没信任过的，提醒去允许" "refreshj codex | grep '\"codexTrust\":true' >/dev/null && node -e 'process.exit(require(\"$XH/hooks.json\").hooks.PreToolUse?0:1)' && curl -s '$B/' | has 'data-setup=\"codex-trust\"'"
 check "Codex：--hooks 时 mydash ask 等也能从沙盒里连出来" "grep 'prefix_rule(pattern=\\[\"mydash\", \\[\"ask\"' '$XH/rules/mydash-ask.rules' >/dev/null"
 if command -v codex >/dev/null; then check "Codex 认得 ask 的放行规则" "codex execpolicy check --rules '$XH/rules/mydash-ask.rules' mydash ask hi | grep '\"decision\":\"allow\"' >/dev/null"; fi
 check "Codex 规则写进 AGENTS.md" "grep 'mydash:begin' '$XH/AGENTS.md' >/dev/null"
@@ -982,8 +985,8 @@ cat > "$RV/xss.md" <<'EOF'
 EOF
 (cd "$RV" && $CLI publish xss.md -p revproj -s xss >/dev/null)
 curl -s "$B/p/revproj/xss" > "$RV/xss.html"
-check "Markdown 里的 <script>、<base> 原样显示成文字，javascript: 链接换成 #" "! grep -q '<script>window.__x' '$RV/xss.html' && ! grep -q '<base href' '$RV/xss.html' && ! grep -qi 'javascript:' '$RV/xss.html' && grep -q '&lt;script&gt;' '$RV/xss.html'"
-check "工作台页面带 CSP：只放行本站脚本，不能被别的页面嵌进去" "curl -sI '$B/p/revproj/xss' | grep -i '^content-security-policy' | grep \"script-src 'self' 'sha256-\" | grep -q \"frame-ancestors 'self'\""
+check "Markdown 里的 <script>、<base> 原样显示成文字，javascript: 链接换成 #" "! has '<script>window.__x' '$RV/xss.html' && ! has '<base href' '$RV/xss.html' && ! grep -qi 'javascript:' '$RV/xss.html' && has '&lt;script&gt;' '$RV/xss.html'"
+check "工作台页面带 CSP：只放行本站脚本，不能被别的页面嵌进去" "curl -sI '$B/p/revproj/xss' | grep -i '^content-security-policy' | grep \"script-src 'self' 'sha256-\" | has \"frame-ancestors 'self'\""
 csp_ok() { curl -s "$1" > "$RV/page.html"; curl -sI "$1" | grep -i '^content-security-policy' > "$RV/page.csp"; node -e '
 const fs=require("fs"),c=require("crypto");const html=fs.readFileSync(process.argv[1],"utf8"),csp=fs.readFileSync(process.argv[2],"utf8");
 const inl=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);
@@ -1025,8 +1028,8 @@ printf '# 要你做的\n\n- [ ] 第一步 <!-- check: touch "%s/ran-flag" -->\n'
 printf '# 方案\n\n```todo\n- [ ] 块里的 <!-- check: touch "%s/ran-block" -->\n```\n' "$TMP" > "$RV/block.md"
 (cd "$RV" && $CLI publish guess.md -p revproj -s guess-todo >/dev/null && $CLI publish flag.md -p revproj -s flag-todo --type todo >/dev/null && $CLI publish block.md -p revproj -s block-plan --type plan >/dev/null)
 for s in guess-todo flag-todo block-plan; do curl -s "$B/p/revproj/$s" >/dev/null; $CLI todos check "revproj/$s" >/dev/null 2>&1; done; sleep 1
-check "按标题猜出来的待办：里面的检测命令不跑，页面上也不标" "grep -q '\"category\": \"todo\"' '$MYDASH_DATA/revproj/guess-todo/meta.json' && test ! -e '$TMP/ran-guess' && ! curl -s '$B/p/revproj/guess-todo' | grep -q 'todo-cmd'"
-check "--type todo 发布的待办：检测命令照跑，页面上直接显示命令" "test -e '$TMP/ran-flag' && curl -s '$B/p/revproj/flag-todo' | grep 'class=\"todo-cmd\"' | grep -q 'ran-flag'"
+check "按标题猜出来的待办：里面的检测命令不跑，页面上也不标" "has '\"category\": \"todo\"' '$MYDASH_DATA/revproj/guess-todo/meta.json' && test ! -e '$TMP/ran-guess' && ! curl -s '$B/p/revproj/guess-todo' | has 'todo-cmd'"
+check "--type todo 发布的待办：检测命令照跑，页面上直接显示命令" "test -e '$TMP/ran-flag' && curl -s '$B/p/revproj/flag-todo' | grep 'class=\"todo-cmd\"' | has 'ran-flag'"
 check "方案里 \`\`\`todo 块的检测命令照跑" "test -e '$TMP/ran-block'"
 # --- 防误发密钥 ---
 mkdir -p "$RV/fh/.kube" "$RV/fh/.mydash" "$RV/docs"; printf 'apiVersion: v1\nusers:\n- user:\n    client-key-data: abc\n' > "$RV/fh/.kube/config"; ln -sfn "$RV/fh/.kube" "$RV/docs/k8s"
@@ -1036,7 +1039,7 @@ check "引用的文件经过符号链接指向 ~/.kube：照样拦下" "! (cd '$
 check "mydash 自己的 config.json（推送密码、令牌）也拦" "! (cd '$RV' && $CLI publish mdcfg.md -p revproj -s mdcfg >/dev/null 2>&1) && test ! -d '$MYDASH_DATA/revproj/mdcfg'"
 printf '# 教程\n\n```html\n<img src="/etc/hosts">\n```\n\n行内 `![x](/etc/hosts)` 只是示例。\n' > "$RV/code.md"
 (cd "$RV" && $CLI publish code.md -p revproj -s code >/dev/null)
-check "代码块和行内代码里的引用是示例：不收集、不改写" "! ls '$MYDASH_DATA/revproj/code/v1/_assets' >/dev/null 2>&1 && grep -q '<img src=\"/etc/hosts\">' '$MYDASH_DATA/revproj/code/v1/code.md' && grep -q '(/etc/hosts)' '$MYDASH_DATA/revproj/code/v1/code.md'"
+check "代码块和行内代码里的引用是示例：不收集、不改写" "! ls '$MYDASH_DATA/revproj/code/v1/_assets' >/dev/null 2>&1 && has '<img src=\"/etc/hosts\">' '$MYDASH_DATA/revproj/code/v1/code.md' && has '(/etc/hosts)' '$MYDASH_DATA/revproj/code/v1/code.md'"
 # --- 审批单 ---
 printf '# 旧版的答复\n\n```approval\n{"questions":[{"id":"go","type":"choice","label":"做吗？","options":["做","不做"],"required":true}]}\n```\n' > "$RV/apold.md"
 (cd "$RV" && $CLI publish apold.md -p revproj -s ap-old >/dev/null)
@@ -1045,18 +1048,18 @@ POSTJ -H 'X-Mydash: 1' -d '{"id":"revproj/ap-old","v":1,"answers":{"go":"做"}}'
 check "答了 v1、agent 没看到又发了 v2：v1 的答复照样交给 agent" "$CLI approvals revproj/ap-old --json | grep '\"go\":\"做\"' >/dev/null"
 printf '# 列表里的审批块\n\n- 先看这一段\n\n    ```approval\n    {"questions":[{"id":"budget","type":"line","label":"预算？","required":true}]}\n    ```\n\n```approval\n{"questions":[{"id":"a","type":"line","label":"A？"}]}\n```\n' > "$RV/apind.md"
 (cd "$RV" && $CLI publish apind.md -p revproj -s ap-indent >/dev/null)
-check "列表里缩进的审批块：页面上显示的题，答案也存得下、必答也检查" "test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"id\":\"revproj/ap-indent\",\"v\":1,\"answers\":{\"a\":\"x\"}}' '$B/api/approval')\" = 422 && test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"id\":\"revproj/ap-indent\",\"v\":1,\"answers\":{\"a\":\"x\",\"budget\":\"100\"}}' '$B/api/approval')\" = 200 && grep -q '\"budget\": \"100\"' '$MYDASH_DATA/revproj/ap-indent/responses.json'"
+check "列表里缩进的审批块：页面上显示的题，答案也存得下、必答也检查" "test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"id\":\"revproj/ap-indent\",\"v\":1,\"answers\":{\"a\":\"x\"}}' '$B/api/approval')\" = 422 && test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"id\":\"revproj/ap-indent\",\"v\":1,\"answers\":{\"a\":\"x\",\"budget\":\"100\"}}' '$B/api/approval')\" = 200 && has '\"budget\": \"100\"' '$MYDASH_DATA/revproj/ap-indent/responses.json'"
 # --- 设置页 ---
 chadd() { POSTB -H 'X-Mydash: 1' -d "$1" "$B/api/channels"; }
 chadd '{"op":"add","type":"bark","fields":{"url":"http://127.0.0.1:1/AbCdEfGhIjKlMnOpQr/"}}' > "$RV/ch1.json"
-check "Bark 网址末尾带 / 时设备 key 也遮住" "grep -q '\"ok\"\\|channels' '$RV/ch1.json' && ! grep -q 'AbCdEfGhIjKlMnOpQr' '$RV/ch1.json' && ! curl -s '$B/settings' | grep -q 'AbCdEfGhIjKlMnOpQr'"
+check "Bark 网址末尾带 / 时设备 key 也遮住" "has '\"ok\"\\|channels' '$RV/ch1.json' && ! has 'AbCdEfGhIjKlMnOpQr' '$RV/ch1.json' && ! curl -s '$B/settings' | has 'AbCdEfGhIjKlMnOpQr'"
 check "改设置后 config.json 仍然只给自己读" "test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"autoArchiveDays\":14}' '$B/api/settings')\" = 200 && test \"\$(fmode '$MYDASH_HOME/config.json')\" = 600"
 chadd '{"op":"add","type":"webhook","fields":{"url":"http://127.0.0.1:1/hook","secret":"sek-123456"}}' >/dev/null
 WHID=$(CHID webhook 127.0.0.1:1/hook)
-check "webhook 的签名密钥可以单独清掉" "grep -q 'sek-123456' '$MYDASH_HOME/config.json' && test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"op\":\"update\",\"id\":\"'$WHID'\",\"fields\":{\"url\":\"\",\"secret\":\"\"},\"clear\":[\"secret\"]}' '$B/api/channels')\" = 200 && ! grep -q 'sek-123456' '$MYDASH_HOME/config.json' && grep -q '127.0.0.1:1/hook' '$MYDASH_HOME/config.json'"
+check "webhook 的签名密钥可以单独清掉" "has 'sek-123456' '$MYDASH_HOME/config.json' && test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"op\":\"update\",\"id\":\"'$WHID'\",\"fields\":{\"url\":\"\",\"secret\":\"\"},\"clear\":[\"secret\"]}' '$B/api/channels')\" = 200 && ! has 'sek-123456' '$MYDASH_HOME/config.json' && has '127.0.0.1:1/hook' '$MYDASH_HOME/config.json'"
 POSTJ -H 'X-Mydash: 1' -d '{"op":"remove","id":"'"$WHID"'"}' "$B/api/channels" >/dev/null; POSTJ -H 'X-Mydash: 1' -d '{"op":"remove","id":"'"$(CHID bark AbCdEf)"'"}' "$B/api/channels" >/dev/null
 (cd "$RV" && printf '# Summary\n\n正文\n' > dup.md && $CLI publish dup.md -p revproj -s dup --title 'Weekly summary report for October' >/dev/null)
-check "正文的短标题只是页面标题的一小部分时照常显示" "curl -s '$B/p/revproj/dup' | grep -q '<h1 id=\"summary\">'"
+check "正文的短标题只是页面标题的一小部分时照常显示" "curl -s '$B/p/revproj/dup' | has '<h1 id=\"summary\">'"
 # --- 钩子 ---
 printf '%s' '{"hook_event_name":"PermissionRequest","session_id":"p-batch-1","cwd":"/x/revproj","tool_name":"Bash","tool_input":{"command":"ls"}}' > "$RV/p-batch.json"
 CLAUDE_CODE_ENTRYPOINT=sdk-cli node "$ROOT/bin/agent-ask.mjs" claude < "$RV/p-batch.json" > "$RV/p-batch.out" 2>&1 & PBJ=$!; sleep 1.5
@@ -1064,7 +1067,7 @@ check "claude -p（没人看着）：权限请求不接，钩子马上退出，�
 printf '%s' '{"session_id":"p-batch-2","last_assistant_message":"为什么会进化？"}' | CLAUDE_CODE_ENTRYPOINT=sdk-cli node "$ROOT/bin/agent-state.mjs" idle > "$RV/p-state.out"
 check "claude -p：问号结尾也不拦，不改批量任务的输出" "test ! -s '$RV/p-state.out' && test ! -e '$MYDASH_HOME/state/agents/p-batch-2.json'"
 printf '%s' '{"hook_event_name":"StopFailure","session_id":"stopfail-1","last_assistant_message":"要不要？"}' | node "$ROOT/bin/agent-state.mjs" idle > "$RV/sf.out"
-check "这一轮因为 API 出错结束（StopFailure）：记成闲，不拦" "test ! -s '$RV/sf.out' && grep -q '\"idle\"' '$MYDASH_HOME/state/agents/stopfail-1.json'"
+check "这一轮因为 API 出错结束（StopFailure）：记成闲，不拦" "test ! -s '$RV/sf.out' && has '\"idle\"' '$MYDASH_HOME/state/agents/stopfail-1.json'"
 # 一条消息里并行两个 Bash：按命令对上是哪一个
 printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_par_a","name":"Bash","input":{"command":"touch a"}},{"type":"tool_use","id":"toolu_par_b","name":"Bash","input":{"command":"touch b"}}]}}' > "$RV/par-tr.jsonl"
 printf '%s' '{"hook_event_name":"PermissionRequest","session_id":"sess-par","cwd":"/x/revproj","tool_name":"Bash","tool_input":{"command":"touch a"},"transcript_path":"'"$RV/par-tr.jsonl"'"}' > "$RV/par-a.json"
@@ -1101,7 +1104,7 @@ kill $SL $OTH 2>/dev/null; wait $SL $OTH 2>/dev/null
 printf '%s\n' '{"type":"session_meta","payload":{"cwd":"/x/revproj"}}' > "$RV/cx-async.jsonl"
 printf '%s' '{"hook_event_name":"PreToolUse","session_id":"thr-async","cwd":"/x/revproj","tool_name":"request_user_input_async","tool_use_id":"call_async1","transcript_path":"'"$RV/cx-async.jsonl"'","tool_input":{"questions":[{"title":"桌面版问的哪条路？","options":["甲","乙"]},{"title":"还有什么要补充？"}]}}' > "$RV/cx-async.json"
 node "$ROOT/bin/agent-ask.mjs" codex < "$RV/cx-async.json" > "$RV/cx-async.out" 2>&1; sleep 1; PAS=$(PID1)
-check "Codex 桌面版的选择题（request_user_input_async）也到了 mydash" "test ! -s '$RV/cx-async.out' && curl -s '$B/prompts/$PAS' | grep -q '桌面版问的哪条路' && curl -s '$B/prompts/$PAS' | grep -q '还有什么要补充'"
+check "Codex 桌面版的选择题（request_user_input_async）也到了 mydash" "test ! -s '$RV/cx-async.out' && curl -s '$B/prompts/$PAS' | has '桌面版问的哪条路' && curl -s '$B/prompts/$PAS' | has '还有什么要补充'"
 printf '%s\n%s\n' '{"type":"response_item","payload":{"type":"function_call_output","call_id":"call_async1","output":"queued"}}' '{"type":"event_msg","payload":{"type":"task_complete"}}' >> "$RV/cx-async.jsonl"; sleep 4
 check "桌面版：工具马上返回、这一轮结束了，题还在等用户" "test \"\$(pstatus $PAS)\" = pending"
 printf '%s\n' '{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<send_user_message_question_reply>[{\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call_async1\\\",0]\",\"answer\":\"甲\"}]</send_user_message_question_reply>"}]}}' >> "$RV/cx-async.jsonl"; sleep 4
@@ -1109,9 +1112,9 @@ check "桌面版：用户在软件里答了，mydash 那份关掉" "test \"\$(ps
 # --- 接入：只动这一份安装装过的东西 ---
 printf '# 我的规则\n' > "$CH/CLAUDE.md"; $CLI integrate claude >/dev/null
 MYDASH_HOME="$RV/other-home" node "$ROOT/bin/mydash.mjs" integrate claude --remove >/dev/null 2>&1
-check "另一份安装（没接入过）卸载时，不动主安装写进去的规则段和钩子" "grep -q 'mydash:begin' '$CH/CLAUDE.md' && grep -q 'agent-ask.mjs' '$CH/settings.json'"
+check "另一份安装（没接入过）卸载时，不动主安装写进去的规则段和钩子" "has 'mydash:begin' '$CH/CLAUDE.md' && has 'agent-ask.mjs' '$CH/settings.json'"
 MYDASH_HOME="$RV/other-home" node -e 'import(process.argv[1]).then(m=>process.stdout.write(JSON.stringify(m.refresh("claude"))))' "$ROOT/lib/integrate.mjs" > "$RV/other-refresh.json"
-check "另一份安装更新时也不改主安装的文件" "grep -q '\"changes\":\[\]' '$RV/other-refresh.json'"
+check "另一份安装更新时也不改主安装的文件" "has '\"changes\":\[\]' '$RV/other-refresh.json'"
 $CLI integrate claude --remove >/dev/null
 mkdir -p "$RV/ch3"; printf '{\n    "theme": "dark",\n    "hooks": {}\n}' > "$RV/ch3/settings.json"; printf '我自己的规则' > "$RV/ch3/CLAUDE.md"
 cp "$RV/ch3/settings.json" "$RV/settings.orig"; cp "$RV/ch3/CLAUDE.md" "$RV/claude.orig"
@@ -1124,7 +1127,7 @@ refreshj codex >/dev/null
 check "Codex：更新钩子后，用户自己的钩子还在原来的位置" "node -e 'const s=require(\"$XH/hooks.json\").hooks.Stop;process.exit(s.length===2&&/agent-state/.test(s[0].hooks[0].command)&&s[0].hooks[0].timeout===5&&s[1].hooks[0].command===\"my-stop.py\"?0:1)'"
 $CLI integrate codex --remove >/dev/null
 # --- 安装 ---
-check "--service 写错了直接报错，不装" "! MYDASH_HOME='$RV/svc-home' node '$ROOT/bin/mydash.mjs' setup install --service launchagent --access local --port $((PORT+40)) --json >'$RV/svc.out' 2>&1 && grep -q -- '--service' '$RV/svc.out' && test ! -d '$RV/svc-home/app'"
+check "--service 写错了直接报错，不装" "! MYDASH_HOME='$RV/svc-home' node '$ROOT/bin/mydash.mjs' setup install --service launchagent --access local --port $((PORT+40)) --json >'$RV/svc.out' 2>&1 && has -- '--service' '$RV/svc.out' && test ! -d '$RV/svc-home/app'"
 pid_ok() { sleep 60 & local sp=$!; local h="$RV/pid-home"; mkdir -p "$h/run"; local label; label=$(MYDASH_HOME="$h" node -e 'import(process.argv[1]).then(s=>process.stdout.write(s.SERVICES.server.launchd))' "$ROOT/lib/service.mjs"); echo $sp > "$h/run/$label.pid"; MYDASH_HOME="$h" node -e 'import(process.argv[1]).then(s=>s.removeService("server","none"))' "$ROOT/lib/service.mjs"; local alive=1; kill -0 $sp 2>/dev/null || alive=0; kill $sp 2>/dev/null; test $alive = 1; }
 check "pid 文件里记的进程号被别的程序用了：不会误杀它" "pid_ok"
 
@@ -1146,8 +1149,8 @@ check "网页字体本地加载" "! echo \"\$EH\" | grep 'fonts.googleapis' >/de
 
 echo "实时推送"
 wait $EV 2>/dev/null
-check "SSE 收到变更事件" "grep -q 'event: change' '$TMP/events.txt'"
-check "SSE 事件带条目 ID" "grep -q 'battle-plan' '$TMP/events.txt'"
+check "SSE 收到变更事件" "has 'event: change' '$TMP/events.txt'"
+check "SSE 事件带条目 ID" "has 'battle-plan' '$TMP/events.txt'"
 
 echo "命令"
 check "ls" "$CLI ls smoke | grep -c 'smoke/battle-plan'"
@@ -1157,7 +1160,7 @@ check "rm 单个版本" "test ! -d '$MYDASH_DATA/smoke/battle-plan/v1' && test -
 $CLI rm other/chart >/dev/null
 check "rm 整个条目" "test ! -d '$MYDASH_DATA/other/chart'"
 (cd "$TMP" && printf '# 临时待办\n\n- [ ] 一件事\n' > rmtodo.md && CLAUDE_CODE_SESSION_ID=sess-rm $CLI publish rmtodo.md -p rmproj -s rm-todo --type todo >/dev/null)
-check "删掉的待办不再挂在「还开着的事」里" "grep -q 'rmproj/rm-todo' '$MYDASH_HOME/state/open-items.json' && $CLI rm rmproj/rm-todo >/dev/null && ! grep -q 'rmproj/rm-todo' '$MYDASH_HOME/state/open-items.json'"
+check "删掉的待办不再挂在「还开着的事」里" "has 'rmproj/rm-todo' '$MYDASH_HOME/state/open-items.json' && $CLI rm rmproj/rm-todo >/dev/null && ! has 'rmproj/rm-todo' '$MYDASH_HOME/state/open-items.json'"
 check "服务日志无报错" "! grep -i 'error' '$TMP/server.log' | grep -v smoke-probe | grep -c ."
 
 echo "新版本（只跟正式版本的标签）"
@@ -1171,28 +1174,28 @@ git clone -q -b main "$UG/origin.git" "$UG/src" 2>/dev/null && git -C "$UG/src" 
 OLD=$(git -C "$UG/src" rev-parse HEAD)
 node -e 'const f=process.argv[1],c=JSON.parse(require("fs").readFileSync(f,"utf8"));c.source=process.argv[2];c.sourceRemote=process.argv[3];require("fs").writeFileSync(f,JSON.stringify(c))' "$MYDASH_HOME/config.json" "$UG/src" "$UG/origin.git"
 check "设置页能看有没有新版本：问远端的标签" "POSTJ -H 'X-Mydash: 1' -d '{\"action\":\"check\"}' '$B/api/update' >/dev/null; curl -s '$B/api/update' | node -e 'const s=JSON.parse(require(\"fs\").readFileSync(0));process.exit(s.available&&s.latest.version===\"99.0.0\"&&s.canUpdate?0:1)'"
-check "mydash update --check 也看得到" "$CLI update --check --json | grep -q '\"available\":true'"
-check "顶栏出现「更新」按钮，每个页面都有" "curl -s '$B/' | grep -q 'class=\"upd-top\" data-upd=\"open\"' && curl -s '$B/settings' | grep -q 'class=\"upd-top\"' && curl -s '$B/today' | grep -q 'class=\"upd-top\"'"
-check "首页不再另起一条「可以更新了」" "! curl -s '$B/' | grep -q 'upd-available'"
-check "设置页的「立即更新」也打开同一个弹窗" "curl -s '$B/settings' | grep -q 'class=\"act upd-go\" data-upd=\"open\"'"
-check "设置页有更新一栏" "curl -s '$B/settings' | grep -q 'id=\"update\"'"
-check "doctor 里有版本这一行" "$CLI doctor --json | grep -q '可以更新到 99.0.0'"
-check "设置：有新版本时怎么做（只认三种）" "test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"updateMode\":\"auto\"}' '$B/api/settings')\" = 200 && grep -q '\"mode\": \"auto\"' '$MYDASH_HOME/config.json' && test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"updateMode\":\"weekly\"}' '$B/api/settings')\" = 400"
+check "mydash update --check 也看得到" "$CLI update --check --json | has '\"available\":true'"
+check "顶栏出现「更新」按钮，每个页面都有" "curl -s '$B/' | has 'class=\"upd-top\" data-upd=\"open\"' && curl -s '$B/settings' | has 'class=\"upd-top\"' && curl -s '$B/today' | has 'class=\"upd-top\"'"
+check "首页不再另起一条「可以更新了」" "! curl -s '$B/' | has 'upd-available'"
+check "设置页的「立即更新」也打开同一个弹窗" "curl -s '$B/settings' | has 'class=\"act upd-go\" data-upd=\"open\"'"
+check "设置页有更新一栏" "curl -s '$B/settings' | has 'id=\"update\"'"
+check "doctor 里有版本这一行" "$CLI doctor --json | has '可以更新到 99.0.0'"
+check "设置：有新版本时怎么做（只认三种）" "test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"updateMode\":\"auto\"}' '$B/api/settings')\" = 200 && has '\"mode\": \"auto\"' '$MYDASH_HOME/config.json' && test \"\$(POSTJ -H 'X-Mydash: 1' -d '{\"updateMode\":\"weekly\"}' '$B/api/settings')\" = 400"
 POSTJ -H 'X-Mydash: 1' -d '{"updateMode":"off"}' "$B/api/settings" >/dev/null
-check "选了「什么都不做」：顶栏不显示更新按钮" "! curl -s '$B/' | grep -q 'class=\"upd-top'"
+check "选了「什么都不做」：顶栏不显示更新按钮" "! curl -s '$B/' | has 'class=\"upd-top'"
 POSTJ -H 'X-Mydash: 1' -d '{"updateMode":"notify"}' "$B/api/settings" >/dev/null
 check "开始更新要带 X-Mydash 头" "test \"\$(POSTJ -d '{\"action\":\"start\"}' '$B/api/update')\" = 403"
 # 真的点「更新」：更新进程和服务脱开跑；这个假仓库里没有 package.json，装不上，源码目录要退回原来的版本
 POSTJ -H 'X-Mydash: 1' -d '{"action":"start"}' "$B/api/update" >/dev/null
-for i in $(seq 1 120); do curl -s "$B/api/update" | grep -q '"last":{' && ! curl -s "$B/api/update" | grep -q '"running":{' && break; sleep 0.5; done
+for i in $(seq 1 120); do curl -s "$B/api/update" | has '"last":{' && ! curl -s "$B/api/update" | has '"running":{' && break; sleep 0.5; done
 check "更新失败：记下结果，说明退回了" "curl -s '$B/api/update' | node -e 'const s=JSON.parse(require(\"fs\").readFileSync(0));process.exit(!s.running&&s.last&&s.last.ok===false&&s.last.rolledBack&&s.last.to===\"99.0.0\"&&!s.last.seen?0:1)'"
 check "更新失败：源码目录退回原来的提交，还在分支上" "[ \"\$(git -C '$UG/src' rev-parse HEAD)\" = '$OLD' ] && git -C '$UG/src' symbolic-ref -q HEAD >/dev/null"
-check "首页显示更新失败，顶栏不再转圈" "curl -s '$B/' | grep -q 'upd-failed' && ! curl -s '$B/' | grep -q 'upd-top running'"
-check "点「知道了」收起结果" "POSTJ -H 'X-Mydash: 1' -d '{\"action\":\"seen\"}' '$B/api/update' >/dev/null && ! curl -s '$B/' | grep -q 'upd-failed'"
+check "首页显示更新失败，顶栏不再转圈" "curl -s '$B/' | has 'upd-failed' && ! curl -s '$B/' | has 'upd-top running'"
+check "点「知道了」收起结果" "POSTJ -H 'X-Mydash: 1' -d '{\"action\":\"seen\"}' '$B/api/update' >/dev/null && ! curl -s '$B/' | has 'upd-failed'"
 git -C "$UG/src" -c user.name=t -c user.email=t@t commit -q --allow-empty -m mine
-check "源码目录里有自己的提交：不动它" "! $CLI update --json > '$UG/div.json' && grep -q 'v99.0.0' '$UG/div.json' && git -C '$UG/src' log -1 --format=%s | grep -qx mine"
+check "源码目录里有自己的提交：不动它" "! $CLI update --json > '$UG/div.json' && has 'v99.0.0' '$UG/div.json' && git -C '$UG/src' log -1 --format=%s | grep -qx mine"
 git -C "$UG/src" reset -q --hard v99.0.0 && git -C "$UG/src" -c user.name=t -c user.email=t@t commit -q --allow-empty -m newer
-check "源码目录比最新版本还新（开发用的目录）：不动它，说清楚" "! $CLI update --json > '$UG/ahead.json' && grep -q '已经比 v99.0.0 新' '$UG/ahead.json' && git -C '$UG/src' log -1 --format=%s | grep -qx newer && curl -s '$B/api/update' | grep -q '\"to\":\"99.0.0\"'"
+check "源码目录比最新版本还新（开发用的目录）：不动它，说清楚" "! $CLI update --json > '$UG/ahead.json' && has '已经比 v99.0.0 新' '$UG/ahead.json' && git -C '$UG/src' log -1 --format=%s | grep -qx newer && curl -s '$B/api/update' | has '\"to\":\"99.0.0\"'"
 node -e 'const f=process.argv[1],c=JSON.parse(require("fs").readFileSync(f,"utf8"));delete c.source;delete c.sourceRemote;require("fs").writeFileSync(f,JSON.stringify(c))' "$MYDASH_HOME/config.json"
 rm -f "$MYDASH_HOME/state/update.json"
 
@@ -1228,7 +1231,7 @@ echo "{\"access\":\"tailscale-node\",\"hostname\":\"mdfakenode\",\"tailnetNames\
 env -u MYDASH_DATA -u MYDASH_PORT -u MYDASH_BASE_URL -u MYDASH_CONTENT_PORT MYDASH_HOME="$LV" node "$ROOT/server.mjs" > "$NN/live.log" 2>&1 &
 LVP=$!
 for i in $(seq 1 40); do curl -sf "http://127.0.0.1:$LP/healthz" >/dev/null && break; sleep 0.25; done
-for i in $(seq 1 40); do grep -q 'mdfakenode-1' "$LV/config.json" && break; sleep 0.25; done
+for i in $(seq 1 40); do has 'mdfakenode-1' "$LV/config.json" && break; sleep 0.25; done
 sleep 0.2
 check "节点改名后配置里的地址跟上" "jq_js '$LV/config.json' 'r.baseUrl===\"http://mdfakenode-1\"&&r.tailnetNames.join()===\"mdfakenode-1\"&&!r.allowedHosts.includes(\"mdfakenode\")'"
 check "节点改名后真实名字能打开" "[ \"\$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: mdfakenode-1' http://127.0.0.1:$LP/)\" = 200 ]"

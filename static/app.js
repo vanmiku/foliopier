@@ -20,6 +20,23 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms);
   }
 
+  // ---------- Conversation attachment storage ----------
+  const imageStorage = $('[data-image-storage]');
+  if(imageStorage) {
+    const label=$('[data-image-storage-status]',imageStorage),buttons=$$('[data-image-clean]',imageStorage);
+    const render=x=>{label.textContent=T('{count} images · {used} MB / {limit} MB · {active} in active deliveries',{count:x.count,used:(x.usedBytes/1048576).toFixed(1),limit:Math.round(x.maxBytes/1048576),active:x.inUse});};
+    fetch('/api/session-image-storage',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error();return r.json();}).then(render).catch(()=>{label.textContent=T('Image storage is unavailable.');});
+    imageStorage.addEventListener('click',async event=>{
+      const button=event.target.closest('[data-image-clean]');if(!button || button.disabled)return;
+      const completed=button.dataset.imageClean==='completed';
+      if(!confirm(completed?T('Delete completed image files? Images in earlier conversation history may become unavailable. Queued and active deliveries are kept.'):T('Remove uploads from unsent questions? You may need to attach those images again. Queued and sent images are kept.')))return;
+      buttons.forEach(b=>b.disabled=true);
+      try{const r=await fetch('/api/session-image-storage',{method:'POST',headers:{'X-Mydash':'1','Content-Type':'application/json'},body:JSON.stringify({action:'clean',includeCompleted:completed})});const data=await r.json();if(!r.ok)throw Error(data.error);render(data);toast(T('Image cleanup finished.'));}
+      catch(e){label.textContent=e.message || T('Image cleanup could not finish. Try again.');}
+      finally{buttons.forEach(b=>b.disabled=false);}
+    });
+  }
+
   // ---------- 相对时间 ----------
   function rel(iso) {
     const d = new Date(iso); const s = (Date.now() - d) / 1000;
@@ -370,6 +387,28 @@
 
   // ---------- 实时更新 ----------
   let connected = false;
+  let disconnectTimer;
+  function connectionNotice(show) {
+    const notice = $('.connection-notice'); if (!notice) return;
+    notice.hidden = !show;
+    if (!show || notice.childElementCount) return;
+    const title = document.createElement('strong'); title.textContent = T('Cannot connect to mydash. Reconnecting…');
+    const hint = document.createElement('span');
+    const local = $('meta[name="mydash-local-url"]');
+    const onHost = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
+    hint.textContent = !onHost && local?.dataset.tailnet === '1'
+      ? T('If you are on the computer running mydash, use its local address. On other devices, check Tailscale on both computers.')
+      : T('Check that the computer running mydash is awake and its service is running.');
+    notice.append(title, hint);
+    if (local && !onHost) {
+      const link = document.createElement('a'); link.className = 'connection-local';
+      // Explicit navigation only: never probe another machine’s localhost or
+      // redirect automatically while the user has an unsent question.
+      link.href = local.content + location.pathname + location.search + location.hash;
+      link.textContent = T('Local address (hosting computer only)');
+      link.target = '_blank'; link.rel = 'noopener'; notice.append(link);
+    }
+  }
   function setLive() { $$('.live').forEach(l => l.classList.toggle('on', connected)); }
   let listSeq = 0;
   async function refreshList(changedId) {
@@ -422,8 +461,11 @@
   function connect() {
     if (!window.EventSource) return;
     const es = new EventSource('/events');
-    es.onopen = () => { connected = true; setLive(); };
-    es.onerror = () => { connected = false; setLive(); };
+    es.onopen = () => { connected = true; setLive(); clearTimeout(disconnectTimer); disconnectTimer = null; connectionNotice(false); };
+    es.onerror = () => {
+      connected = false; setLive();
+      if (!disconnectTimer) disconnectTimer = setTimeout(() => { disconnectTimer = null; if (!connected) connectionNotice(true); }, 2500);
+    };
     es.addEventListener('pin', ev => {
       let d; try { d = JSON.parse(ev.data); } catch { return; }
       refreshSide().catch(() => {});
@@ -456,14 +498,15 @@
     es.addEventListener('change', ev => {
       let d; try { d = JSON.parse(ev.data); } catch { return; }
       const id = d.project + '/' + d.slug;
+      if (page === 'item' && id === body.dataset.id && d.v && d.v <= Number(body.dataset.version)) return;
       refreshSide().catch(() => {});
       if (page === 'home' || (page === 'project' && body.dataset.project === d.project)) {
         refreshList(id).catch(() => {});
       } else if (page === 'item' && body.dataset.project === d.project && body.dataset.slug === d.slug && body.dataset.latest === '1') {
-        if (dirty.size || $('dialog[open]')) showVersionUpdate();
+        if (dirty.size || $('dialog[open]') || $('.article-rail')) showVersionUpdate();
         else {
           toast(T('New version, reloading…'));
-          setTimeout(() => { if (dirty.size || $('dialog[open]')) showVersionUpdate(); else location.reload(); }, 700);
+          setTimeout(() => { if (dirty.size || $('dialog[open]') || $('.article-rail')) showVersionUpdate(); else location.reload(); }, 700);
         }
       } else if (page === 'item') {
         toast(T('New in {project}', { project: d.project }));
@@ -512,6 +555,7 @@
     const get = async () => { const r = await fetch('/api/access', { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return r.json(); };
     try { info = await get(); } catch { toast(T('Only the computer running mydash, or your tailnet, can show this.')); return; }
     const dlg = modal(`<h3 id="access-title">${T('Open on another device')}</h3><p class="access-computer"></p>
+      <section class="access-local" hidden></section>
       <section class="access-tailnet" hidden></section>
       <section><label class="access-switch"><span>${T('Allow access on the same Wi-Fi')}</span><input id="lan-toggle" type="checkbox" role="switch"></label>
       <p>${T('New devices need an access code and your approval. Turning this off revokes all devices.')}</p></section>
@@ -524,8 +568,13 @@
     function render(x) {
       info = x; toggle.checked = x.lan;
       $('.access-computer', dlg).textContent = T('This computer: {name} · {id}', { name: x.computer, id: x.instance });
+      const local = $('.access-local', dlg);
+      if (x.local) {
+        local.hidden = false;
+        local.innerHTML = `<h4>${T('On the computer running mydash:')}</h4><a class="ad-url" href="${escH(x.local)}">${escH(x.local)}</a><p>${T('Save this local address as a bookmark on that computer. It works even when Tailscale is off. It does not open mydash on other devices.')}</p>`;
+      }
       const tail = $('.access-tailnet', dlg);
-      if (x.tailnet) { tail.hidden = false; tail.innerHTML = `<h4>${T('Over Tailscale')}</h4><a class="ad-url" href="${escH(x.tailnet)}">${escH(x.tailnet)}</a><p>${T('Devices permitted to reach this node by your Tailscale access rules can open it remotely.')}</p>`; }
+      if (x.tailnet) { tail.hidden = false; tail.innerHTML = `<h4>${T('Over Tailscale')}</h4><a class="ad-url" href="${escH(x.tailnet)}">${escH(x.tailnet)}</a><p>${T('Devices permitted to reach this node by your Tailscale access rules can open it remotely.')}</p><p>${T('This address needs Tailscale. If you turn it off on the hosting computer, use the local address there instead.')}</p>`; }
       const next = JSON.stringify([x.lan, x.urls, x.code, x.pending, x.authorized]);
       if (next === signature) return; signature = next;
       const focused = document.activeElement, focusId = focused?.dataset.device, focusAction = focused?.dataset.access;
@@ -1019,7 +1068,15 @@
     // 其余选项：改了就存
     const syncDaily = () => { q('daily').disabled = !q('dailyOn').checked; };
     syncDaily();
+    const syncSessions = () => {
+      if (!q('sessionsOn')) return;
+      q('sessionsSend').disabled = !q('sessionsOn').checked;
+      if (!q('sessionsOn').checked) q('sessionsSend').checked = false;
+      const link = setForm.querySelector('[data-session-open]'); if (link) link.hidden = !q('sessionsOn').checked;
+    };
+    syncSessions();
     const autoData = () => ({
+      ...(q('sessionsOn') ? { terminalSessions: { enabled: q('sessionsOn').checked, send: q('sessionsSend').checked } } : {}),
       autoArchiveDays: Number(q('autoArchiveDays').value), daily: q('dailyOn').checked ? q('daily').value : '',
       ...(q('updateMode') ? { updateMode: q('updateMode').value } : {}),
       prompts: { enabled: q('promptsOn').checked, chat: q('promptsChat').checked, mode: q('promptsMode').value, codexMode: q('promptsCodex').value, pushDelay: Number(q('promptsPush').value) },
@@ -1028,6 +1085,7 @@
     let saving = Promise.resolve();
     for (const el of $$('[data-auto]', setForm)) el.addEventListener('change', () => {
       if (el.name === 'dailyOn') syncDaily();
+      if (el.name === 'sessionsOn') syncSessions();
       saving = saving.then(async () => {
         try {
           const j = await send('/api/settings', autoData());
@@ -1303,7 +1361,7 @@
       const open = comments.filter(c => c.status === 'open'), done = comments.filter(c => c.status !== 'open');
       const card = c => `<div class="cm-item${c.status === 'open' ? '' : ' done'}" id="cm-${escH(c.id)}">
         ${c.quote ? `<blockquote>${escH(c.quote)}</blockquote>` : ''}<p>${escH(c.text)}</p>
-        <div class="cm-meta"><span>v${c.v} · ${when(c.createdAt)}</span><span class="cm-st">${c.status === 'open' ? T('Not handled yet') : T('Handled{v}', { v: c.resolvedIn ? ` (v${c.resolvedIn})` : '' })}</span>${c.note ? `<span class="cm-note">${escH(c.note)}</span>` : ''}${c.status === 'open' ? `<button type="button" class="cm-del" data-cid="${escH(c.id)}">${T('Delete')}</button>` : ''}</div></div>`;
+        <div class="cm-meta"><span>v${c.v} · ${when(c.createdAt)}</span><span class="cm-st">${c.status === 'open' ? T('Not handled yet') : T('Handled{v}', { v: c.resolvedIn ? ` (v${c.resolvedIn})` : '' })}</span>${c.note ? `<span class="cm-note">${escH(c.note)}</span>` : ''}${body.dataset.sessionSend === '1' && c.status === 'open' ? `<button type="button" class="cm-agent act" data-comment="${escH(c.id)}" data-comment-version="${c.v}" data-comment-file="${escH(c.file || '')}">${T('Send to agent')}</button>` : ''}${c.agentDelivery ? `<a href="/sessions/${encodeURIComponent(c.agentDelivery.session)}">${T('View agent conversation')}</a>` : ''}${c.status === 'open' ? `<button type="button" class="cm-del" data-cid="${escH(c.id)}">${T('Delete')}</button>` : ''}</div></div>`;
       $('.cm-list', cmPanel).innerHTML = open.map(card).join('') + (done.length ? `<details class="cm-done"><summary>${T('{n} handled|{n} handled', { n: done.length })}</summary>${done.map(card).join('')}</details>` : '');
       $('.cm-n', cmPanel).textContent = open.length || '';
       highlight();

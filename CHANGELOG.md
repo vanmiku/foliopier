@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.1 (2026-11-03)
+
+Conversation connections are opt-in preview features. Existing settings are preserved; new installations leave conversation viewing and sending off. See [connection setup and limitations](docs/sessions.md) / [中文说明](docs/sessions.zh-CN.md).
+
+- Article companions use one row of Contents / Codex / Claude Code tabs, Agent icons, compact Markdown conversations, independent scrolling, a laptop expansion view and an accessible mobile drawer. Drafts, explicit quotes, images and reading positions stay with their original article version, file, Agent and conversation.
+- Codex App can receive text and up to four images directly in the original open local thread. Busy threads queue messages, persist them across service restarts and distinguish delivery from processing/completion. A processing error can recover through the App's continuation turns without resending the question. Every unfinished message has its own cancellation or uncertainty-resolution control.
+- Discover existing Codex and native Claude sessions without requiring an earlier mydash hook. Index large histories incrementally, prioritize recent sessions, look up known IDs directly and keep Agent discovery budgets independent. The standalone session list uses the same discovery sources.
+- Canonical project directories separate unrelated same-name folders. Articles keep the latest directory association of that article; other articles cannot change its target. Git worktrees continue to share their main project. Missing, ambiguous and remotely-published project contexts are explained.
+- Connect verified Claude Code and Codex tmux panes, matching process start identity, TTY and terminal input state. Text is pasted literally, approvals/drafts prevent handoff, and reply receipts use the correct Agent's completion boundaries. A missing optional hook directory no longer causes a false sending failure.
+- Claude App Code sessions can connect through their existing Remote Control link and native login. Controller events track the same original thread. Login, policy, connectivity and trusted-device restrictions are shown; mydash does not start another executor, refresh the account itself or change Agent permissions. The macOS boot service can obtain the existing login credential through a private GUI-session helper; uninstall removes it.
+- Claude Remote Control accepts native decimal-string sequence numbers and follows client events through worker replies, including quota failures. Busy/approval states pause new remote sends to avoid confusing the prior turn with a new reply. The connection guide uses the App’s actual Remote Control switch.
+- Restore unfinished Codex deliveries independently of history display limits, including threads beyond the previous 100-session cutoff. Unconfirmed deliveries never retry automatically.
+- Session image storage shows usage and explicit cleanup. Draft removal releases unused uploads; unreferenced uploads expire after 30 days. Queued/active and sent attachments are retained by default. Separately deleting completed attachments requires confirmation because older history images may become unavailable.
+- Local/trusted Tailnet connections can send; ordinary authorized LAN browsers remain conversation-view-only, including for delivery management and image storage actions. Viewing sessions exposes their original text to workbench readers; published HTML/SVG remains isolated from write APIs.
+- Settings and access panels provide a bookmarkable hosting-computer URL independent of Tailscale. Disconnected pages show recovery instructions without discarding input. `mydash url --local` supports custom ports and refuses to mistake a remote publishing client for a hosting server.
+- No new runtime dependencies or published-item data schema migration. Desktop connection protocols are version checked; see the guide for supported platforms and account prerequisites.
+
 ## 0.1.6 (2026-11-02)
 
 - **Open on another device** now has a same-Wi-Fi switch. It opens/closes LAN listeners immediately without a terminal or service restart.

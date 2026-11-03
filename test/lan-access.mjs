@@ -138,6 +138,7 @@ test('live LAN switch, owner approval, revocation and logout protect both ports'
   await until(async () => (await request(owner, '/healthz')).status === 200);
   let response = await post('set', { enabled: true }); assert.equal(response.status, 200);
   let info = JSON.parse(response.text); assert.equal(info.lan, true);
+  assert.equal(info.local, `http://127.0.0.1:${port}/`);
   await until(async () => (await request(ip, '/healthz')).status === 200);
   assert.equal((await request(ip, '/api/index')).status, 401);
   const signIn = await request(ip, '/login'); assert.equal(signIn.status, 200); assert.match(signIn.text, /id="lan-login"/);
@@ -170,6 +171,7 @@ test('live LAN switch, owner approval, revocation and logout protect both ports'
   assert.equal((await post('reset', {}, ip, cookie)).status, 403);
   const html = (await request(ip, '/', { cookie })).text;
   assert.match(html, /lan-logout/);
+  assert.doesNotMatch(html, /name="mydash-local-url"/);
   const eventRequest = http.get({ host: ip, port, path: '/events', headers: { Cookie: cookie } });
   eventRequest.on('error', () => {});
   const [events] = await once(eventRequest, 'response'); events.resume();

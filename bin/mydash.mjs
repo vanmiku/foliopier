@@ -5,7 +5,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { DATA_DIR, baseUrl, cleanName, itemDir, readMeta, writeMetaAtomic, withLock, itemPath, projectPath, scanAll, latest } from '../lib/store.mjs';
+import { DATA_DIR, baseUrl, localUrl, cleanName, itemDir, readMeta, writeMetaAtomic, withLock, itemPath, projectPath, scanAll, latest } from '../lib/store.mjs';
 import { syncOpen } from '../lib/waiting.mjs';
 import { displayNameOf } from '../lib/names.mjs';
 import { detectProject } from '../lib/agents.mjs';
@@ -31,7 +31,7 @@ Usage
   mydash publish <files or folders...> [options]   publish (same slug again = new version)
   mydash ls [project] [--all]                      list items (default: the current project)
   mydash search <words> [--project p]              search the text of everything published
-  mydash url [project[/slug]]                      print a URL
+  mydash url [project[/slug]] [--local]            print a URL (--local: hosting computer, no Tailscale needed)
   mydash rm <project>/<slug> [--version N]         delete an item or one version
   mydash rebuild [project[/slug]] [--agents|--dedup]  add missing previews; --agents: which tool published old items; --dedup: link identical files
   mydash prune [project[/slug]] [--keep N]         keep only the latest N versions of each item (default 5)
@@ -73,7 +73,7 @@ Local images and files referenced from Markdown are included automatically.
   mydash publish <文件或目录...> [选项]           发布（同一 slug 再发 = 新版本）
   mydash ls [项目] [--all]                         列出条目（默认当前项目）
   mydash search <关键词> [--project 项目]          在发布过的所有内容的正文里搜索
-  mydash url [项目[/slug]]                         打印网址
+  mydash url [项目[/slug]] [--local]               打印网址（--local：部署机器本机，无需 Tailscale）
   mydash rm <项目>/<slug> [--version N]            删除条目或某个版本
   mydash rebuild [项目[/slug]] [--agents|--dedup]  补齐预览；--agents 补记发布工具；--dedup 相同文件改成链接
   mydash prune [项目[/slug]] [--keep N]            每个条目只留最近 N 个版本（默认 5）
@@ -111,7 +111,7 @@ Markdown 里引用的本地图片和本地文件会被自动一起带上。
 `,
 };
 
-const BOOL = new Set(['help', 'json', 'force', 'yes', 'all', 'dry-run', 'remove', 'purge', 'allow-secret', 'version', 'agents', 'dedup', 'categories', 'done', 'hooks', 'no-hooks', 'undo', 'multi', 'check', 'auto']);
+const BOOL = new Set(['help', 'json', 'force', 'yes', 'all', 'dry-run', 'remove', 'purge', 'allow-secret', 'version', 'agents', 'dedup', 'categories', 'done', 'hooks', 'no-hooks', 'undo', 'multi', 'check', 'auto', 'local']);
 const ALIAS = { t: 'title', s: 'slug', p: 'project', n: 'note', m: 'main', h: 'help' };
 
 function parseArgs(argv) {
@@ -157,8 +157,10 @@ async function cmdLs(pos, opts) {
   }
 }
 
-function cmdUrl(pos) {
-  const target = pos[0]; const base = remoteConfig()?.url || baseUrl();
+function cmdUrl(pos, opts) {
+  const remote = remoteConfig();
+  if (opts.local && remote) die(t('This is a remote publishing client. Open the local address on the computer hosting mydash.'));
+  const target = pos[0]; const base = opts.local ? localUrl() : remote?.url || baseUrl();
   if (!target) { process.stdout.write(base + '/\n'); return; }
   const [project, slug] = target.split('/');
   process.stdout.write(base + (slug ? itemPath(project, slug) : projectPath(project)) + '\n');
@@ -248,7 +250,7 @@ try {
   switch (cmd) {
     case 'publish': case 'pub': await cmdPublish(pos, opts); break;
     case 'ls': case 'list': await cmdLs(pos, opts); break;
-    case 'url': cmdUrl(pos); break;
+    case 'url': cmdUrl(pos, opts); break;
     case 'rm': case 'remove': await cmdRm(pos, opts); break;
     case 'doctor': case 'status': await cmdDoctor(opts); break;
     case 'rebuild': if (opts.dedup) await cmdDedup(pos, opts); else if (opts.categories) await cmdCategories(pos, opts); else await cmdRebuild(pos, opts); break;
