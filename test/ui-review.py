@@ -88,7 +88,7 @@ class ReviewUI(unittest.TestCase):
 
     def setUp(self):
         self.context = self.browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, reduced_motion='reduce')
-        self.context.add_init_script("localStorage.setItem('mydash.theme', 'light')")
+        self.context.add_init_script("localStorage.setItem('mydash.theme', 'light');localStorage.setItem('mydash.feature.agent-conversations.v1','seen')")
         self.page = self.context.new_page()
         self.errors = []
         self.page.on('pageerror', lambda e: self.errors.append(str(e)))
@@ -146,6 +146,58 @@ class ReviewUI(unittest.TestCase):
             self.cli('publish', *map(str, files), '--force-project', 'test', '--slug', slug,
                      '--type', 'report', '--title', 'Clear item header', '--note', 'Revision ' + str(version),
                      '--json', env={**self.env, 'MYDASH_AGENT': 'codex'})
+
+    def test_contents_mode_pauses_conversation_polling(self):
+        self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
+        self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))
+        ident=self.session_fixture('visible-chat-111','codex');calls=[]
+        def chat(route):
+            calls.append(1);route.fulfill(json={'session':{'canSend':True,'transport':'codex-app','deliveries':[]},'stateLabel':'Idle','html':'<p>Visible chat</p>'})
+        self.page.route('**/api/sessions/'+ident,chat)
+        self.page.set_viewport_size({'width':1366,'height':760});self.go('/p/test/session-document')
+        self.page.wait_for_function("()=>document.querySelector('.article-messages').textContent.includes('Visible chat')")
+        self.page.locator('[data-article-mode=contents]').click();self.page.wait_for_timeout(200)
+        before=len(calls);self.page.wait_for_timeout(3300)
+        self.assertEqual(len(calls),before)
+        self.page.locator('[data-article-agent=codex]').click()
+        self.page.wait_for_function("()=>!document.querySelector('#article-conversation-pane').hidden")
+        self.page.wait_for_timeout(400)
+        self.assertGreater(len(calls),before)
+
+    def test_session_feature_intro_opens_settings_without_enabling_permissions(self):
+        self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}})
+        self.context.close()
+        self.context=self.browser.new_context(viewport={'width':390,'height':844},is_mobile=True,has_touch=True,reduced_motion='reduce')
+        self.page=self.context.new_page();self.page.on('pageerror',lambda e:self.errors.append(str(e)))
+        self.go('/')
+        dialog=self.page.locator('dialog[data-session-intro]')
+        dialog.wait_for(state='visible',timeout=5000)
+        self.assertEqual(dialog.get_attribute('aria-labelledby'),'session-intro-title')
+        self.assertIn('Codex',dialog.inner_text());self.assertIn('Claude Code',dialog.inner_text())
+        self.assertLessEqual(dialog.bounding_box()['width'],390)
+        self.shot('session-feature-intro-mobile',full_page=False)
+        self.page.get_by_role('link',name='Go to session settings').click()
+        self.page.wait_for_url('**/settings#terminal-sessions')
+        self.assertFalse(self.page.locator('[name=sessionsOn]').is_checked())
+        self.assertFalse(self.page.locator('[name=sessionsSend]').is_checked())
+        self.assertEqual(self.page.evaluate('document.activeElement.id'),'terminal-sessions')
+        self.assertTrue(self.page.locator('[data-session-intro-open]').is_visible())
+        self.go('/')
+        self.assertEqual(self.page.locator('dialog[data-session-intro]').count(),0)
+
+    def test_session_feature_intro_dismissal_is_remembered_and_enabled_users_are_quiet(self):
+        self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}})
+        self.context.close();self.context=self.browser.new_context(viewport={'width':1366,'height':760})
+        self.page=self.context.new_page();self.page.on('pageerror',lambda e:self.errors.append(str(e)))
+        self.go('/')
+        self.page.locator('dialog[data-session-intro]').wait_for(state='visible',timeout=5000)
+        self.page.keyboard.press('Escape');self.go('/')
+        self.assertEqual(self.page.locator('dialog[data-session-intro]').count(),0)
+        self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':False}})
+        self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))
+        self.page.evaluate("localStorage.removeItem('mydash.feature.agent-conversations.v1')")
+        self.go('/')
+        self.assertEqual(self.page.locator('dialog[data-session-intro]').count(),0)
 
     def test_header_controls_stay_in_place_when_expanded(self):
         self.header_fixture('header-stable')

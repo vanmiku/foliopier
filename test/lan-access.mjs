@@ -164,6 +164,7 @@ test('live LAN switch, owner approval, revocation and logout protect both ports'
   assert.equal((await request(owner, '/api/access', { method: 'POST', body: '{"action":"approve"}', headers: { 'Content-Type': 'application/json' } })).status, 403);
   assert.equal((await request(owner, '/api/access', { method: 'POST', body: JSON.stringify({ action: 'approve', id }), headers: { 'Content-Type': 'application/json', 'X-Mydash': '1', Origin: 'http://evil.example' } })).status, 403);
   assert.equal((await post('approve', { id })).status, 200);
+  assert.doesNotMatch((await request(ip, '/', { cookie })).text, /data-session-feature=/);
   assert.equal(JSON.parse((await request(ip, '/api/pair', { cookie })).text).state, 'approved');
   assert.equal((await request(ip, '/api/index', { cookie })).status, 200);
   assert.equal((await request(ip, '/missing', { cookie, content: true })).status, 404);

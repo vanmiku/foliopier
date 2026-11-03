@@ -659,6 +659,27 @@
     dlg.showModal(); onOpen?.(dlg);
     return dlg;
   }
+  // Feature discovery is per browser and feature, not repeated for every update.
+  const sessionIntroKey = 'mydash.feature.agent-conversations.v1';
+  function showSessionIntro(force = false) {
+    if (document.hidden || $('dialog[open]')) return;
+    if (!force && (body.dataset.sessionFeature !== 'available' || store.get(sessionIntroKey) || dirty.size || document.activeElement?.matches('input, textarea, [contenteditable="true"]'))) return;
+    const dlg = modal(`<div class="session-feature-intro"><p class="feature-kicker">${escH(T('New in mydash'))}</p><h3 id="session-intro-title">${escH(T('New: continue the conversation beside your document'))}</h3>
+      <div class="feature-tabs"><span>${escH(T('Contents'))}</span><strong>Codex</strong><span>Claude Code</span></div>
+      <p>${escH(T('Read a document, check your project’s recent conversation, and message a connected agent without leaving the page.'))}</p>
+      <p class="set-hint">${escH(T('Viewing and sending are separate switches. When viewing is on, devices with workbench access can read the original conversation.'))}</p>
+      <div class="upd-dlg-acts"><button type="button" class="upd-btn quiet" data-close>${escH(T('Not now'))}</button><a class="upd-btn" href="/settings#terminal-sessions">${escH(T('Go to session settings'))}</a></div></div>`);
+    dlg.dataset.sessionIntro = '';
+    dlg.setAttribute('aria-labelledby', 'session-intro-title');
+    store.set(sessionIntroKey, 'seen');
+    dlg.querySelector('a').focus();
+  }
+  if (body.dataset.sessionFeature === 'enabled') store.set(sessionIntroKey, 'seen');
+  setTimeout(() => showSessionIntro(), 200);
+  document.addEventListener('visibilitychange', () => showSessionIntro());
+  document.addEventListener('close', () => setTimeout(() => showSessionIntro(), 50), true);
+  document.addEventListener('click', e => { if (e.target.closest('[data-session-intro-open]')) showSessionIntro(true); });
+
   const when = iso => { const d = new Date(iso); const p = n => String(n).padStart(2, '0'); return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
 
   // ---------- 审批单：点选、输入，确认后提交 ----------
@@ -1075,6 +1096,11 @@
       const link = setForm.querySelector('[data-session-open]'); if (link) link.hidden = !q('sessionsOn').checked;
     };
     syncSessions();
+    if (location.hash === '#terminal-sessions') requestAnimationFrame(() => {
+      const section = $('#terminal-sessions');
+      section?.scrollIntoView({ block: 'center' });
+      section?.focus({ preventScroll: true });
+    });
     const autoData = () => ({
       ...(q('sessionsOn') ? { terminalSessions: { enabled: q('sessionsOn').checked, send: q('sessionsSend').checked } } : {}),
       autoArchiveDays: Number(q('autoArchiveDays').value), daily: q('dailyOn').checked ? q('daily').value : '',

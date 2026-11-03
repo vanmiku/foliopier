@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 (2026-11-03)
+
+- Users with conversation viewing off see a dismissible, once-per-browser introduction. Its action opens the exact Terminal sessions settings section; viewing and sending remain independent opt-in choices. The introduction can be replayed in Settings.
+- Project identity checks read worktree metadata without spawning Git on each request, and small Codex updates retain unchanged history instead of copying it. Conversation polling pauses while reading contents or when the mobile panel is closed.
+
+- Connect long Codex App conversations with snapshots above 32 MiB. Receive fragmented frames with linear copying, retain a 64 MiB frame bound, and explain oversized histories instead of a generic timeout.
+- Use live App turn activity when choosing the current project conversation, so stale transcript timestamps do not keep an older thread selected.
+
 ## 0.2.1 (2026-11-03)
 
 Conversation connections are opt-in preview features. Existing settings are preserved; new installations leave conversation viewing and sending off. See [connection setup and limitations](docs/sessions.md) / [中文说明](docs/sessions.zh-CN.md).
