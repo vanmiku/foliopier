@@ -8,6 +8,10 @@
   const $ = (selector) => rail.querySelector(selector);
   const tabs = [...rail.querySelectorAll('.article-modes [role=tab]')];
   const select = $('#article-session'),
+    picker = $('.article-session-picker'),
+    popup = $('.article-session-picker-popover'),
+    search = $('#article-session-search'),
+    switchButton = $('[data-article-switch]'),
     input = $('#article-message'),
     box = $('.article-messages');
   const form = $('.article-compose'),
@@ -246,46 +250,184 @@
     explanation.hidden = !explanation.hidden;
     $('[data-article-send-help]').setAttribute('aria-expanded', String(!explanation.hidden));
   });
-  $('[data-article-switch]').addEventListener('click', () => {
-    select.hidden = !select.hidden;
-    $('[data-article-switch]').setAttribute('aria-expanded', String(!select.hidden));
-    if (!select.hidden) select.focus({ preventScroll: true });
+  function closePicker(restoreFocus = false) {
+    popup.hidden = true;
+    switchButton.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) switchButton.focus({ preventScroll: true });
+  }
+  function openPicker(keyboard = false) {
+    if (pending || uploading || switchButton.disabled) return;
+    search.value = '';
+    delete select.dataset.signature;
+    popup.hidden = false;
+    renderSelect();
+    switchButton.setAttribute('aria-expanded', 'true');
+    if (keyboard) (select.querySelector('[aria-selected="true"]') || search).focus();
+    else search.focus({ preventScroll: true });
+  }
+  switchButton.addEventListener('click', () => (popup.hidden ? openPicker() : closePicker()));
+  switchButton.addEventListener('keydown', (event) => {
+    if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
+      event.preventDefault();
+      openPicker(true);
+    }
+  });
+  document.addEventListener('click', (event) => {
+    if (!popup.hidden && !picker.contains(event.target)) closePicker();
+  });
+  picker.addEventListener('focusout', (event) => {
+    if (event.relatedTarget && !picker.contains(event.relatedTarget)) closePicker();
+  });
+  picker.addEventListener('keydown', (event) => {
+    if (popup.hidden) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closePicker(true);
+      return;
+    }
+    const options = [...select.querySelectorAll('[role=option]')];
+    const index = options.indexOf(document.activeElement);
+    let next;
+    if (event.key === 'ArrowDown') next = Math.min(index + 1, options.length - 1);
+    else if (event.key === 'ArrowUp') next = index < 0 ? options.length - 1 : Math.max(0, index - 1);
+    else if (index >= 0 && event.key === 'Home') next = 0;
+    else if (index >= 0 && event.key === 'End') next = options.length - 1;
+    if (next !== undefined && options[next]) {
+      event.preventDefault();
+      options[next].focus({ preventScroll: true });
+      options[next].scrollIntoView({ block: 'nearest' });
+    }
+  });
+  search.addEventListener('input', () => {
+    select.scrollTop = 0;
+    renderSelect();
+  });
+  select.addEventListener('click', (event) => {
+    const option = event.target.closest('[role=option]');
+    if (!option || pending || uploading) return;
+    choose(agent, option.dataset.value, true);
+    closePicker(true);
   });
   function latestFor(agentId) {
     const matching = sessions.filter((s) => s.agent === agentId);
     return matching.find((s) => s.current) || matching[0];
   }
-  function targetState(label) {
-    const selected = sessions.find((s) => s.id === id);
-    return (
-      (choices.pins[agent]
-        ? T('Selected conversation')
-        : selected?.current
-          ? T('Current conversation')
-          : T('Recent conversation')) +
-      ' · ' +
-      label
-    );
+  function sessionState(value) {
+    return value === 'busy'
+      ? T('Working')
+      : value === 'idle'
+        ? T('Idle')
+        : value === 'ended'
+          ? T('Ended')
+          : value === 'needs_input'
+            ? T('Needs confirmation')
+            : T('Status unknown');
+  }
+  const sessionTime = new Intl.DateTimeFormat(window.__LANG === 'en' ? 'en' : 'zh-CN', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  function updatedAt(value) {
+    const time = new Date(value);
+    return Number.isFinite(time.getTime())
+      ? T('Updated {time}', {
+          time: sessionTime.format(time),
+        })
+      : '';
   }
   function renderSelect() {
     const current = sessions.filter((s) => s.agent === agent);
-    const signature = JSON.stringify(current.map((s) => [s.id, s.title, s.current, s.state]));
+    const target = current.find((s) => s.id === id);
+    const title = target?.title || (id ? T('Session unavailable') : T('No session for this agent yet.'));
+    $('[data-article-target-mode]').textContent = choices.pins[agent]
+      ? T('Selected conversation')
+      : T('Following latest');
+    $('[data-article-target-title]').textContent = title;
+    switchButton.title = title;
+    switchButton.setAttribute(
+      'aria-label',
+      T('Switch conversation') + ': ' + title + ' · ' + $('[data-article-target-mode]').textContent
+    );
+    switchButton.disabled = pending || uploading || !current.length;
+    if (popup.hidden) return;
+    const query = search.value.trim().toLocaleLowerCase();
+    const signature = JSON.stringify([current, id, choices.pins[agent], query]);
     if (select.dataset.signature === signature) return;
     select.dataset.signature = signature;
+    const focused = select.contains(document.activeElement)
+      ? document.activeElement.dataset.value
+      : undefined;
+    const pickerScroll = select.scrollTop;
     select.replaceChildren();
-    const option = (value, label) => {
-      const o = document.createElement('option');
-      o.value = value;
-      o.textContent = label;
-      select.appendChild(o);
+    const text = (tag, value, className = '') => {
+      const n = document.createElement(tag);
+      n.textContent = value;
+      if (className) n.className = className;
+      return n;
     };
-    option('', current.length ? T('Follow current conversation') : T('No session for this agent yet.'));
-    for (const s of current)
-      option(s.id, (s.current ? T('Current conversation') : T('Recent conversation')) + ' · ' + s.title);
-    if (id && !current.some((s) => s.id === id)) option(id, T('Session unavailable'));
-    select.value = choices.pins[agent] || '';
-    $('[data-article-switch]').hidden = current.length < 2 && !choices.pins[agent];
-    select.disabled = pending || !current.length;
+    const option = (value, title, session, following = false) => {
+      const o = document.createElement('button');
+      o.type = 'button';
+      o.className = 'article-session-option';
+      o.dataset.value = value;
+      o.setAttribute('role', 'option');
+      o.setAttribute('aria-selected', String(value === (choices.pins[agent] || '')));
+      o.tabIndex = -1;
+      const heading = text('span', '', 'article-picker-heading');
+      const name = text('strong', title);
+      name.dataset.sessionTitle = '';
+      heading.append(
+        name,
+        text('span', value === (choices.pins[agent] || '') ? '✓' : '', 'article-picker-check')
+      );
+      heading.lastChild.setAttribute('aria-hidden', 'true');
+      o.append(heading);
+      if (following)
+        o.append(
+          text('span', session?.title || T('No session for this agent yet.'), 'article-picker-follow-target')
+        );
+      if (session) {
+        const meta = text('span', '', 'article-picker-meta');
+        const badge = text('span', sessionState(session.state), 'article-picker-state');
+        badge.dataset.state = session.state;
+        meta.append(badge);
+        if (session.current && !following) meta.append(text('span', T('Latest in project')));
+        const time = updatedAt(session.at);
+        if (time) meta.append(text('span', time));
+        o.append(meta);
+        if (!following) {
+          if (session.preview) o.append(text('span', session.preview, 'article-picker-preview'));
+          const source =
+            session.transport === 'codex-app'
+              ? 'Codex App'
+              : session.transport === 'claude-remote'
+                ? 'Claude Remote Control'
+                : session.transport === 'tmux'
+                  ? 'tmux'
+                  : T('Sync only');
+          o.append(text('span', source + ' · #' + session.id.slice(-12), 'article-picker-source'));
+        }
+      }
+      select.append(o);
+    };
+    if (!query && current.length) option('', T('Follow current conversation'), latestFor(agent), true);
+    for (const session of current) {
+      if (
+        query &&
+        ![session.title, session.preview, session.id].join(' ').toLocaleLowerCase().includes(query)
+      )
+        continue;
+      option(session.id, session.title, session);
+    }
+    $('.article-picker-empty').hidden = Boolean(select.children.length);
+    select.scrollTop = pickerScroll;
+    if (focused !== undefined && !popup.hidden) {
+      const replacement = [...select.children].find((o) => o.dataset.value === focused);
+      (replacement || search).focus({ preventScroll: true });
+    }
   }
   function choose(nextAgent, nextId, manual = false) {
     if (pending || uploading) return;
@@ -301,8 +443,7 @@
     id = current.some((s) => s.id === preferred) ? preferred : latestFor(agent)?.id || '';
     choices.agent = agent;
     store(projectKey, choices);
-    select.hidden = true;
-    $('[data-article-switch]').setAttribute('aria-expanded', 'false');
+    closePicker();
     $('.article-session-update').hidden = true;
     sendReason = current.find((s) => s.id === id)?.sendReason || 'not_connected';
     generation++;
@@ -330,7 +471,7 @@
     setAvailable(false);
     hint();
     const s = current.find((s) => s.id === id);
-    state.textContent = s ? targetState(T('Loading conversation…')) : T('Choose a session to continue.');
+    state.textContent = s ? T('Loading conversation…') : T('Choose a session to continue.');
     $('[data-article-session-detail]').textContent =
       T('Project: {project}', { project: data.project || data.id.split('/')[0] }) +
       '\n' +
@@ -391,7 +532,10 @@
     try {
       const r = await read('/api/sessions/' + encodeURIComponent(target));
       if (token !== generation) return;
-      state.textContent = targetState(r.stateLabel);
+      const current = sessions.find((s) => s.id === target);
+      if (current && r.session.state) current.state = r.session.state;
+      renderSelect();
+      state.textContent = r.stateLabel;
       if (lastHtml !== r.html) {
         const atBottom = box.scrollHeight - box.clientHeight - box.scrollTop < 100;
         const scroll = box.scrollTop;
@@ -458,6 +602,7 @@
       if (!choices.pins[agent] && next && next.id !== id) {
         const readingPast = box.scrollHeight - box.clientHeight - box.scrollTop > 120;
         if (
+          popup.hidden &&
           !waitingForReply &&
           !draft.images?.length &&
           !input.value.trim() &&
@@ -491,7 +636,6 @@
       polling = false;
     }
   }
-  select.addEventListener('change', () => choose(agent, select.value, true));
   $('[data-article-current]').addEventListener('click', () => choose(agent, '', true));
   input.addEventListener('input', () => {
     draft.nonce = null;
@@ -590,7 +734,7 @@
     }
     uploading = true;
     setAvailable(available);
-    select.disabled = true;
+    switchButton.disabled = true;
     tabs.forEach((tab) => (tab.disabled = true));
     status.textContent = T('Uploading images…');
     try {
@@ -624,7 +768,7 @@
       uploading = false;
       $('#article-image-files').value = '';
       tabs.forEach((tab) => (tab.disabled = false));
-      select.disabled = pending;
+      renderSelect();
       setAvailable(available);
     }
   }
@@ -686,7 +830,7 @@
       target = id;
     pending = true;
     setAvailable(available);
-    select.disabled = true;
+    switchButton.disabled = true;
     tabs.forEach((t) => (t.disabled = true));
     input.readOnly = true;
     status.textContent = T('Sending…');
@@ -724,7 +868,7 @@
       pending = false;
       input.readOnly = false;
       tabs.forEach((t) => (t.disabled = false));
-      select.disabled = !sessions.some((s) => s.agent === agent);
+      renderSelect();
       setAvailable(available);
     }
   });
@@ -749,6 +893,7 @@
     $('.article-conversation').hidden = value !== 'conversation';
     syncTabs();
     if (resuming && refresh) pollChat();
+    if (value === 'contents') closePicker();
     if (value === 'conversation')
       requestAnimationFrame(() => {
         if (lastHtml !== null) {
@@ -787,6 +932,7 @@
   });
   const mask = document.querySelector('.article-rail-mask');
   function close() {
+    closePicker();
     save();
     rail.classList.remove('is-open', 'is-expanded');
     mask.hidden = true;
@@ -841,7 +987,7 @@
     }
     if (e.key === 'Tab') {
       const focusable = [
-        ...rail.querySelectorAll('button, select, textarea, a, [tabindex="0"], summary'),
+        ...rail.querySelectorAll('button, input, textarea, a, [tabindex="0"], summary'),
       ].filter((n) => !n.disabled && n.tabIndex >= 0 && n.getClientRects().length);
       const first = focusable[0],
         last = focusable.at(-1);

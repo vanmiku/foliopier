@@ -109,9 +109,9 @@ class ReviewUI(unittest.TestCase):
         self.page.locator('[data-article-agent='+agent+']').click()
 
     def choose_article_session(self, ident):
-        if self.page.locator('#article-session').is_hidden():
+        if self.page.locator('.article-session-picker-popover').is_hidden():
             self.page.locator('[data-article-switch]').click()
-        self.page.locator('#article-session').select_option(ident)
+        self.page.locator('#article-session [role=option][data-value="'+ident+'"]').click()
 
     def session_activity(self, ident, seconds):
         registry=self.home/'state/agents'/(ident+'.json');data=json.loads(registry.read_text())
@@ -1108,6 +1108,94 @@ class ReviewUI(unittest.TestCase):
         self.assertEqual(self.page.locator('#article-message').input_value(),'Keep my App draft')
         self.assertTrue(self.page.locator('.article-compose [type=submit]').is_hidden())
 
+    def picker_fixture(self):
+        self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
+        self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))
+        older=self.session_fixture('picker-review-111','codex');self.session_activity(older,60)
+        current=self.session_fixture('picker-drawing-222','codex');self.session_activity(current,120)
+        for ident,title,state in [(older,'Review code purpose and design','idle'),(current,'Analyze drawings and quantities','busy')]:
+            path=self.home/'state/agents'/(ident+'.json');record=json.loads(path.read_text());record.update({'title':title,'state':state});path.write_text(json.dumps(record))
+        self.page.route('**/api/sessions/picker-*',lambda r:r.fulfill(json={'session':{'canSend':True,'transport':'codex-app','deliveries':[]},'stateLabel':'Working' if r.request.url.endswith(current) else 'Idle','html':'<p>Original conversation</p>'}))
+        return older,current
+
+    def test_conversation_picker_shows_target_and_detailed_live_options(self):
+        older,current=self.picker_fixture()
+        self.page.set_viewport_size({'width':1366,'height':650});self.go('/p/test/session-document')
+        trigger=self.page.locator('[data-article-switch]')
+        self.assertIn('Analyze drawings and quantities',trigger.inner_text())
+        self.assertIn('Following latest',trigger.inner_text())
+        self.assertEqual(self.page.locator('select#article-session').count(),0)
+        before=self.page.locator('.article-messages').bounding_box()
+        trigger.click();options=self.page.locator('#article-session [role=option]')
+        busy=options.filter(has=self.page.locator('[data-session-title]',has_text='Analyze drawings and quantities')).last
+        self.assertIn('Working',busy.inner_text());self.assertIn('Latest in project',busy.inner_text())
+        self.assertIn('Updated',busy.inner_text());self.assertIn('drawing-222',busy.inner_text())
+        self.assertIn('Codex desktop can be viewed here.',busy.inner_text())
+        self.assertEqual(self.page.locator('#article-session [aria-selected=true]').get_attribute('data-value'),'')
+        self.assertEqual(before,self.page.locator('.article-messages').bounding_box())
+        self.page.locator('#article-session-search').fill('review code')
+        self.assertEqual(self.page.locator('#article-session [role=option]').count(),1)
+        self.page.locator('#article-session [role=option]').click()
+        self.assertIn('Selected conversation',trigger.inner_text());self.assertIn('Review code purpose and design',trigger.inner_text())
+        self.assertTrue(self.page.locator('.article-session-picker-popover').is_hidden())
+        self.assertTrue(trigger.evaluate('e=>e===document.activeElement'))
+        self.page.reload();self.page.wait_for_selector('[data-article-switch]')
+        self.assertIn('Review code purpose and design',trigger.inner_text())
+        self.choose_article_session('')
+        self.assertIn('Analyze drawings and quantities',trigger.inner_text())
+
+    def test_open_conversation_picker_keeps_target_and_keyboard_focus_during_live_updates(self):
+        older,current=self.picker_fixture()
+        self.page.set_viewport_size({'width':1366,'height':650});self.go('/p/test/session-document')
+        self.page.locator('[data-article-switch]').click()
+        self.page.locator('#article-session [data-value="'+current+'"]').focus()
+        newer=self.session_fixture('picker-next-333','codex');self.session_activity(newer,180)
+        p=self.home/'state/agents'/(newer+'.json');r=json.loads(p.read_text());r['title']='A newer project conversation';p.write_text(json.dumps(r))
+        self.page.wait_for_selector('.article-session-update')
+        self.assertIn('Analyze drawings and quantities',self.page.locator('[data-article-switch]').inner_text())
+        self.assertTrue(self.page.locator('.article-session-picker-popover').is_visible())
+        self.assertEqual(self.page.evaluate('document.activeElement.dataset.value'),current)
+        self.page.locator('#article-session [data-value=""]').click()
+        self.assertIn('A newer project conversation',self.page.locator('[data-article-switch]').inner_text())
+
+    def test_conversation_picker_sends_to_selected_target_and_preserves_other_drafts(self):
+        older,current=self.picker_fixture()
+        self.page.set_viewport_size({'width':1366,'height':650});self.go('/p/test/session-document')
+        self.page.locator('.article-compose').wait_for(state='visible');self.page.locator('#article-message').fill('Draft for the current conversation')
+        self.choose_article_session(older)
+        self.page.locator('.article-compose').wait_for(state='visible');self.page.locator('#article-message').fill('Send only to the selected conversation')
+        posted=[]
+        def capture(route):
+            posted.append(route.request.post_data_json)
+            route.fulfill(json={'ok':True,'transport':'codex-app'})
+        self.page.route('**/api/sessions/send',capture)
+        self.page.locator('.article-compose [type=submit]').click()
+        self.page.wait_for_function('()=>document.querySelector("#article-message").value===""')
+        self.assertEqual(len(posted),1);self.assertEqual(posted[0]['id'],older)
+        self.choose_article_session('')
+        self.assertEqual(self.page.locator('#article-message').input_value(),'Draft for the current conversation')
+        self.assertIn('Analyze drawings and quantities',self.page.locator('[data-article-switch]').inner_text())
+
+    def test_conversation_picker_keyboard_and_mobile_dismissal(self):
+        self.picker_fixture();self.go('/p/test/session-document')
+        self.page.locator('[data-article-open=conversation]').click()
+        trigger=self.page.locator('[data-article-switch]');trigger.focus();self.page.keyboard.press('ArrowDown')
+        self.assertTrue(self.page.locator('.article-session-picker-popover').is_visible())
+        self.page.locator('#article-session-search').fill('Review code purpose')
+        self.page.keyboard.press('ArrowDown');self.page.keyboard.press('End');self.page.keyboard.press('Enter')
+        self.assertIn('Review code purpose and design',trigger.inner_text())
+        trigger.click();self.page.locator('#article-session-search').fill('no such conversation')
+        self.assertTrue(self.page.get_by_text('No matching conversations.').is_visible())
+        self.page.keyboard.press('Escape')
+        self.assertTrue(self.page.locator('.article-session-picker-popover').is_hidden())
+        self.assertTrue(self.page.locator('#article-rail').evaluate('e=>e.classList.contains("is-open")'))
+        trigger.click();self.page.locator('[data-article-agent=codex]').click()
+        self.assertTrue(self.page.locator('.article-session-picker-popover').is_hidden())
+        trigger.click();rect=self.page.locator('.article-session-picker-popover').bounding_box()
+        self.assertGreaterEqual(rect['x'],0);self.assertLessEqual(rect['x']+rect['width'],390)
+        self.assertLessEqual(rect['y']+rect['height'],844)
+        self.shot('conversation-picker-mobile',full_page=False)
+
     def test_project_current_conversation_is_shared_across_articles(self):
         self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
         self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))
@@ -1117,9 +1205,9 @@ class ReviewUI(unittest.TestCase):
         meta['versions'][-1].update({'agent':'claude','session':old});meta_file.write_text(json.dumps(meta))
         self.page.set_viewport_size({'width':1366,'height':650});self.go('/p/test/session-document')
         self.assertEqual(self.page.locator('#article-rail').get_attribute('data-agent'),'codex')
-        self.assertEqual(self.page.locator('#article-session').input_value(),'')
+        self.assertEqual(self.page.locator('[data-article-target-mode]').inner_text(),'Following latest')
         self.assertIn(current,self.page.locator('[data-article-session-detail]').text_content())
-        self.assertTrue(self.page.locator('#article-session').is_hidden())
+        self.assertTrue(self.page.locator('.article-session-picker-popover').is_hidden())
         comment=self.post('/api/comment',{'id':'test/session-document','v':meta['versions'][-1]['v'],'file':'session-document.md','text':'Discuss in the current project conversation'})['comments'][-1]
         self.go('/p/test/session-document')
         self.page.wait_for_selector('.cm-agent[data-comment="'+comment['id']+'"]')
