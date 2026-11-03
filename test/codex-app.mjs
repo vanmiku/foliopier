@@ -41,6 +41,7 @@ async function fixture(t, options = {}) {
   };
   const server = net.createServer((socket) => {
     sockets.add(socket);
+    socket.on('error', () => {});
     socket.on('close', () => sockets.delete(socket));
     let buf = Buffer.alloc(0);
     const send = (obj) => {
@@ -568,6 +569,11 @@ test('HTTP send travels through the native socket and exposes completion only fo
   assert.equal(f.calls.filter((x) => x.method === 'thread-follower-start-turn').length, 1);
   assert.ok((await get()).html.includes('Explain'));
   assert.equal(
+    (await get()).session.at,
+    new Date(f.state.turns[0].turnStartedAtMs).toISOString(),
+    'live App activity outranks stale transcript timestamps'
+  );
+  assert.equal(
     f.calls.find((x) => x.method === 'thread-follower-start-turn').params.turnStart.request.input[0].text,
     body.text
   );
@@ -692,4 +698,55 @@ test('queue restart restores unfinished tasks beyond history limits and across a
   }
   const restored = new AppDeliveryQueue(options);
   assert.equal(restored.list(last).find((x) => x.nonce === 'restart-boundary-111')?.state, 'queued');
+});
+
+test('long App conversations above 32 MiB connect without exposing tool output', async (t) => {
+  if (process.platform === 'win32') return t.skip('desktop Unix IPC adapter');
+  const f = await fixture(t);
+  f.state.turns = [
+    {
+      turnId: 'long-turn',
+      status: 'completed',
+      turnStartedAtMs: Date.now(),
+      items: [
+        { type: 'commandExecution', aggregatedOutput: 'x'.repeat(37 * 1024 * 1024) },
+        { type: 'agentMessage', text: '**Original conversation reply**', phase: 'final_answer' },
+      ],
+    },
+  ];
+  const b = new api.CodexAppBridge({ socketPath: f.socketPath, timeoutMs: 3000 });
+  t.after(() => b.close());
+  const view = await b.observe(sid, f.dir);
+  assert.equal(view.connected, true);
+  assert.equal(view.messages.at(-1).text, '**Original conversation reply**');
+  assert.ok(JSON.stringify(view).length < 10000, 'tool output stays inside the private protocol state');
+  assert.equal(
+    f.calls.some((x) => x.method === 'thread-follower-start-turn'),
+    false
+  );
+});
+
+test('App framing accepts split headers and several frames in one chunk, and bounds oversized input', () => {
+  const bridge = new api.CodexAppBridge(),
+    seen = [],
+    closed = [];
+  bridge.handle = (m) => seen.push(m);
+  bridge.close = (reason) => closed.push(reason);
+  const frame = (m) => {
+    const b = Buffer.from(JSON.stringify(m)),
+      h = Buffer.alloc(4);
+    h.writeUInt32LE(b.length);
+    return Buffer.concat([h, b]);
+  };
+  const a = frame({ one: 'hello' }),
+    b = frame({ two: '世界' });
+  bridge.read(a.subarray(0, 1));
+  bridge.read(a.subarray(1, 3));
+  bridge.read(Buffer.concat([a.subarray(3), b]));
+  assert.deepEqual(seen, [{ one: 'hello' }, { two: '世界' }]);
+  assert.deepEqual(closed, []);
+  const tooLarge = Buffer.alloc(4);
+  tooLarge.writeUInt32LE(64 * 1024 * 1024 + 1);
+  bridge.read(tooLarge);
+  assert.deepEqual(closed, ['app_history_limit']);
 });

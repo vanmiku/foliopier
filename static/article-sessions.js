@@ -193,13 +193,17 @@
                       ? T(
                           'This Codex App connection version is unsupported. Sending is paused to protect the conversation.'
                         )
-                      : sendReason === 'app_unavailable'
+                      : sendReason === 'app_history_limit'
                         ? T(
-                            'Codex App did not respond. Keep the App running and open this conversation, then try again.'
+                            'This Codex conversation is too large to sync. Select a shorter conversation to connect.'
                           )
-                        : T(
-                            'Open this conversation in Codex App on this computer. mydash will connect automatically.'
-                          ));
+                        : sendReason === 'app_unavailable'
+                          ? T(
+                              'Codex App did not respond. Keep the App running and open this conversation, then try again.'
+                            )
+                          : T(
+                              'Open this conversation in Codex App on this computer. mydash will connect automatically.'
+                            ));
     const explanation = $('#article-send-reason');
     explanation.textContent = reason;
     const reasonKey = agent + ':' + sendReason + ':' + Boolean(id);
