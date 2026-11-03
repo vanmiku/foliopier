@@ -6,7 +6,7 @@
 
 **A self-hosted workbench for what Claude Code and Codex make.**
 
-Your agents publish their plans, reports, PDFs, prototypes and Office files with one command. You open them properly rendered on your computer or your phone, answer the agents' questions there, and send comments back. Everything stays on your machine.
+Your agents publish their plans, reports, PDFs, prototypes and Office files with one command. You open them properly rendered on your computer or your phone, answer the agents' questions there, and send comments back. Published files stay on your machine. Optional conversation connections use your Agent’s existing connection.
 
 [![Release](https://img.shields.io/github/v/release/vanmiku/mydash?color=294ae8&label=release)](https://github.com/vanmiku/mydash/releases)
 [![Tests](https://github.com/vanmiku/mydash/actions/workflows/test.yml/badge.svg)](https://github.com/vanmiku/mydash/actions/workflows/test.yml)
@@ -71,6 +71,12 @@ mydash doctor
 
 `./setup.sh` with no arguments lists every option. On Windows, use `setup.cmd` in PowerShell instead of `./setup.sh`.
 </details>
+
+## Conversations while reading
+
+Enable conversation viewing and messaging separately in Settings. Each article offers Contents / Codex / Claude Code tabs, recent Markdown conversation, explicit passage attachment and a compact question composer. Codex App supports image upload/paste and a persistent busy queue; verified Codex/Claude tmux terminals and connected Claude App Remote Control support text. Canonical folders keep unrelated same-name projects separate. These are opt-in preview adapters with platform and account requirements.
+
+Read the [connection guide and capability matrix](docs/sessions.md) before enabling. Approved ordinary LAN browsers can view conversations but cannot send. On the hosting computer, bookmark `http://127.0.0.1:4870/` or use `mydash url --local`; this entrance does not require Tailscale.
 
 ## What you get
 

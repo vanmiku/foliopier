@@ -12,6 +12,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { parentAgent } from '../lib/session-process.mjs';
 
 const event = ['idle', 'ended'].includes(process.argv[2]) ? process.argv[2] : 'busy';
 let state = event;
@@ -52,7 +54,17 @@ if (valid) {
     const tmp = `${file}.${process.pid}.tmp`;
     // transcript：会话记录的位置。按 Esc 打断时不触发 Stop，状态会停在 busy；等答复的一方看记录多久没动了，判断是不是真的还在忙
     const tp = typeof input.transcript_path === 'string' ? input.transcript_path : prev.transcript;
-    fs.writeFileSync(tmp, JSON.stringify({ state, at: new Date().toISOString(), ...(prev.told || event === 'busy' ? { told: true } : {}), ...(tp ? { transcript: tp } : {}) })); fs.renameSync(tmp, file);
+    let sessionMeta = {};
+    if (cfg.terminalSessions?.enabled === true) {
+      let tmux = null;
+      if (process.env.TMUX && /^%\d+$/.test(process.env.TMUX_PANE || '')) try {
+        const socket = process.env.TMUX.split(',')[0];
+        const output = execFileSync(process.platform === 'darwin' && fs.existsSync('/opt/homebrew/bin/tmux') ? '/opt/homebrew/bin/tmux' : 'tmux', ['-u','-S', socket, 'display-message', '-p', '-t', process.env.TMUX_PANE, '#{pane_tty}|#{pid}'], { timeout: 700, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim().split('|');
+        if (output[0] && output[1]) tmux = { socket, pane: process.env.TMUX_PANE, tty: output[0], serverPid: Number(output[1]), process: parentAgent(agent) };
+      } catch {}
+      sessionMeta = { agent, cwd: input.cwd || prev.cwd || '', tmux };
+    }
+    fs.writeFileSync(tmp, JSON.stringify({ ...sessionMeta, state, at: new Date().toISOString(), ...(prev.told || event === 'busy' ? { told: true } : {}), ...(tp ? { transcript: tp } : {}) })); fs.renameSync(tmp, file);
     // 偶尔顺手清掉一周没动过的
     if (Math.random() < 0.05) for (const f of fs.readdirSync(AGENTS)) { try { const p = path.join(AGENTS, f); if (Date.now() - fs.statSync(p).mtimeMs > 7 * 86400_000) fs.rmSync(p, { force: true }); } catch {} }
   } catch {}

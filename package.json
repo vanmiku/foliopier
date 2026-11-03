@@ -1,6 +1,6 @@
 {
   "name": "mydash",
-  "version": "0.1.6",
+  "version": "0.2.1",
   "private": true,
   "description": "A self-hosted workbench for what your coding agents (Claude Code, Codex) make: publish plans, reports, PDFs, screenshots, HTML and Office files, read them rendered on your computer or phone.",
   "license": "MIT",
@@ -29,7 +29,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test test/review-regressions.mjs test/update-release.mjs test/boot-setup.mjs test/lan-access.mjs && bash test/smoke-parallel.sh && node test/i18n-check.mjs --missing-only"
+    "test": "node --test test/review-regressions.mjs test/update-release.mjs test/boot-setup.mjs test/lan-access.mjs test/sessions.mjs test/codex-app.mjs test/session-images.mjs test/session-discovery.mjs test/terminal-delivery.mjs test/claude-remote.mjs test/claude-auth.mjs && bash test/smoke-parallel.sh && node test/i18n-check.mjs --missing-only"
   },
   "engines": {
     "node": ">=20"

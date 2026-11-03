@@ -1,3 +1,5 @@
+import { projectConversationContext, listSessions, readSession, refreshSession, cancelAppDelivery, uploadSessionImage, readSessionImage, sessionImageStorage, cleanSessionImages, discardSessionImage, sendSession, sessionMatches, replyAfter } from './lib/sessions.mjs';
+import { sessionRows, sessionSection, messageRows, sessionPage, stateLabel } from './lib/sessionviews.mjs';
 // mydash 网页服务：只监听 127.0.0.1。访问方式由安装时选：只本机，或由 tailscale serve 转发到 tailnet。
 // 两个端口：PORT 是工作台；CONTENT_PORT 只提供原始文件，网页类产物在这里运行，和工作台不同源，脚本碰不到工作台的接口。
 import http from 'node:http';
@@ -6,14 +8,14 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { DATA_DIR, CONFIG_PATH, scanAll, readMeta, latest, readConfig, updateConfig, baseUrl, contentPort, httpsContentPort, INSTALL_ID, cleanName } from './lib/store.mjs';
+import { DATA_DIR, CONFIG_PATH, scanAll, readMeta, latest, readConfig, updateConfig, baseUrl, localUrl, contentPort, httpsContentPort, INSTALL_ID, cleanName } from './lib/store.mjs';
 import { vapidKeys, subscriptions, addSubscription, removeSubscription, sendWebPush } from './lib/webpush.mjs';
 import { t, htmlLang, lang, clientDict, withLang, defaultLang } from './lib/i18n.mjs';
 import { kindOf, mimeOf, VIEWABLE } from './lib/kinds.mjs';
 import { renderFile } from './lib/render.mjs';
 import { homePage, projectPage, digestPage, itemPage, notFoundPage, loginPage, pairPage, setBuild, setNavSource, setReadSource, setNamesSource, setPinsSource, setResponsesSource, setTodosSource, settingsPage, channelRows, pushSummary, promptPage, sidebar, ACTIVE_RE } from './lib/views.mjs';
 import { setMuted, setArchived, autoArchiveDays } from './lib/quiet.mjs';
-import { readResponses, addApproval, addComment, deleteComment, latestApproval, setTodo, addAsk, ASK_MAX } from './lib/responses.mjs';
+import { readResponses, addApproval, addComment, deleteComment, latestApproval, setTodo, addAsk, linkCommentSession, ASK_MAX } from './lib/responses.mjs';
 import { versionTodos, todoProgress, checksAllowed } from './lib/todo.mjs';
 import { approvalStatus, syncOpen } from './lib/waiting.mjs';
 import { runChecks } from './lib/todocheck.mjs';
@@ -85,12 +87,12 @@ const hostOk = h => ALLOWED_HOSTS.has(h) || Boolean(TAILNET_MAIN?.test(h));
 const contentHostOk = h => CONTENT_HOSTS.has(h) || Boolean(TAILNET_CONTENT?.test(h));
 
 // 静态资源版本号（每次部署变化）
-const BUILD = crypto.createHash('sha1').update(['static/app.css', 'static/app.js', 'static/lan-auth.js', 'static/pdf-view.mjs', 'static/icon.svg', 'static/favicon.ico', 'static/icon-180.png', 'lib/locales/zh.mjs'].map(f => { try { return fs.statSync(path.join(APP, f)).mtimeMs; } catch { return 0; } }).join('|') + lang()).digest('hex').slice(0, 8);
+const BUILD = crypto.createHash('sha1').update(['static/app.css', 'static/app.js', 'static/lan-auth.js', 'static/sessions.js', 'static/delivery-ui.js', 'static/article-sessions.js', 'static/pdf-view.mjs', 'static/icon.svg', 'static/favicon.ico', 'static/icon-180.png', 'lib/locales/zh.mjs'].map(f => { try { return fs.statSync(path.join(APP, f)).mtimeMs; } catch { return 0; } }).join('|') + lang()).digest('hex').slice(0, 8);
 setBuild(BUILD);
 // 浏览器端用到的译文：只挑 app.js / pdf-view.mjs 里 T('...') 用到的
 // 浏览器端的译文，按语言各算一份（页面语言可以按设备选，见 withLang）
 const I18N_JS = {};
-const i18nJs = l => (I18N_JS[l] ??= `window.__LANG=${JSON.stringify(l)};window.__T=${JSON.stringify(clientDict([path.join(APP, 'static', 'app.js'), path.join(APP, 'static', 'pdf-view.mjs')], l))};`);
+const i18nJs = l => (I18N_JS[l] ??= `window.__LANG=${JSON.stringify(l)};window.__T=${JSON.stringify(clientDict([path.join(APP, 'static', 'app.js'), path.join(APP, 'static', 'sessions.js'), path.join(APP, 'static', 'delivery-ui.js'), path.join(APP, 'static', 'article-sessions.js'), path.join(APP, 'static', 'pdf-view.mjs')], l))};`);
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -139,7 +141,7 @@ function noteChange(project, slug) {
   clearTimeout(flushTimer);
   flushTimer = setTimeout(() => {
     for (const ev of pending.values()) {
-      const msg = `event: change\ndata: ${JSON.stringify(ev)}\n\n`;
+      const msg = `event: change\ndata: ${JSON.stringify({ ...ev, v: latest(readMeta(ev.project, ev.slug) || { versions: [] })?.v })}\n\n`;
       for (const c of clients) c.write(msg);
     }
     pending.clear();
@@ -408,6 +410,7 @@ function accessInfo() {
     lan: LAN, urls, code: LAN ? prettyCode(accessCode()) : null, devices: LAN ? deviceCount() : 0,
     qr: LAN && urls.length ? qrSvg(loginUrl(urls[urls.length - 1])) : null, qrUrl: LAN && urls.length ? urls[urls.length - 1] : null,
     tailnet: cfg.access && cfg.access !== 'local' ? baseUrl() + '/' : null,
+    local: localUrl() + '/',
   };
 }
 
@@ -419,8 +422,9 @@ async function handlePost(req, res) {
   const origin = req.headers.origin;
   const originOk = h => (req.mydashWhere === 'lan' ? lanHostOk(h, PORT) : hostOk(h));
   if (origin) { try { if (!originOk(new URL(origin).host)) return json(403, { error: 'origin not allowed' }); } catch { return json(403, { error: 'origin not allowed' }); } }
-  let body; try { body = JSON.parse(await readBody(req, 1024 * 1024) || '{}'); } catch (e) { return json(e.message === 'too large' ? 413 : 400, { error: e.message === 'too large' ? 'body too large (1 MB max)' : 'body is not JSON' }); }
   const url = new URL(req.url, 'http://local');
+  const bodyLimit = url.pathname === '/api/sessions/images' ? 7 * 1024 * 1024 : 1024 * 1024;
+  let body; try { body = JSON.parse(await readBody(req, bodyLimit) || '{}'); } catch (e) { return json(e.message === 'too large' ? 413 : 400, { error: e.message === 'too large' ? (url.pathname === '/api/sessions/images' ? t('Choose PNG, JPEG, WebP or GIF images, up to 5 MB each (4 images max).') : 'body too large (1 MB max)') : 'body is not JSON' }); }
   if (url.pathname === '/api/access') {
     if (req.mydashWhere === 'lan') return json(403, { error: 'only on this computer or the tailnet' });
     if (body.action === 'set') {
@@ -445,6 +449,66 @@ async function handlePost(req, res) {
     return json(200, { ok: true });
   }
   // 更新：check 马上去问远端；start 开始更新（服务会重启，页面轮询 GET /api/update 等它回来）；seen 收起上次的结果
+  if (url.pathname === '/api/sessions/comment') {
+    if (req.mydashWhere === 'lan') return json(403, { error: t('Only this computer or a trusted Tailscale connection can send messages.') });
+    const [project, slug] = String(body.id || '').split('/');
+    const meta = project && slug ? readMeta(project, slug) : null;
+    const comment = meta && readResponses(project, slug).comments.find(c => c.id === body.cid && c.status === 'open');
+    const ver = comment && meta.versions.find(v => v.v === comment.v);
+    if (!ver?.session || ver.remote || !sessionMatches(ver.session, ver.cwd)) return json(409, { error: t('The original local session for this document is unavailable.') });
+    const marker = `[mydash-comment:${comment.id}:${body.nonce}]`;
+    const text = `${marker}\n${comment.quote ? '> ' + comment.quote + '\n\n' : ''}${comment.text}`;
+    const result = await sendSession(ver.session, { text, nonce: body.nonce });
+    if (result.ok) { await linkCommentSession(project, slug, comment.id, ver.session, marker); broadcast('response', { id: `${project}/${slug}` }); }
+    return json(result.status, { ...result, url: '/sessions/' + encodeURIComponent(ver.session) });
+  }
+  if (url.pathname === '/api/session-image-storage' || url.pathname === '/api/sessions/images/discard') {
+    if(req.mydashWhere==='lan')return json(403,{error:t('Only this computer or a trusted Tailscale connection can change session access.')});
+    if(url.pathname.endsWith('/discard')) {
+      try { discardSessionImage(String(body.id||''),String(body.image||''));return json(200,{ok:true}); } catch { return json(400,{error:t('This image is unavailable.')}); }
+    }
+    if(body.action!=='clean')return json(400,{error:'invalid action'});
+    try{return json(200,{ok:true,...cleanSessionImages({includeRecent:true,includeCompleted:body.includeCompleted===true})});}catch{return json(409,{error:t('Image cleanup could not finish. Try again.')});}
+  }
+  if (url.pathname === '/api/sessions/images') {
+    if (req.mydashWhere === 'lan') return json(403, { error: t('Only this computer or a trusted Tailscale connection can send messages.') });
+    try {
+      const image=uploadSessionImage(String(body.id || ''),{name:body.name,data:body.data});
+      return image ? json(200,{ok:true,image}) : json(403,{error:t('Images require a connected Codex App conversation.')});
+    } catch (error) { return json(400,{error:error.message==='image-storage-full' ? t('Image storage is full.') : t('Choose PNG, JPEG, WebP or GIF images, up to 5 MB each (4 images max).')}); }
+  }
+  if (url.pathname === '/api/sessions/cancel') {
+    if (req.mydashWhere === 'lan') return json(403, { error: t('Only this computer or a trusted Tailscale connection can send messages.') });
+    const ok = cancelAppDelivery(String(body.id || ''), String(body.nonce || ''), body.stopWaiting === true);
+    return json(ok ? 200 : 409, { ok, error: ok ? null : t('This message has already been dispatched. Check Codex App.') });
+  }
+  if (url.pathname === '/api/sessions/send') {
+    if (req.mydashWhere === 'lan') return json(403, { error: t('Only this computer or a trusted Tailscale connection can send messages.') });
+    let text = body.text, commentLink = null;
+    if (body.article) {
+      const [project, slug] = String(body.article.id || '').split('/');
+      const meta = project && slug ? readMeta(project, slug) : null;
+      const ver = meta?.versions.find(v => v.v === Number(body.article.v));
+      if (!ver || !ver.files.some(f => f.path === body.article.file) || !projectConversationContext(project, index(), latest(meta)).sessions.some(s => s.id === body.id))
+        return json(409, { error: t('The selected session does not belong to this document’s project.') });
+      if (typeof text !== 'string' || typeof body.quote !== 'string' || body.quote.length > 3000)
+        return json(400, { error: t('Invalid document context.') });
+      if (body.comment) {
+        const comment = readResponses(project, slug).comments.find(c => c.id === body.comment && c.status === 'open');
+        if (!comment || comment.v !== ver.v || (comment.file && comment.file !== body.article.file))
+          return json(409, { error: t('The original local session for this document is unavailable.') });
+        commentLink = { project, slug, cid: comment.id, marker: `[mydash-comment:${comment.id}:${body.nonce}]` };
+      }
+      if (body.quote) text = '> ' + body.quote + '\n\n' + text;
+    }
+    if (commentLink) text = commentLink.marker + '\n' + text;
+    const result = await sendSession(String(body.id || ''), { text, nonce: body.nonce, images: body.images ?? [] });
+    if (result.ok && commentLink) {
+      await linkCommentSession(commentLink.project, commentLink.slug, commentLink.cid, body.id, commentLink.marker);
+      broadcast('response', { id: body.article.id });
+    }
+    return json(result.status, result);
+  }
   if (url.pathname === '/api/update') {
     if (body.action === 'check') return json(200, await checkForUpdate({ force: true }));
     if (body.action === 'seen') { writeUpdate(x => (x.last ? { ...x, last: { ...x.last, seen: true } } : x)); return json(200, updateStatus()); }
@@ -627,6 +691,11 @@ async function handlePost(req, res) {
     if (body.updateMode !== undefined) {
       if (!['notify', 'auto', 'off'].includes(body.updateMode)) return json(400, { error: 'updateMode must be notify, auto or off', field: 'updateMode' });
       patch.update = { ...(cur.update || {}), mode: body.updateMode };
+    }
+    if (body.terminalSessions !== undefined) {
+      if (req.mydashWhere === 'lan') return json(403, { error: t('Only this computer or a trusted Tailscale connection can change session access.') });
+      if (typeof body.terminalSessions?.enabled !== 'boolean' || typeof body.terminalSessions?.send !== 'boolean') return json(400, { error: 'invalid session settings' });
+      patch.terminalSessions = { enabled: body.terminalSessions.enabled, send: body.terminalSessions.enabled && body.terminalSessions.send };
     }
     updateConfig(c => ({ ...c, ...patch }));
     INDEX = null;
@@ -897,6 +966,53 @@ async function handle(req, res) {
     return;
   }
 
+  if (url.pathname === '/api/session-comment-replies') {
+    if (!readConfig().terminalSessions?.enabled) return send(res, 404, '{}', 'application/json; charset=utf-8');
+    const [project, slug] = String(url.searchParams.get('id') || '').split('/');
+    if (!project || !slug || !readMeta(project, slug)) return send(res, 404, '{}', 'application/json; charset=utf-8');
+    const replies = readResponses(project, slug).comments.filter(c => c.agentDelivery?.marker).slice(-20).map(c => {
+      const d = c.agentDelivery, session = readSession(d.session);
+      return { cid: c.id, text: session ? replyAfter(session.messages, d.marker) : null };
+    }).filter(r => r.text);
+    return send(res, 200, JSON.stringify({ replies }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
+  }
+  if(url.pathname==='/api/session-image-storage') {
+    if(req.mydashWhere==='lan')return send(res,403,'{}','application/json; charset=utf-8');
+    return send(res,200,JSON.stringify(sessionImageStorage()),'application/json; charset=utf-8',{'Cache-Control':'no-store'});
+  }
+  if (segs[0] === 'api' && segs[1] === 'session-images' && segs.length === 3) {
+    if (req.mydashWhere === 'lan') return send(res,403,'');
+    try { const image=readSessionImage(segs[2]);if(image) return send(res,200,fs.readFileSync(image.path),image.mime,{'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':'sandbox'}); } catch {}
+    return send(res,404,'');
+  }
+  if (url.pathname === '/api/article-sessions') {
+    const [project, slug] = String(url.searchParams.get('id') || '').split('/');
+    const meta = project && slug ? readMeta(project, slug) : null;
+    const ver = meta?.versions.find(v => v.v === Number(url.searchParams.get('v')));
+    if (!ver) return send(res, 404, '{}', 'application/json; charset=utf-8');
+    const { sessions, scope, reason } = projectConversationContext(project, index(), latest(meta));
+    if (req.mydashWhere === 'lan') sessions.forEach(s => { s.canSend = false; s.sendReason = 'lan'; });
+    return send(res, 200, JSON.stringify({ sessions, scope, reason }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
+  }
+  if (url.pathname === '/api/sessions') {
+    const sessions = listSessions(url.searchParams.get('project') || '');
+    if (req.mydashWhere === 'lan') sessions.forEach(s => { s.canSend = false; s.sendReason = 'lan'; });
+    return send(res, 200, JSON.stringify({ sessions, html: sessionRows(sessions) }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
+  }
+  if (segs[0] === 'api' && segs[1] === 'sessions' && segs.length === 3) {
+    const session = await refreshSession(segs[2],{transport:url.searchParams.get('transport')==='claude-remote'?'claude-remote':undefined});
+    if (!session) return send(res, 404, '{}', 'application/json; charset=utf-8');
+    if (req.mydashWhere === 'lan') { session.canSend = false; session.sendReason = 'lan'; }
+    return send(res, 200, JSON.stringify({ session, html: messageRows(session.messages, session.agent), stateLabel: stateLabel(session.state) }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
+  }
+  if (segs[0] === 'sessions') {
+    if (readConfig().terminalSessions?.enabled !== true) return send(res, 404, notFoundPage());
+    if (segs.length === 1) return send(res, 200, homePage(index(), { sessionsHtml: sessionSection(listSessions()) }));
+    const session = readSession(segs[1]);
+    if (!session || segs.length !== 2) return send(res, 404, notFoundPage());
+    if (req.mydashWhere === 'lan') { session.canSend = false; session.sendReason = 'lan'; }
+    return send(res, 200, sessionPage(session));
+  }
   if (url.pathname === '/api/index') {
     const items = index().map(m => { const l = latest(m); return { project: m.project, slug: m.slug, title: m.title, updated: m.updated, version: l.v, kind: l.kind, url: baseUrl() + `/p/${encodeURIComponent(m.project)}/${encodeURIComponent(m.slug)}` }; });
     return send(res, 200, JSON.stringify(items), 'application/json; charset=utf-8');
@@ -939,7 +1055,7 @@ async function handle(req, res) {
 
   if (url.pathname === '/' || url.pathname === '') return send(res, 200, homePage(index(), { showArchived: url.searchParams.has('archived') }));
   if (url.pathname === '/today') return send(res, 200, digestPage(index()));
-  if (url.pathname === '/settings') return send(res, 200, settingsPage({ archiveDays: autoArchiveDays(), notify: notifySettings(), timezone: cfg.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone, webpush: { httpsUrl: readConfig().httpsUrl || '', devices: subscriptions().length }, prompts: readConfig().prompts || {} }));
+  if (url.pathname === '/settings') return send(res, 200, settingsPage({ archiveDays: autoArchiveDays(), notify: notifySettings(), timezone: cfg.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone, webpush: { httpsUrl: readConfig().httpsUrl || '', devices: subscriptions().length }, prompts: readConfig().prompts || {}, terminalSessions: readConfig().terminalSessions || {}, sessionOwner: req.mydashWhere !== 'lan' }));
   // 网页推送：service worker 要放在根路径，才能管整个网站
   if (url.pathname === '/sw.js') return send(res, 200, fs.readFileSync(path.join(APP, 'static', 'sw.js')), 'text/javascript; charset=utf-8', { 'Service-Worker-Allowed': '/', 'Cache-Control': 'no-cache' });
   // 某个条目上的提问和回答（agent 回答后，打开着的页面据此刷新）
@@ -971,7 +1087,7 @@ async function handle(req, res) {
 
   if (segs[0] === 'p' && segs.length === 2) {
     const items = index().filter(m => m.project === segs[1]);
-    if (!items.length) return send(res, 404, notFoundPage(t('Nothing has been published to this project yet.')));
+    if (!items.length && !listSessions(segs[1]).length) return send(res, 404, notFoundPage(t('Nothing has been published to this project yet.')));
     return send(res, 200, projectPage(segs[1], items, { showArchived: url.searchParams.has('archived') }));
   }
 
@@ -1013,7 +1129,8 @@ async function handle(req, res) {
     const sub = mdText ? latestApproval(responses, ver.v) : null;
     const approvalSummary = sub ? summarize(ver.title, ver.v, questionsOf(mdText), sub.answers) : '';
     const todos = rendered?.needs?.todo && rel === ver.main && !diff ? todoProgress(versionTodos(project, slug, ver), responses.todos) : null;
-    return send(res, 200, itemPage(meta, ver, rel, rendered, gallery, { fileEntry, mode, responses, approvalSummary, mdText, diff, diffable: DIFFABLE.has(kindOf(rel)), todos }));
+    const conversation = readConfig().terminalSessions?.enabled ? projectConversationContext(meta.project, index(), latest(meta)) : null;
+    return send(res, 200, itemPage(meta, ver, rel, rendered, gallery, { fileEntry, mode, responses, approvalSummary, mdText, diff, diffable: DIFFABLE.has(kindOf(rel)), todos, conversationScope: conversation?.scope, conversationReason:conversation?.reason, articleSessions: conversation ? conversation.sessions.map(s => ({ ...s, canSend: s.canSend && req.mydashWhere !== 'lan', sendReason: req.mydashWhere === 'lan' ? 'lan' : s.sendReason })) : null }));
   }
 
   return send(res, 404, notFoundPage());

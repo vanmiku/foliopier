@@ -6,7 +6,7 @@
 
 **Claude Code 和 Codex 产物的自托管工作台。**
 
-agent 写好的方案、报告、PDF、网页原型和 Office 文件，一条命令发布出来。你在电脑或手机上直接看排好版的内容，在页面上回答 agent 的提问、写批注交回给它。所有东西都留在你自己的机器上。
+agent 写好的方案、报告、PDF、网页原型和 Office 文件，一条命令发布出来。你在电脑或手机上直接看排好版的内容，在页面上回答 agent 的提问、写批注交回给它。发布的文件保留在自己的机器上；可选会话连接沿用原 Agent 的连接通道。
 
 [![版本](https://img.shields.io/github/v/release/vanmiku/mydash?color=294ae8&label=%E7%89%88%E6%9C%AC)](https://github.com/vanmiku/mydash/releases)
 [![测试](https://github.com/vanmiku/mydash/actions/workflows/test.yml/badge.svg)](https://github.com/vanmiku/mydash/actions/workflows/test.yml)
@@ -58,7 +58,7 @@ agent 会先检查你的机器，问你几个问题：mydash 在哪里打开（�
 **需要：** macOS、Linux 或 Windows 10/11，以及 Node.js 20 或更新版本。<br>
 **可选：**
 - [Tailscale](https://tailscale.com)：用来在手机上随时随地打开（打开它的每台设备都要装 Tailscale）。
-- `--lan on`：同一 WiFi 下的设备凭访问码打开。
+- 左下角「在其他设备上打开」开启同一 Wi-Fi 访问：新设备需要访问码及部署机器批准。
 - LibreOffice：用来生成 Word 和 PPT 的排版预览。
 
 <details>
@@ -74,6 +74,12 @@ mydash doctor
 
 不带参数运行 `./setup.sh` 会列出所有选项。Windows 上在 PowerShell 里用 `setup.cmd` 代替 `./setup.sh`。
 </details>
+
+## 一边读文章，一边继续对话
+
+在设置中分别开启会话查看与消息发送。每篇文章提供「目录 / Codex / Claude Code」tab、Markdown 对话、手动附加文章选段和紧凑输入框。Codex App 支持图片上传/粘贴与持久排队；已验证的 Codex/Claude tmux 终端和已连接的 Claude App Remote Control 支持文字。不同位置的同名项目按真实目录隔离。这些连接适配器为需要主动开启的预览功能，存在平台与账号前提。
+
+开启前请阅读[连接教程与能力对照表](docs/sessions.zh-CN.md)。普通已授权 LAN 浏览器可以查看对话，但不能发送。在部署机器上请收藏 `http://127.0.0.1:4870/`，或用 `mydash url --local` 获取自定义端口的本机入口；该入口不需要 Tailscale。
 
 ## 能做什么
 
