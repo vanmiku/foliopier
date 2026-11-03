@@ -189,3 +189,50 @@ test('a resumed old thread is indexed before recent inactive threads using nativ
   assert.equal(d.forProject(cwd)[0]?.id, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
   assert.equal(d.get('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa').title, 'Resumed task');
 });
+
+test('ordinary project identity checks avoid Git subprocesses on the request path', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'md-root-fast-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(dir, '.git'));
+  const { spawnSync } = await import('node:child_process');
+  const moduleUrl = new URL('../lib/session-discovery.mjs', import.meta.url).href;
+  const script = `import cp from 'node:child_process';import {syncBuiltinESMExports} from 'node:module';let calls=0;cp.execFileSync=()=>{calls++;throw Error('unexpected subprocess')};syncBuiltinESMExports();const {canonicalProject}=await import(${JSON.stringify(moduleUrl)});const root=canonicalProject(${JSON.stringify(dir)});console.log(JSON.stringify({root,calls}));`;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const d = JSON.parse(r.stdout);
+  assert.equal(d.root, fs.realpathSync(dir));
+  assert.equal(d.calls, 0);
+});
+
+test('fast project identity follows changed worktree metadata and removed folders immediately', async (t) => {
+  const { execFileSync } = await import('node:child_process');
+  const { canonicalProject } = await import('../lib/session-discovery.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'md-root-worktree-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', args, { stdio: 'ignore' });
+  const root = path.join(dir, 'repo'),
+    wt = path.join(dir, 'tree');
+  fs.mkdirSync(root);
+  git('-C', root, 'init', '-q');
+  git(
+    '-C',
+    root,
+    '-c',
+    'user.name=test',
+    '-c',
+    'user.email=t@t',
+    'commit',
+    '-q',
+    '--allow-empty',
+    '-m',
+    'init'
+  );
+  git('-C', root, 'worktree', 'add', '-q', '-b', 'test', wt);
+  assert.equal(canonicalProject(wt), fs.realpathSync(root));
+  fs.renameSync(path.join(wt, '.git'), path.join(wt, '.git-saved'));
+  assert.equal(canonicalProject(wt), fs.realpathSync(wt));
+  fs.renameSync(path.join(wt, '.git-saved'), path.join(wt, '.git'));
+  assert.equal(canonicalProject(wt), fs.realpathSync(root));
+  fs.rmSync(wt, { recursive: true, force: true });
+  assert.equal(canonicalProject(wt), null);
+});

@@ -4,6 +4,8 @@
 
 In Settings, enable **Show terminal sessions** to read recent project conversations. Enable **Allow messages to connected agents** separately to send. Both settings are off by default on a new installation. Turning viewing on exposes original conversation text to browsers authorized to open this workbench, including approved LAN devices.
 
+If viewing is off, the new-feature introduction appears once in this browser. **Go to session settings** opens the exact settings section; the viewing and sending switches remain your choice. **Learn about conversations** in Settings reopens the introduction. Reading Contents or closing the mobile conversation panel pauses its polling; opening it resumes updates.
+
 Each article has one row of tabs: **Contents / Codex / Claude Code**. Articles with the same canonical project folder share the current Agent choice and manually selected conversation in this browser tab. Two unrelated folders with the same name do not share a conversation. Worktrees resolve to their main project folder. Republishing an article from its current folder updates that article's project association; missing or ambiguous folders are explained instead of guessed.
 
 ## Connections in 0.2.1

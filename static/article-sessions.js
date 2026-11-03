@@ -435,7 +435,14 @@
     }
   }
   async function poll() {
-    if (document.hidden || polling || pending) return;
+    if (
+      document.hidden ||
+      polling ||
+      pending ||
+      $('#article-conversation-pane').hidden ||
+      (mobile.matches && !rail.classList.contains('is-open'))
+    )
+      return;
     polling = true;
     try {
       const r = await read('/api/article-sessions?id=' + encodeURIComponent(data.id) + '&v=' + data.v);
@@ -731,7 +738,8 @@
     }
     $('.article-conversation').setAttribute('aria-labelledby', 'article-tab-' + agent);
   }
-  function mode(value) {
+  function mode(value, refresh = true) {
+    const resuming = loaded && rail.dataset.mode === 'contents' && value === 'conversation';
     if (!['contents', 'conversation'].includes(value)) value = 'conversation';
     if (loaded && rail.dataset.mode === 'conversation') save();
     rail.dataset.mode = value;
@@ -740,6 +748,7 @@
     $('.article-contents').hidden = value !== 'contents';
     $('.article-conversation').hidden = value !== 'conversation';
     syncTabs();
+    if (resuming && refresh) pollChat();
     if (value === 'conversation')
       requestAnimationFrame(() => {
         if (lastHtml !== null) {
@@ -752,8 +761,9 @@
     if (pending) return;
     if (tab.dataset.articleMode === 'contents') mode('contents');
     else {
-      if (tab.dataset.articleAgent !== agent) choose(tab.dataset.articleAgent);
-      mode('conversation');
+      const switching = tab.dataset.articleAgent !== agent;
+      if (switching) choose(tab.dataset.articleAgent);
+      mode('conversation', !switching);
     }
   }
   tabs.forEach((tab, index) => {
@@ -804,6 +814,7 @@
     priorOverflow = document.body.style.overflow;
     articleScroll = { x: window.scrollX, y: window.scrollY };
     rail.classList.add('is-open');
+    if (value === 'conversation') pollChat();
     rail.classList.toggle('is-expanded', expanded);
     mask.hidden = false;
     rail.setAttribute('role', 'dialog');

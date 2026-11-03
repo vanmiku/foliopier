@@ -750,3 +750,28 @@ test('App framing accepts split headers and several frames in one chunk, and bou
   bridge.read(tooLarge);
   assert.deepEqual(closed, ['app_history_limit']);
 });
+
+test('small App patches retain unrelated large history while preserving the prior state', () => {
+  const history = { turns: [{ output: 'private tool output'.repeat(100000) }] };
+  const prior = {
+    revision: 1,
+    state: { history, nested: { status: 'idle' }, items: [{ value: 1 }, { value: 2 }] },
+  };
+  const next = api.applyAppChange(prior, {
+    type: 'patches',
+    baseRevision: 1,
+    revision: 2,
+    patches: [
+      { op: 'replace', path: ['nested', 'status'], value: 'active' },
+      { op: 'replace', path: ['items', 0, 'value'], value: 3 },
+    ],
+  });
+  assert.equal(prior.state.nested.status, 'idle');
+  assert.equal(prior.state.items[0].value, 1);
+  assert.equal(next.state.nested.status, 'active');
+  assert.equal(next.state.items[0].value, 3);
+  assert.ok(
+    next.state.history === history,
+    'an unrelated large transcript must not be copied for a small status patch'
+  );
+});
