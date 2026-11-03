@@ -568,6 +568,16 @@ test(
       ip = lan.lanAddresses()[0];
     if (!ip) return;
     const info = JSON.parse((await post('/api/access', { action: 'set', enabled: true })).text);
+    // Binding a LAN address is asynchronous on some Node/platform combinations.
+    // Wait for the listener, then exercise authorization rather than a connect race.
+    for (let i = 0; i < 100; i++) {
+      try {
+        if ((await request('/healthz', { host: ip })).status === 200) break;
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      if (i === 99) throw Error('LAN listener did not become ready: ' + logs);
+    }
+
     assert.equal((await request('/api/sessions', { host: ip })).status, 401);
     const login = await request('/login', {
       host: ip,
