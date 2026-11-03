@@ -13,7 +13,7 @@
 | Codex App 本地连接 | 支持 | 发到已打开的原会话 | PNG、JPEG、WebP、GIF | 每会话最多 5 条未完成消息，忙碌时排队，服务重启后恢复 |
 | Codex CLI 的已验证 tmux 终端 | 支持 | 输入区确认空白时可发 | 暂不支持 | 匹配用户消息收据及任务完成边界，不自动重发 |
 | Claude Code 的已验证 tmux 终端 | 支持 | 输入区确认空白时可发 | 暂不支持 | 匹配原会话收据和回复完成边界，不自动重发 |
-| 开启 Remote Control 的 Claude App Code 会话 | 连接后支持 | 已连接且账号允许时可发 | mydash 0.2.1 暂不支持 | 使用同一个 Remote Control 会话，跟踪 worker 收据及结果 |
+| 开启 Remote Control 的 Claude App Code 会话 | 连接后支持 | 空闲、已连接且账号允许时可发 | mydash 0.2.1 暂不支持 | 使用同一个 Remote Control 会话，将 client 消息与后续 worker 回复及结果关联 |
 
 工作台本身支持 macOS、Linux 和 Windows。Codex App 直连目前要求私有本地 Unix socket，尚未实现 Windows 直连；CLI 自动匹配 tmux 进程需要 macOS 或 Linux。Claude App Code 按其本地账号会话目录发现，排除云端、远程、SSH 和 WSL 会话。这些连接适配器属于需要主动开启的预览功能，平台覆盖小于工作台本身。
 
@@ -22,7 +22,7 @@ Codex 适配器校验 App 本地协议版本（stream 11、start-turn 2）、本
 ## 如何连接与发送
 
 1. 在原 Agent 中打开项目并保持会话运行。Codex 的旧会话不要求此前安装过 mydash hook；大量历史会逐步建立索引，已知会话 ID 可以直接查找。
-2. Codex App 请打开原本的本地会话。Claude App 的 Code 会话请运行一次 `/remote-control` 并保持连接，使用原有已登录的 Claude 账号。账号资格、组织策略、Trusted Devices 和用量限制继续生效，详见 [Anthropic 官方 Remote Control 说明](https://code.claude.com/docs/en/remote-control)。
+2. Codex App 请打开原本的本地会话。Claude App 的 Code 会话请打开会话详情，开启 **Remote Control** 并保持连接；`/remote-control` 命令用于支持它的 CLI 环境，在 App 中可能不可用。请使用原有已登录的 Claude 账号。账号资格、组织策略、Trusted Devices 和用量限制继续生效，详见 [Anthropic 官方 Remote Control 说明](https://code.claude.com/docs/en/remote-control)。
 3. 命令行请在 tmux 中运行。mydash 会校验进程启动时间、会话、TTY 和 pane。终端有草稿、待审批、近期键盘输入或无法识别的界面时会拒绝发送，不会向任意 shell 输入内容。
 4. 选择 Agent；需要其他会话时点击「切换会话」。标题行显示当前或手动选中的目标。正在编辑、等待回复或回看历史时，新会话只提示，不会悄悄替换目标。
 5. 输入问题，默认只发你写的正文。文章选段需要主动添加。Codex App 连接下可选「添加图片」或直接粘贴，每次最多 4 张、每张 5 MB；也可以只发图片。
@@ -32,6 +32,8 @@ Codex 适配器校验 App 本地协议版本（stream 11、start-turn 2）、本
 ## 排队、报错与恢复
 
 每条未完成消息都有自己的状态和操作入口。Codex App 尚未派发的消息会在 30 分钟后过期，避免很久之后才意外发送。尚未派发的 Codex App 消息可以取消；送达状态不确定时，先核对原 App，再点「已核对 Codex App，停止等待」，解除队列阻塞。这不会停止 Codex 中已经执行的工作。
+
+Claude Remote Control 目前仅在空闲时接受 mydash 消息，不在工作中或待审批时排队，避免把上一轮的完成误认为新消息的回复。Claude App 可能把 Remote Control 消息标为来自其他会话，并继续应用原有权限保护。账号用量错误会显示在对话中并结束回复等待，不代表消息没有送达。
 
 「已送达」与「已完成回复」分别跟踪。处理中报错不代表没发到；Codex App 对同一任务的后续重试会继续跟踪，不会重复提交用户消息。送达不确定时不自动重发。需要确认的事项仍遵守原 Agent 已有的审批流程。
 

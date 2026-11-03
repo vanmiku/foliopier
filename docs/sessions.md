@@ -13,7 +13,7 @@ Each article has one row of tabs: **Contents / Codex / Claude Code**. Articles w
 | Codex App, local IPC adapter | Yes | Yes, to the open original thread | PNG, JPEG, WebP, GIF | Up to five unfinished messages per thread; queued while busy; durable recovery after service restart |
 | Codex CLI in a verified tmux pane | Yes | Yes, when the terminal input is confirmed empty | No | Matches the transcript's user receipt and task completion; no automatic resend |
 | Claude Code in a verified tmux pane | Yes | Yes, when the terminal input is confirmed empty | No | Matches the original receipt and reply boundary; no automatic resend |
-| Claude App Code session with Remote Control | Yes, when linked | Yes, when connected and permitted by the account | No in mydash 0.2.1 | Uses the same Remote Control thread; follows worker receipt and result |
+| Claude App Code session with Remote Control | Yes, when linked | Yes, when idle, connected and permitted by the account | No in mydash 0.2.1 | Uses the same Remote Control thread; matches its client event to the subsequent worker response and result |
 
 The workbench runs on macOS, Linux and Windows. The direct Codex App connector currently requires a private local Unix socket and is not implemented on Windows. Automatic CLI process-to-tmux matching requires macOS or Linux. Claude App Code discovery is implemented for its native per-account session directory, with remote/cloud, SSH and WSL sessions excluded. These connection adapters are opt-in preview features; their platform coverage is narrower than the workbench's.
 
@@ -22,7 +22,7 @@ The Codex adapter checks the App's local protocol versions (stream 11, start-tur
 ## Connect and send
 
 1. Open the project in the original Agent and keep its conversation running. Older Codex sessions can be discovered without previously installed mydash hooks. Large histories are indexed incrementally; a known thread ID can be read directly.
-2. For Codex App, open the original local thread. For Claude App Code, run `/remote-control` in that conversation and keep it connected. Use your existing signed-in Claude account. Account eligibility, organization policy, Trusted Devices and usage limits still apply. See [Anthropic's Remote Control guide](https://code.claude.com/docs/en/remote-control).
+2. For Codex App, open the original local thread. For Claude App Code, open the session details and enable **Remote Control**, then keep the session connected. The `/remote-control` command is for supported CLI environments and can be unavailable inside the App. Use your existing signed-in Claude account. Account eligibility, organization policy, Trusted Devices and usage limits still apply. See [Anthropic's Remote Control guide](https://code.claude.com/docs/en/remote-control).
 3. For a CLI, run it inside tmux. mydash validates the process start time, session, TTY and pane. A prompt with a draft, an approval, recent terminal typing or an unrecognized screen prevents sending. mydash never types into an arbitrary shell.
 4. Select the Agent tab, then **Switch conversation** if you want a different thread. The header identifies the selected/current conversation. Opening a newer thread does not silently retarget an edited question, an outstanding delivery or a conversation you are reading back through.
 5. Write a message. Only your text is sent by default. Attach an article passage explicitly. On a Codex App connection, choose **Add images** or paste an image; up to four images, 5 MB each. Images may be sent without text.
@@ -32,6 +32,8 @@ Sending is available on the hosting computer and trusted Tailnet connections. Ap
 ## Queues, errors and recovery
 
 Every unfinished delivery has its own card and action. Undispatched Codex App messages expire after 30 minutes instead of sending much later. You can cancel an undispatched Codex App message. For an unconfirmed delivery, inspect the original App first and use **I checked Codex App. Stop waiting.** to unblock the queue. This does not stop work already executing in Codex.
+
+Claude Remote Control currently accepts messages from mydash only while idle; it does not queue them during a running turn or approval. This avoids attributing the previous task’s completion to a new message. Claude App may label a Remote Control message as coming from another session and apply its existing permission protections. Account quota errors appear in the conversation and end the reply wait; they do not mean the message was never delivered.
 
 “Delivered” and “completed” are separate states. An Agent processing error does not imply a failed send. Codex App retries that continue the same task are followed without resubmitting the user message. Uncertain delivery is never automatically repeated. Conversation or approval prompts still need the original Agent's existing confirmation flow.
 

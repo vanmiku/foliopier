@@ -156,29 +156,33 @@
                   'This device can view conversations. Sending is available only on this computer or a trusted Tailscale connection.'
                 )
               : agent === 'claude'
-                ? sendReason === 'claude_login'
+                ? sendReason === 'claude_busy'
                   ? T(
-                      'Sign in to Claude Code on this computer, then try again. mydash uses your existing account.'
+                      'Claude is working or waiting for approval. Send when it is idle, or continue in Claude App.'
                     )
-                  : sendReason === 'claude_forbidden'
+                  : sendReason === 'claude_login'
                     ? T(
-                        'Claude refused access to this conversation. Check the account and connection permissions in Claude App.'
+                        'Sign in to Claude Code on this computer, then try again. mydash uses your existing account.'
                       )
-                    : sendReason === 'claude_trusted'
+                    : sendReason === 'claude_forbidden'
                       ? T(
-                          'Claude requires trusted-device verification for this conversation. Continue in Claude App; mydash cannot send to protected sessions yet.'
+                          'Claude refused access to this conversation. Check the account and connection permissions in Claude App.'
                         )
-                      : sendReason === 'claude_offline'
+                      : sendReason === 'claude_trusted'
                         ? T(
-                            'The original Claude session is offline. Open it and keep Remote Control connected.'
+                            'Claude requires trusted-device verification for this conversation. Continue in Claude App; mydash cannot send to protected sessions yet.'
                           )
-                        : sendReason === 'claude_unavailable'
+                        : sendReason === 'claude_offline'
                           ? T(
-                              'Claude Remote Control did not respond. Keep the original session open and try again.'
+                              'The original Claude session is offline. Open it and keep Remote Control connected.'
                             )
-                          : T(
-                              'In this conversation in Claude App, run /remote-control once to connect. A running tmux session can also connect directly.'
-                            )
+                          : sendReason === 'claude_unavailable'
+                            ? T(
+                                'Claude Remote Control did not respond. Keep the original session open and try again.'
+                              )
+                            : T(
+                                'In Claude App, open this session and turn on Remote Control in its details. A running tmux session can also connect directly.'
+                              )
                 : sendReason === 'app_closed'
                   ? T('Start Codex App on this computer to connect this conversation.')
                   : sendReason === 'app_mismatch'

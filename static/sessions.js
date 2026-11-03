@@ -113,7 +113,9 @@
             : data.session.transport === 'claude-remote'
               ? T('Connected to Claude Remote Control')
               : T('Connected to the original tmux session')
-          : T('Sending is unavailable. Check the connection or messaging settings.');
+          : data.session.sendReason === 'claude_busy'
+            ? T('Claude is working or waiting for approval. Send when it is idle, or continue in Claude App.')
+            : T('Sending is unavailable. Check the connection or messaging settings.');
         text.disabled = !data.session.canSend;
         form.querySelector('button').disabled = !data.session.canSend;
       }

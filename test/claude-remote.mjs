@@ -145,6 +145,120 @@ test('remote reply tracking follows the exact UUID and waits for a worker result
       ],
       d
     ),
-    'waiting_receipt'
+    'completed'
   );
+});
+
+// Sanitized shape observed in Claude Desktop 4.4212.0 / Code 2.1.317.
+test('native string sequences and client-only user events track the worker reply without resending', async () => {
+  let posted = 0;
+  const user = {
+    sequence_num: '7',
+    source: 'client',
+    payload: { type: 'user', uuid: 'our-user', message: { content: 'probe' } },
+  };
+  const result = {
+    sequence_num: '11',
+    source: 'worker',
+    payload: { type: 'result', subtype: 'success', is_error: true },
+  };
+  const b = new ClaudeRemoteBridge({
+    credentials: () => ({ accessToken: 'test-only' }),
+    fetchImpl: async (url, opts) =>
+      new Response(
+        JSON.stringify(
+          url.includes('/events')
+            ? opts.method === 'POST'
+              ? (posted++, { results: [{ sequence_num: '7' }] })
+              : {
+                  data: [
+                    result,
+                    user,
+                    {
+                      sequence_num: '1',
+                      source: 'worker',
+                      payload: { type: 'assistant', is_meta: true, message: { content: 'private hook' } },
+                    },
+                  ],
+                }
+            : {
+                response_shape: {
+                  id: binding.remoteId,
+                  connection_status: 'connected',
+                  status: 'active',
+                  security_tier: 'standard',
+                },
+              }
+        )
+      ),
+  });
+  assert.deepEqual(
+    await b.start('native-111', binding, { text: 'probe', clientId: 'our-user', authorize: () => true }),
+    { sequence: 7 }
+  );
+  const view = await b.observe('native-111', binding, true);
+  assert.deepEqual(
+    view.events.map((e) => e.sequence_num),
+    [1, 7, 11]
+  );
+  assert.equal(view.events[0].payload.isMeta, true);
+  const delivery = { clientId: 'our-user', createdAt: Date.now() };
+  assert.equal(remoteDeliveryState(view.events, delivery), 'failed');
+  assert.equal(remoteDeliveryState([view.events[1]], delivery), 'waiting_receipt');
+  assert.equal(
+    remoteDeliveryState(
+      [
+        view.events[1],
+        { ...view.events[2], payload: { type: 'result', subtype: 'success', is_error: false } },
+      ],
+      delivery
+    ),
+    'completed'
+  );
+  assert.equal(
+    remoteDeliveryState(
+      [
+        view.events[1],
+        {
+          sequence_num: 8,
+          source: 'client',
+          payload: { type: 'user', uuid: 'other', message: { content: 'other' } },
+        },
+        view.events[2],
+      ],
+      delivery
+    ),
+    'interrupted'
+  );
+  assert.equal(posted, 1);
+});
+
+test('busy Remote Control workers are not given an uncorrelatable message', async () => {
+  let posts = 0;
+  const bridge = new ClaudeRemoteBridge({
+    credentials: () => ({ accessToken: 'test-only' }),
+    fetchImpl: async (url, opts) => {
+      if (opts.method === 'POST') posts++;
+      return new Response(
+        JSON.stringify(
+          url.includes('/events')
+            ? { data: [] }
+            : {
+                response_shape: {
+                  id: binding.remoteId,
+                  connection_status: 'connected',
+                  status: 'active',
+                  security_tier: 'standard',
+                  worker_status: 'working',
+                },
+              }
+        )
+      );
+    },
+  });
+  await assert.rejects(
+    bridge.start('busy-111', binding, { text: 'later', clientId: 'u1', authorize: () => true }),
+    (e) => e.beforeSend && e.reason === 'claude_busy'
+  );
+  assert.equal(posts, 0);
 });
