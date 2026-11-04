@@ -78,6 +78,18 @@ On Linux with systemd, if `check` reported `linger` as disabled, ask the user to
 
 On macOS, mydash starts when the user logs in. For a Mac that should come back after a power cut or restart without anyone logging in (a headless Mac mini, say), install with `--service launchd-boot`; the result then lists a `boot-service` step. The user does it once, without a terminal: at the Mac, the mydash home page shows **Start mydash at boot** under Waiting on you, and tapping it opens the macOS password prompt on that screen (the password goes to macOS, not to mydash). `sudo mydash service boot` does the same from a terminal. mydash and its Tailscale node then run at boot, as the user, before login. FileVault must be off for that, because with FileVault on the Mac waits at the unlock screen. `sudo mydash service login` switches back.
 
+## Address checks for a new installation
+
+Do not assume that `http://mydash/` is every user's address. Give the exact `url` and `localUrl` printed by installation, and confirm them with `mydash url` and `mydash url --local` on the hosting computer.
+
+- With `--access tailscale`, the network address uses the hosting computer's actual Tailscale name and may have a port; it need not be `mydash`.
+- With `--access tailscale-node`, the independent device needs approval. A name collision gives it another actual name, such as `mydash-1`; the name is unique within that tailnet.
+- Short names require MagicDNS and the browsing device's Tailscale DNS settings. The hosting computer's system Tailscale client must also be connected to the correct tailnet to use network names; the independent node does not connect its host's browser automatically. If a device was shared from another tailnet, use its full Tailscale domain name.
+- `mydash doctor --json` checks both main and content-port Serve mappings. The network health check must identify this installation, so a different mydash instance or unrelated HTTP 200 page does not count as success.
+- A failed network lookup does not justify changing access controls or enabling LAN access. Use the local address on the host while checking the actual name, device approval, client DNS and tailnet access rules. Keep the exact browser error for diagnosis.
+
+See Tailscale's [MagicDNS guide](https://tailscale.com/docs/features/magicdns), [machine naming rules](https://tailscale.com/docs/concepts/machine-names) and [Serve reference](https://tailscale.com/docs/reference/tailscale-cli/serve).
+
 ## 5. Verify
 
 ```bash

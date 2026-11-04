@@ -97,3 +97,47 @@ test('a local URL bypasses Tailscale without changing share URLs or remote clien
     if (saved) fs.writeFileSync(config, saved); else fs.rmSync(config, { force: true });
   }
 });
+
+test('doctor rejects a network address that answers for another installation or a generic HTTP server', async (t) => {
+  const http = await import('node:http');
+  const { health } = await import('../lib/checks.mjs');
+  const { INSTALL_ID } = await import('../lib/store.mjs');
+  const config = path.join(home, 'config.json');
+  const saved = fs.existsSync(config) ? fs.readFileSync(config) : null;
+  let peerId = 'another-installation';
+  const server = http.createServer((req, res) => {
+    const id = req.url.startsWith('/peer/') ? peerId : INSTALL_ID;
+    res.writeHead(200, id ? { 'X-Mydash-Id': id } : {}); res.end('ok');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  t.after(async () => { server.closeAllConnections(); await new Promise((r) => server.close(r));
+    if (saved) fs.writeFileSync(config, saved); else fs.rmSync(config, { force: true }); });
+  const port = server.address().port;
+  fs.writeFileSync(config, JSON.stringify({ access: 'tailscale-node', service: 'none', office: 'no', port,
+    contentPort: port, baseUrl: `http://127.0.0.1:${port}/peer` }));
+  const check = async () => (await health()).checks.find((x) => x.id === 'url');
+  assert.equal((await check()).ok, false, 'a name pointing at another installation must not pass');
+  assert.match((await check()).detail, /this mydash installation/i);
+  peerId = null;
+  assert.equal((await check()).ok, false, 'a generic 200 response must not pass');
+  peerId = INSTALL_ID;
+  assert.equal((await check()).ok, true);
+});
+
+test('doctor requires both forwards for a running standalone Tailscale node', { skip: process.platform === 'win32' }, async (t) => {
+  const { health } = await import('../lib/checks.mjs');
+  const config = path.join(home, 'config.json'), saved = fs.existsSync(config) ? fs.readFileSync(config) : null;
+  const bin = path.join(home, 'ts/bin'), map = path.join(home, 'fake-serve.json');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.writeFileSync(map, '{}');
+  fs.writeFileSync(path.join(bin, 'tailscale'), `#!/bin/sh\ncase "$*" in *"serve status --json"*) cat '${map}';; *) echo '{"BackendState":"Running","Self":{"DNSName":"mydash-1.example.ts.net."}}';; esac\n`, { mode: 0o755 });
+  fs.writeFileSync(config, JSON.stringify({ access: 'tailscale-node', service: 'none', office: 'no', port: 4998, contentPort: 4999, baseUrl: 'http://127.0.0.1:1' }));
+  t.after(() => { fs.rmSync(path.join(home, 'ts'), { recursive: true, force: true }); fs.rmSync(map, { force: true });
+    if (saved) fs.writeFileSync(config, saved); else fs.rmSync(config, { force: true }); });
+  const check = async () => (await health()).checks.find((x) => x.id === 'tailscale-serve');
+  assert.equal((await check())?.ok, false, 'Running alone does not make the web service reachable');
+  fs.writeFileSync(map, JSON.stringify({ Web: { 'mydash-1:80': { Handlers: { '/': { Proxy: 'http://127.0.0.1:4998' } } } } }));
+  assert.equal((await check())?.ok, false, 'the content port must also be forwarded');
+  fs.writeFileSync(map, JSON.stringify({ Web: { 'mydash-1:80': { Handlers: { '/': { Proxy: 'http://127.0.0.1:4998' } } }, 'mydash-1:4999': { Handlers: { '/': { Proxy: 'http://127.0.0.1:4999' } } } } }));
+  assert.equal((await check())?.ok, true);
+});

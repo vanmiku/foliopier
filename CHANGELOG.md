@@ -2,6 +2,8 @@
 
 ## 0.2.5 (2026-11-04)
 
+- Doctor verifies both Serve forwards for standalone Tailscale nodes and checks the installation identity behind network addresses. A running node, another mydash instance or an unrelated HTTP 200 response no longer hides a broken network setup. The installation guide explains actual addresses, name collisions and MagicDNS prerequisites.
+
 - Completed, cancelled and stopped delivery notices disappear after five seconds; old success notices are not replayed. Each notice can be dismissed without cancelling the message or Agent work. Hidden pending statuses remain accessible, and new errors or confirmation requests can surface again. Article and standalone conversations share this behavior.
 
 - Show saved Codex messages immediately while the native App connection is discovered in the background. Only the selected, visible conversation is opened on the hosting Mac; viewing Contents or closing the mobile panel does not wake it.
