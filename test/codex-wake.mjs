@@ -94,8 +94,12 @@ test('a boot service falls back to a private one-shot GUI agent and removes it a
         assert.ok(xml.includes('<string>codex://threads/' + id + '</string>'));
         assert.equal(xml.includes('prompt='), false);
         assert.equal(xml.includes('KeepAlive'), false);
-        assert.equal(fs.statSync(args[2]).mode & 0o777, 0o600);
-        assert.equal(fs.statSync(path.dirname(args[2])).mode & 0o777, 0o700);
+        // NTFS does not expose POSIX 0600/0700 mode bits. Keep the mocked GUI
+        // flow assertions on Windows; verify actual private modes on Unix.
+        if (process.platform !== 'win32') {
+          assert.equal(fs.statSync(args[2]).mode & 0o777, 0o600);
+          assert.equal(fs.statSync(path.dirname(args[2])).mode & 0o777, 0o700);
+        }
       }
       return { stdout: 'runs = 1\nlast exit code = 0\n' };
     },
