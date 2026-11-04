@@ -40,9 +40,25 @@ function asksInText(msg) {
 const waitingForm = () => Object.values(readJson(path.join(HOME, 'state', 'open-items.json')) || {}).some(x => x.session === id && x.kind === 'approval' && x.state === 'pending');
 const REASON = {
   claude: 'Your reply ends by asking the user something in plain text, which does not reach them in mydash. If it is a choice or decision for them, ask it again with the AskUserQuestion tool (2–4 options; they can also write their own answer) and do not repeat the rest of your reply. If it needs no decision from them (a rhetorical question, something only they can go and do, or a question you already asked with a tool and got the answer to), end your turn without replying to this note.',
-  codex: 'Your reply ends by asking the user something in plain text, which does not reach them in mydash. If it is a choice or decision for them, ask it again: with the request_user_input tool if it is available, otherwise run `mydash ask "<question>" "<option 1>" "<option 2>"` and wait for the answer. Do not repeat the rest of your reply. If it needs no decision from them (a rhetorical question, something only they can go and do, or a question you already asked with a tool and got the answer to), end your turn without replying to this note.',
+  codex: 'Your reply ends by asking the user something in plain text, which does not reach them in mydash. If it is a choice or decision for them, ask it again: with request_user_input when available in the current mode, otherwise request_user_input_async. Keep an unanswered asynchronous question in the active turn by waiting; do not finish the turn or re-ask it. Only when neither native tool is available, first show the question and choices in the conversation, then run `mydash ask "<question>" "<option 1>" "<option 2>"` and wait for the answer. Do not repeat the rest of your reply. If it needs no decision from them (a rhetorical question, something only they can go and do, or a question you already asked with a tool and got the answer to), end your turn without replying to this note.',
+};
+// The App only keeps asynchronous question controls for an active turn. A
+// successful native tool call is not proof that its card survives turn completion.
+// Guard once; interruptions, errors, stale watchers and explicit modes fail open.
+const nativeQuestionWaiting = () => {
+  try {
+    if (!valid || agent !== 'codex' || cfg.prompts?.enabled === false || (cfg.prompts?.codexMode || 'parallel') !== 'parallel') return false;
+    return (readJson(path.join(HOME, 'state', 'prompts.json'))?.items || []).some(p =>
+      p.tool === 'codex' && p.kind === 'question' && p.session === id && p.status === 'pending'
+      && p.both === true && !p.appOnly && p.native?.tool === 'request_user_input_async'
+      && typeof p.polledAt === 'number' && Date.now() - p.polledAt < 45_000);
+  } catch { return false; }
 };
 let block = null;
+if (state === 'idle' && (input.hook_event_name || 'Stop') === 'Stop' && !input.stop_hook_active && nativeQuestionWaiting()) {
+  block = 'A native request_user_input_async question is still unanswered. Finishing this turn hides its Codex App answer controls. Keep this turn active and wait for the existing question to be answered, using short interruptible waits. Do not ask the question again or send another copy. You may continue independent work; finish only after the answer arrives or the user explicitly cancels or moves on.';
+  state = 'busy';
+}
 if (state === 'idle' && (input.hook_event_name || 'Stop') === 'Stop' && !input.stop_hook_active && cfg.prompts?.enabled !== false && cfg.prompts?.chat !== false
   && asksInText(input.last_assistant_message) && !waitingForm()) {
   block = REASON[agent]; state = 'busy'; // 还要接着问，不算闲下来
@@ -91,11 +107,11 @@ const TEXT = {
 const RULE = {
   en: {
     claude: 'mydash: when the user has to choose or decide something, ask with the AskUserQuestion tool (it reaches them in mydash and on their phone); for a long write-up with several decisions, publish a mydash approval form. Do not leave the choice as a question at the end of your reply.',
-    codex: 'mydash: when the user has to choose or decide something, ask with the request_user_input tool if it is available, otherwise with `mydash ask "<question>" "<option>" …` (both reach them in mydash and on their phone). Do not leave the choice as a question at the end of your reply.',
+    codex: 'mydash: when the user has to choose or decide something, ask with request_user_input when available in the current mode, otherwise request_user_input_async. Wait for its answer before finishing the turn so the native App card stays visible; do not re-ask it. Only if neither native tool is available, show the question and choices, then use `mydash ask "<question>" "<option>" …` (both reach them in mydash and on their phone). Do not leave the choice as a question at the end of your reply.',
   },
   zh: {
     claude: 'mydash：要用户做选择或拍板时，用 AskUserQuestion 选择题问（会到用户的 mydash 和手机上）；内容多、要连着拍好几个板的，发 mydash 审批单。不要只在回复末尾用文字问。',
-    codex: 'mydash：要用户做选择或拍板时，能用 request_user_input 工具就用它问，用不了就运行 `mydash ask "问题" "选项" …`（都会到用户的 mydash 和手机上）。不要只在回复末尾用文字问。',
+    codex: 'mydash：要用户做选择或拍板时，当前模式能用 request_user_input 时用它问，否则优先用 request_user_input_async。异步问题未答时保持本轮等待，不要结束本轮或重新提问，避免 App 收起卡片。只有两个原生工具都不可用时，先在会话里显示问题和选项，再运行 `mydash ask "问题" "选项" …`（都会到用户的 mydash 和手机上）。不要只在回复末尾用文字问。',
   },
 };
 // 发单的会话结束了（或者一天没动静、或者根本没记会话）
