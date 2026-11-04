@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3 (2026-11-03)
+
+- Keep the selected conversation title and automatic/manual target mode visible beside each article. Replace the native select with a searchable, keyboard-accessible conversation picker that shows working/idle/unknown states, latest-project markers, update times, recent message previews, connection sources and short IDs. Opening the picker does not move messages; drafts remain attached to their original target.
+
 ## 0.2.2 (2026-11-03)
 
 - Users with conversation viewing off see a dismissible, once-per-browser introduction. Its action opens the exact Terminal sessions settings section; viewing and sending remain independent opt-in choices. The introduction can be replayed in Settings.
