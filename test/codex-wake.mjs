@@ -75,6 +75,54 @@ test('automatically wakes an unloaded conversation and deduplicates simultaneous
   assert.equal(f.opens(), 1);
   assert.ok(results.every((x) => x.state === 'connected'));
 });
+test('a boot service falls back to a private one-shot GUI agent and removes it after opening', async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-wake-gui-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const calls = [];
+  await api.openCodexThread(id, {
+    home,
+    platform: 'darwin',
+    uid: 501,
+    consoleUid: () => 501,
+    run: async (bin, args) => {
+      calls.push(args);
+      if (args[0] === 'asuser') throw Object.assign(Error('no GUI bootstrap'), { code: 1 });
+      if (args[0] === 'bootstrap') {
+        assert.equal(args[1], 'gui/501');
+        const xml = fs.readFileSync(args[2], 'utf8');
+        assert.ok(xml.includes('<string>/usr/bin/open</string>'));
+        assert.ok(xml.includes('<string>codex://threads/' + id + '</string>'));
+        assert.equal(xml.includes('prompt='), false);
+        assert.equal(xml.includes('KeepAlive'), false);
+        assert.equal(fs.statSync(args[2]).mode & 0o777, 0o600);
+        assert.equal(fs.statSync(path.dirname(args[2])).mode & 0o777, 0o700);
+      }
+      return { stdout: 'runs = 1\nlast exit code = 0\n' };
+    },
+  });
+  assert.ok(calls.some((args) => args[0] === 'bootstrap'));
+  assert.ok(calls.some((args) => args[0] === 'bootout'));
+  assert.equal(fs.readdirSync(path.join(home, 'state')).length, 0);
+});
+test('failed GUI bootstrap cleans its private files and does not fall back to a shell', async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-wake-denied-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const calls = [];
+  await assert.rejects(
+    api.openCodexThread(id, {
+      home,
+      platform: 'darwin',
+      uid: 501,
+      consoleUid: () => 501,
+      run: async (bin, args) => {
+        calls.push(bin);
+        throw Error('denied');
+      },
+    })
+  );
+  assert.ok(calls.every((bin) => bin === '/bin/launchctl'));
+  assert.equal(fs.readdirSync(path.join(home, 'state')).length, 0);
+});
 test('already connected and incompatible threads are never opened', async () => {
   const f = fixture();
   f.bridge.peek = () => ({ connected: true });
