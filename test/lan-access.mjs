@@ -170,6 +170,7 @@ test('live LAN switch, owner approval, revocation and logout protect both ports'
   assert.equal((await request(ip, '/missing', { cookie, content: true })).status, 404);
   assert.equal((await request(ip, '/api/access', { cookie })).status, 403);
   assert.equal((await post('reset', {}, ip, cookie)).status, 403);
+  assert.equal((await request(ip, '/api/sessions/connect', { method: 'POST', cookie, body: JSON.stringify({ id: '11111111-1111-4111-8111-111111111111' }), headers: { 'X-Mydash': '1', 'Content-Type': 'application/json' } })).status, 403);
   const html = (await request(ip, '/', { cookie })).text;
   assert.match(html, /lan-logout/);
   assert.doesNotMatch(html, /name="mydash-local-url"/);

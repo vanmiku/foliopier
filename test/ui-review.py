@@ -1212,6 +1212,61 @@ class ReviewUI(unittest.TestCase):
         self.assertGreater(len(calls),count);self.assertEqual(sent,[])
         self.assertEqual(self.page.locator('#article-message').input_value(),'Keep this question')
 
+    def auto_wake_fixture(self):
+        self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
+        self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))
+        ident=self.session_fixture('auto-wake-fixture-111','codex');opened=[];sent=[]
+        self.page.route('**/api/sessions/'+ident,lambda r:r.fulfill(json={
+            'session':{'canSend':False,'canConnect':True,'sendReason':'app_not_open','deliveries':[],
+                       'connection':{'state':'connecting'} if opened else None},
+            'stateLabel':'Idle','html':'<p>Saved conversation available immediately</p>'}))
+        self.page.route('**/api/sessions/connect',lambda r:(opened.append(r.request.post_data_json),r.fulfill(status=202,json={'connection':{'state':'connecting'}})))
+        self.page.route('**/api/sessions/send',lambda r:(sent.append(r.request.post_data_json),r.fulfill(status=202,json={'transport':'codex-app','delivery':{'state':'queued'}})))
+        return ident,opened,sent
+
+    def test_selected_codex_wakes_without_message_and_can_queue_first_message(self):
+        ident,opened,sent=self.auto_wake_fixture()
+        self.page.set_viewport_size({'width':1366,'height':820});self.go('/p/test/session-document')
+        self.page.wait_for_function('()=>document.querySelector("[data-article-send-help]").textContent.includes("Connecting")')
+        self.assertIn('Saved conversation',self.page.locator('.article-messages').inner_text())
+        self.assertEqual(len(opened),1);self.assertEqual(opened[0]['id'],ident);self.assertEqual(sent,[])
+        self.assertNotIn('text',opened[0])
+        self.page.locator('#article-message').fill('Only this message')
+        self.page.locator('.article-compose [type=submit]').click()
+        self.page.wait_for_timeout(200)
+        self.assertEqual(len(sent),1);self.assertEqual(sent[0]['text'],'Only this message')
+        self.assertEqual(self.page.locator('#article-message').input_value(),'')
+        self.page.wait_for_timeout(3300);self.assertEqual(len(opened),1)
+        self.shot('codex-auto-wake-desktop',full_page=False)
+
+    def test_standalone_session_uses_the_same_automatic_wake_without_submitting_input(self):
+        ident,opened,sent=self.auto_wake_fixture();self.go('/sessions/'+ident)
+        self.page.wait_for_function('()=>document.querySelector("[data-session-send-hint]").textContent.includes("Connecting")')
+        self.assertEqual(len(opened),1);self.assertEqual(sent,[])
+        self.assertTrue(self.page.locator('#session-text').is_enabled())
+        self.assertEqual(self.page.locator('#session-send [type=submit]').inner_text(),'Connect and send')
+        self.page.locator('#session-text').fill('Standalone draft')
+        self.page.wait_for_timeout(3100)
+        self.assertEqual(len(opened),1)
+        self.assertEqual(self.page.locator('#session-text').input_value(),'Standalone draft')
+
+    def test_mobile_closed_panel_and_contents_do_not_wake_codex(self):
+        ident,opened,sent=self.auto_wake_fixture();self.go('/p/test/session-document')
+        self.assertEqual(opened,[])
+        self.page.locator('[data-article-open=contents]').click()
+        self.page.wait_for_timeout(300);self.assertEqual(opened,[])
+        self.page.locator('[data-article-agent=codex]').click()
+        self.page.wait_for_timeout(300);self.assertEqual(len(opened),1);self.assertEqual(sent,[])
+        self.assertIn('Saved conversation',self.page.locator('.article-messages').inner_text())
+        self.shot('codex-auto-wake-mobile',full_page=False)
+
+    def test_view_only_article_never_requests_wake_even_if_server_metadata_is_stale(self):
+        ident,opened,sent=self.auto_wake_fixture()
+        self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':False}})
+        self.page.set_viewport_size({'width':1366,'height':820});self.go('/p/test/session-document')
+        self.assertEqual(opened,[]);self.assertEqual(sent,[])
+        self.assertTrue(self.page.locator('.article-compose [type=submit]').is_hidden())
+
     def test_project_current_conversation_is_shared_across_articles(self):
         self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
         self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))
@@ -1375,12 +1430,12 @@ class ReviewUI(unittest.TestCase):
         ident=self.session_fixture('ui-session-333')
         self.page.route('**/api/sessions/send',lambda r:r.fulfill(status=409,content_type='application/json',body='{"error":"Check the terminal first"}'))
         self.go('/sessions/'+ident)
-        self.page.locator('#session-text').evaluate('(e)=>e.disabled=false'); self.page.locator('#session-send button').evaluate('(e)=>e.disabled=false')
+        self.page.locator('#session-text').evaluate('(e)=>e.disabled=false'); self.page.locator('#session-send [type=submit]').evaluate('(e)=>e.disabled=false')
         self.page.locator('#session-text').fill('Please explain')
-        self.page.locator('#session-send button').click()
+        self.page.locator('#session-send [type=submit]').click()
         self.page.wait_for_function("() => document.querySelector('.session-send-status').textContent.includes('Check the terminal')")
         self.assertEqual(self.page.locator('#session-text').input_value(),'Please explain')
-        self.assertTrue(self.page.locator('#session-send button').is_enabled())
+        self.assertTrue(self.page.locator('#session-send [type=submit]').is_enabled())
 
     def test_session_retry_keeps_message_identifier_across_reload(self):
         self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
@@ -1392,13 +1447,13 @@ class ReviewUI(unittest.TestCase):
             else: route.fulfill(status=200,content_type='application/json',body='{"ok":true}')
         self.page.route('**/api/sessions/send',deliver)
         self.go('/sessions/'+ident)
-        self.page.locator('#session-text').evaluate('(e)=>e.disabled=false'); self.page.locator('#session-send button').evaluate('(e)=>e.disabled=false')
+        self.page.locator('#session-text').evaluate('(e)=>e.disabled=false'); self.page.locator('#session-send [type=submit]').evaluate('(e)=>e.disabled=false')
         self.page.locator('#session-text').fill('Do this once')
-        self.page.locator('#session-send button').click()
+        self.page.locator('#session-send [type=submit]').click()
         self.page.wait_for_function("() => document.querySelector('.session-send-status').textContent.length > 0")
         self.page.reload(); self.page.wait_for_selector('#session-text')
-        self.page.locator('#session-text').evaluate('(e)=>e.disabled=false'); self.page.locator('#session-send button').evaluate('(e)=>e.disabled=false')
-        self.page.locator('#session-send button').click()
+        self.page.locator('#session-text').evaluate('(e)=>e.disabled=false'); self.page.locator('#session-send [type=submit]').evaluate('(e)=>e.disabled=false')
+        self.page.locator('#session-send [type=submit]').click()
         self.page.wait_for_function("() => document.querySelector('#session-text').value === ''")
         self.assertEqual(len(nonces),2); self.assertEqual(nonces[0],nonces[1])
 

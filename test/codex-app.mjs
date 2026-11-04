@@ -119,14 +119,18 @@ async function fixture(t, options = {}) {
           state.threadRuntimeStatus = { type: 'active' };
           broadcast();
         }
-        send({
-          type: 'response',
-          requestId: m.requestId,
-          resultType: 'success',
-          method: m.method,
-          handledByClientId: 'owner',
-          result,
-        });
+        const reply = () =>
+          send({
+            type: 'response',
+            requestId: m.requestId,
+            resultType: 'success',
+            method: m.method,
+            handledByClientId: 'owner',
+            result,
+          });
+        if (options.settingsDelayMs && m.method === 'thread-follower-read-model-settings')
+          setTimeout(reply, options.settingsDelayMs);
+        else reply();
       }
     });
   });
@@ -476,7 +480,7 @@ test('a stale acknowledged turn ID cannot override a different client message id
 
 test('HTTP send travels through the native socket and exposes completion only for its own turn', async (t) => {
   if (process.platform === 'win32') return t.skip('desktop Unix IPC adapter');
-  const f = await fixture(t, { mirrorTurn: true });
+  const f = await fixture(t, { mirrorTurn: true, settingsDelayMs: 1500 });
   const appHome = path.join(f.dir, 'mydash'),
     registry = path.join(appHome, 'state/agents'),
     sessions = path.join(f.dir, 'sessions');
@@ -548,7 +552,11 @@ test('HTTP send travels through the native socket and exposes completion only fo
     });
     return { status: response.status, ...(await response.json()) };
   };
-  assert.equal((await get()).session.canSend, true);
+  const historyAt = Date.now();
+  const initial = await get();
+  assert.ok(Date.now() - historyAt < 1200, 'saved history must not wait for App owner discovery');
+  assert.equal(initial.session.canSend, false);
+  await until(async () => (await get()).session.canSend);
   const project = path.basename(f.dir),
     item = path.join(appHome, 'data', project, 'article');
   fs.mkdirSync(item, { recursive: true });
@@ -576,6 +584,14 @@ test('HTTP send travels through the native socket and exposes completion only fo
     quote: '',
     article: { id: project + '/article', v: 1, file: 'REPORT.md' },
   };
+  assert.equal(
+    (await post('/api/sessions/connect', { id: sid, article: { ...body.article, file: 'wrong.md' } })).status,
+    409
+  );
+  if (process.platform === 'darwin') {
+    assert.equal((await post('/api/sessions/connect', { id: sid, article: body.article })).status, 202);
+    assert.equal(f.calls.filter((x) => x.method === 'thread-follower-start-turn').length, 0);
+  }
   assert.equal((await post('/api/sessions/send', body)).status, 202);
   assert.equal((await post('/api/sessions/send', body)).status, 202);
   await until(async () => (await get()).session.deliveries[0]?.state === 'working');

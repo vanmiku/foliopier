@@ -1,4 +1,4 @@
-import { projectConversationContext, listSessions, readSession, refreshSession, cancelAppDelivery, uploadSessionImage, readSessionImage, sessionImageStorage, cleanSessionImages, discardSessionImage, sendSession, sessionMatches, replyAfter } from './lib/sessions.mjs';
+import { projectConversationContext, listSessions, readSession, refreshSession, connectSession, cancelAppDelivery, uploadSessionImage, readSessionImage, sessionImageStorage, cleanSessionImages, discardSessionImage, sendSession, sessionMatches, replyAfter } from './lib/sessions.mjs';
 import { sessionRows, sessionSection, messageRows, sessionPage, stateLabel } from './lib/sessionviews.mjs';
 // mydash 网页服务：只监听 127.0.0.1。访问方式由安装时选：只本机，或由 tailscale serve 转发到 tailnet。
 // 两个端口：PORT 是工作台；CONTENT_PORT 只提供原始文件，网页类产物在这里运行，和工作台不同源，脚本碰不到工作台的接口。
@@ -481,6 +481,18 @@ async function handlePost(req, res) {
     if (req.mydashWhere === 'lan') return json(403, { error: t('Only this computer or a trusted Tailscale connection can send messages.') });
     const ok = cancelAppDelivery(String(body.id || ''), String(body.nonce || ''), body.stopWaiting === true);
     return json(ok ? 200 : 409, { ok, error: ok ? null : t('This message has already been dispatched. Check Codex App.') });
+  }
+  if (url.pathname === '/api/sessions/connect') {
+    if (req.mydashWhere === 'lan') return json(403, { error: t('Only this computer or a trusted Tailscale connection can send messages.') });
+    if (body.article) {
+      const [project, slug] = String(body.article.id || '').split('/');
+      const meta = project && slug ? readMeta(project, slug) : null;
+      const ver = meta?.versions.find(v => v.v === Number(body.article.v));
+      if (!ver || !ver.files.some(f => f.path === body.article.file) || !projectConversationContext(project, index(), latest(meta)).sessions.some(s => s.id === body.id))
+        return json(409, { error: t('The selected session does not belong to this document’s project.') });
+    }
+    const result = connectSession(String(body.id || ''), { manual: body.manual === true });
+    return json(result.status, result);
   }
   if (url.pathname === '/api/sessions/send') {
     if (req.mydashWhere === 'lan') return json(403, { error: t('Only this computer or a trusted Tailscale connection can send messages.') });
@@ -991,18 +1003,18 @@ async function handle(req, res) {
     const ver = meta?.versions.find(v => v.v === Number(url.searchParams.get('v')));
     if (!ver) return send(res, 404, '{}', 'application/json; charset=utf-8');
     const { sessions, scope, reason } = projectConversationContext(project, index(), latest(meta));
-    if (req.mydashWhere === 'lan') sessions.forEach(s => { s.canSend = false; s.sendReason = 'lan'; });
+    if (req.mydashWhere === 'lan') sessions.forEach(s => { s.canSend = false; s.canConnect = false; s.connection = null; s.sendReason = 'lan'; });
     return send(res, 200, JSON.stringify({ sessions, scope, reason }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
   }
   if (url.pathname === '/api/sessions') {
     const sessions = listSessions(url.searchParams.get('project') || '');
-    if (req.mydashWhere === 'lan') sessions.forEach(s => { s.canSend = false; s.sendReason = 'lan'; });
+    if (req.mydashWhere === 'lan') sessions.forEach(s => { s.canSend = false; s.canConnect = false; s.connection = null; s.sendReason = 'lan'; });
     return send(res, 200, JSON.stringify({ sessions, html: sessionRows(sessions) }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
   }
   if (segs[0] === 'api' && segs[1] === 'sessions' && segs.length === 3) {
-    const session = await refreshSession(segs[2],{transport:url.searchParams.get('transport')==='claude-remote'?'claude-remote':undefined});
+    const session = await refreshSession(segs[2],{waitForApp:false,transport:url.searchParams.get('transport')==='claude-remote'?'claude-remote':undefined});
     if (!session) return send(res, 404, '{}', 'application/json; charset=utf-8');
-    if (req.mydashWhere === 'lan') { session.canSend = false; session.sendReason = 'lan'; }
+    if (req.mydashWhere === 'lan') { session.canSend = false; session.canConnect = false; session.connection = null; session.sendReason = 'lan'; }
     return send(res, 200, JSON.stringify({ session, html: messageRows(session.messages, session.agent), stateLabel: stateLabel(session.state) }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
   }
   if (segs[0] === 'sessions') {
@@ -1010,7 +1022,7 @@ async function handle(req, res) {
     if (segs.length === 1) return send(res, 200, homePage(index(), { sessionsHtml: sessionSection(listSessions()) }));
     const session = readSession(segs[1]);
     if (!session || segs.length !== 2) return send(res, 404, notFoundPage());
-    if (req.mydashWhere === 'lan') { session.canSend = false; session.sendReason = 'lan'; }
+    if (req.mydashWhere === 'lan') { session.canSend = false; session.canConnect = false; session.connection = null; session.sendReason = 'lan'; }
     return send(res, 200, sessionPage(session));
   }
   if (url.pathname === '/api/index') {
@@ -1130,7 +1142,7 @@ async function handle(req, res) {
     const approvalSummary = sub ? summarize(ver.title, ver.v, questionsOf(mdText), sub.answers) : '';
     const todos = rendered?.needs?.todo && rel === ver.main && !diff ? todoProgress(versionTodos(project, slug, ver), responses.todos) : null;
     const conversation = readConfig().terminalSessions?.enabled ? projectConversationContext(meta.project, index(), latest(meta)) : null;
-    return send(res, 200, itemPage(meta, ver, rel, rendered, gallery, { fileEntry, mode, responses, approvalSummary, mdText, diff, diffable: DIFFABLE.has(kindOf(rel)), todos, conversationScope: conversation?.scope, conversationReason:conversation?.reason, articleSessions: conversation ? conversation.sessions.map(s => ({ ...s, canSend: s.canSend && req.mydashWhere !== 'lan', sendReason: req.mydashWhere === 'lan' ? 'lan' : s.sendReason })) : null }));
+    return send(res, 200, itemPage(meta, ver, rel, rendered, gallery, { fileEntry, mode, responses, approvalSummary, mdText, diff, diffable: DIFFABLE.has(kindOf(rel)), todos, conversationScope: conversation?.scope, conversationReason:conversation?.reason, articleSessions: conversation ? conversation.sessions.map(s => ({ ...s, canSend: s.canSend && req.mydashWhere !== 'lan', canConnect: s.canConnect && req.mydashWhere !== 'lan', connection: req.mydashWhere === 'lan' ? null : s.connection, sendReason: req.mydashWhere === 'lan' ? 'lan' : s.sendReason })) : null }));
   }
 
   return send(res, 404, notFoundPage());

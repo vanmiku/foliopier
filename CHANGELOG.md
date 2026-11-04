@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5 (2026-11-04)
+
+- Show saved Codex messages immediately while the native App connection is discovered in the background. Only the selected, visible conversation is opened on the hosting Mac; viewing Contents or closing the mobile panel does not wake it.
+- With web messaging enabled on macOS, automatically open an existing original Codex thread through its registered App link. No dummy message, separate executor or permission changes are used. Connection attempts are deduplicated, bounded and rate limited; GUI login and connection failures retain drafts and provide a retry.
+- Accept first messages into the durable Codex queue while connecting, with cancellation, retry deduplication, permission revocation checks and the existing 30-minute expiry. Ordinary LAN browsers remain view-only and cannot wake the App. Settings explain the automatic-opening behavior; other platforms retain their existing connection methods.
+
 ## 0.2.4 (2026-11-04)
 
 - Discover resumed Codex rollout files with continuation ID suffixes, resolve duplicate files to the newest validated transcript and look up known threads beyond incremental indexing budgets. Active projects no longer fall back to stale copies or the wrong older conversation.
