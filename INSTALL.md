@@ -88,6 +88,8 @@ Do not assume that `http://mydash/` is every user's address. Give the exact `url
 - `mydash doctor --json` checks both main and content-port Serve mappings. The network health check must identify this installation, so a different mydash instance or unrelated HTTP 200 page does not count as success.
 - A failed network lookup does not justify changing access controls or enabling LAN access. Use the local address on the host while checking the actual name, device approval, client DNS and tailnet access rules. Keep the exact browser error for diagnosis.
 
+Settings → **HTTPS access** shows the actual network address and an automatic-redirect switch. A saved HTTPS URL is verified in the background: its certificate and both workbench/content health checks must pass for this installation before HTTP pages redirect. Unavailable, stale, renamed or mismatched endpoints leave HTTP usable. Readiness is cached for at most 30 seconds; a hosting computer unable to reach its own Tailnet HTTPS addresses cannot enable automatic redirection until that connection works. Loopback addresses, API calls and ordinary LAN browsers never redirect. Switching access modes discards inherited HTTPS metadata; the independent node can rediscover its current HTTPS address.
+
 See Tailscale's [MagicDNS guide](https://tailscale.com/docs/features/magicdns), [machine naming rules](https://tailscale.com/docs/concepts/machine-names) and [Serve reference](https://tailscale.com/docs/reference/tailscale-cli/serve).
 
 ## 5. Verify

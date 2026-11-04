@@ -3,6 +3,7 @@ import { sessionRows, sessionSection, messageRows, sessionPage, stateLabel } fro
 // mydash 网页服务：只监听 127.0.0.1。访问方式由安装时选：只本机，或由 tailscale serve 转发到 tailnet。
 // 两个端口：PORT 是工作台；CONTENT_PORT 只提供原始文件，网页类产物在这里运行，和工作台不同源，脚本碰不到工作台的接口。
 import http from 'node:http';
+import { HttpsAccess } from './lib/https-access.mjs';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -53,6 +54,12 @@ let LAN = cfg.lan === true;
 const HOST = process.env.MYDASH_HOST || '127.0.0.1';
 const CONTENT_PORT = contentPort();
 const HTTPS_CONTENT_PORT = httpsContentPort();
+const httpsAccess = new HttpsAccess({ config: readConfig, installationId: INSTALL_ID, contentPort: () => HTTPS_CONTENT_PORT });
+const verifiedHttps = () => httpsAccess.peek().state === 'ready' ? httpsAccess.peek().httpsUrl : '';
+const shareUrl = () => verifiedHttps() || baseUrl();
+const checkHttps = () => httpsAccess.refresh().catch(() => {});
+setTimeout(checkHttps, 500).unref();
+setInterval(checkHttps, 15000).unref();
 
 // 防 DNS 重绑定：只接受已知的 Host
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`, '127.0.0.1', 'localhost']);
@@ -190,7 +197,7 @@ function schedulePromptPush(p) {
   if (delay < 0) return;
   setTimeout(() => {
     const cur = getPrompt(p.id); if (cur?.status !== 'pending') return;
-    const c = readConfig(); const base = (c.httpsUrl || baseUrl()).replace(/\/+$/, '');
+    const c = readConfig(); const base = shareUrl().replace(/\/+$/, '');
     const who = agentInfo(p.tool)?.name || 'mydash';
     sendPush({ title: t('{tool} is waiting for you · {project}', { tool: who, project: projectNames()[p.project]?.name || p.project }), body: promptTitle(p).slice(0, 200), link: `${base}/prompts/${p.id}` })
       .then(r => { if (!r.ok && r.error !== 'not configured') console.error(new Date().toISOString(), `prompt push failed: ${r.error}`); });
@@ -245,7 +252,7 @@ function broadcast(event, data) { const msg = `event: ${event}\ndata: ${JSON.str
 // 自动更新完、新的服务起来以后，把结果推送给用户（手动点的在网页上就看到了）
 async function updateTick() {
   const c = readConfig(); if (c.client) return;
-  const link = `${(c.httpsUrl || baseUrl()).replace(/\/+$/, '')}/settings#update`;
+  const link = `${shareUrl().replace(/\/+$/, '')}/settings#update`;
   const last = readUpdate().last;
   if (last?.auto && !last.pushed) {
     writeUpdate(x => ({ ...x, last: { ...x.last, pushed: true } }));
@@ -609,7 +616,7 @@ async function handlePost(req, res) {
     const p = createPrompt({ tool, kind: String(body.kind || ''), project: String(body.project || '') || projectForSession(tool, String(body.session || ''), String(body.cwd || '')), session: body.session, cwd: body.cwd, payload: body.payload, both: body.both === true, appOnly: body.appOnly === true });
     if (!p) return json(400, { error: 'not a prompt mydash understands' });
     schedulePromptPush(p); wakePrompt(p.id);
-    return json(200, { ok: true, id: p.id, url: `${(readConfig().httpsUrl || baseUrl()).replace(/\/+$/, '')}/prompts/${p.id}` });
+    return json(200, { ok: true, id: p.id, url: `${shareUrl().replace(/\/+$/, '')}/prompts/${p.id}` });
   }
   {
     const m = url.pathname.match(/^\/api\/prompts\/(p[0-9a-f]{10})\/(answer|release|cancel)$/);
@@ -704,6 +711,11 @@ async function handlePost(req, res) {
       if (!['notify', 'auto', 'off'].includes(body.updateMode)) return json(400, { error: 'updateMode must be notify, auto or off', field: 'updateMode' });
       patch.update = { ...(cur.update || {}), mode: body.updateMode };
     }
+    if (body.httpsRedirect !== undefined) {
+      if (req.mydashWhere === 'lan') return json(403, { error: t('Only this computer or a trusted Tailscale connection can change HTTPS settings.') });
+      if (typeof body.httpsRedirect !== 'boolean') return json(400, { error: 'httpsRedirect must be a boolean', field: 'httpsRedirect' });
+      patch.httpsRedirect = body.httpsRedirect;
+    }
     if (body.terminalSessions !== undefined) {
       if (req.mydashWhere === 'lan') return json(403, { error: t('Only this computer or a trusted Tailscale connection can change session access.') });
       if (typeof body.terminalSessions?.enabled !== 'boolean' || typeof body.terminalSessions?.send !== 'boolean') return json(400, { error: 'invalid session settings' });
@@ -740,7 +752,7 @@ async function handlePost(req, res) {
   if (url.pathname === '/api/notify-test') {
     const type = String(body.type || '');
     if (type === 'webpush' && !subscriptions().length) return json(200, { ok: false, error: t('No device has turned on web push yet.') });
-    if (type === 'webpush') { const https = readConfig().httpsUrl || ''; return json(200, await sendWebPush({ title: 'mydash', body: t('Test notification'), link: https || baseUrl() }, { subject: https || baseUrl() })); }
+    if (type === 'webpush') { const https = verifiedHttps(); return json(200, await sendWebPush({ title: 'mydash', body: t('Test notification'), link: https || baseUrl() }, { subject: https || baseUrl() })); }
     // 试已经存好的那一个（id），或者正在填的表单（type + fields；改的时候带上 id，留空的密钥用存着的）
     const saved = body.id ? notifySettings().channels.find(c => c.id === body.id) : null;
     if (body.id && !saved) return json(404, { error: 'no such channel' });
@@ -900,14 +912,11 @@ async function handleRemote(req, res, url) {
 }
 
 // 开了 HTTPS 后：用 tailnet 的名字走 HTTP 打开网页（比如 http://mydash/），跳到 HTTPS 的同一页，这样只用记 mydash。
-// HTTPS 证书只能发给完整域名，https://mydash/ 本身做不到。本机、局域网、/api/ 不跳（命令行和别的机器发布都走这些）。
-// tailscale serve 转发 HTTPS 时带 X-Forwarded-Proto: https。config.httpsRedirect = false 可以关掉
+// 只有证书及两个来源的健康检查通过后才跳转。检查在后台缓存，页面不等待网络。
+// 本机、局域网、API 和健康检查不跳；设置页的 httpsRedirect 开关可关闭跳转。
 function httpsTarget(req, url) {
-  if (req.method !== 'GET' && req.method !== 'HEAD') return null;
-  if (req.headers['x-forwarded-proto'] === 'https' || url.pathname.startsWith('/api/') || url.pathname === '/healthz') return null;
-  if (!TAILNET_MAIN?.test(String(req.headers.host || ''))) return null;
-  const c = readConfig();
-  return c.httpsUrl && c.httpsRedirect !== false ? c.httpsUrl.replace(/\/+$/, '') + req.url : null;
+  if (TAILNET_MAIN?.test(String(req.headers.host || ''))) checkHttps();
+  return httpsAccess.redirect(req);
 }
 
 // ---------- 路由 ----------
@@ -1067,7 +1076,7 @@ async function handle(req, res) {
 
   if (url.pathname === '/' || url.pathname === '') return send(res, 200, homePage(index(), { showArchived: url.searchParams.has('archived') }));
   if (url.pathname === '/today') return send(res, 200, digestPage(index()));
-  if (url.pathname === '/settings') return send(res, 200, settingsPage({ archiveDays: autoArchiveDays(), notify: notifySettings(), timezone: cfg.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone, webpush: { httpsUrl: readConfig().httpsUrl || '', devices: subscriptions().length }, prompts: readConfig().prompts || {}, terminalSessions: readConfig().terminalSessions || {}, sessionOwner: req.mydashWhere !== 'lan' }));
+  if (url.pathname === '/settings') return send(res, 200, settingsPage({ archiveDays: autoArchiveDays(), notify: notifySettings(), timezone: cfg.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone, networkAccess: { ...httpsAccess.peek(), networkUrl: baseUrl() }, webpush: { httpsUrl: verifiedHttps(), devices: subscriptions().length }, prompts: readConfig().prompts || {}, terminalSessions: readConfig().terminalSessions || {}, sessionOwner: req.mydashWhere !== 'lan' }));
   // 网页推送：service worker 要放在根路径，才能管整个网站
   if (url.pathname === '/sw.js') return send(res, 200, fs.readFileSync(path.join(APP, 'static', 'sw.js')), 'text/javascript; charset=utf-8', { 'Service-Worker-Allowed': '/', 'Cache-Control': 'no-cache' });
   // 某个条目上的提问和回答（agent 回答后，打开着的页面据此刷新）
@@ -1095,7 +1104,12 @@ async function handle(req, res) {
   }
   if (url.pathname === '/api/update') return send(res, 200, JSON.stringify(updateStatus()), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
   if (url.pathname === '/api/setup') return send(res, 200, JSON.stringify(setupStatus()), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
-  if (url.pathname === '/api/webpush') return send(res, 200, JSON.stringify({ publicKey: vapidKeys().publicKey, devices: subscriptions().length, httpsUrl: readConfig().httpsUrl || '' }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
+  if (url.pathname === '/api/https-access') {
+    if (req.mydashWhere === 'lan') return send(res, 403, JSON.stringify({ error: t('Only this computer or a trusted Tailscale connection can change HTTPS settings.') }), 'application/json; charset=utf-8');
+    httpsAccess.refresh({ force: url.searchParams.get('refresh') === '1' }).catch(() => {});
+    return send(res, 200, JSON.stringify({ ...httpsAccess.peek(), localUrl: localUrl(), networkUrl: baseUrl() }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
+  }
+  if (url.pathname === '/api/webpush') return send(res, 200, JSON.stringify({ publicKey: vapidKeys().publicKey, devices: subscriptions().length, httpsUrl: verifiedHttps() }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
 
   if (segs[0] === 'p' && segs.length === 2) {
     const items = index().filter(m => m.project === segs[1]);

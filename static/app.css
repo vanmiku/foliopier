@@ -355,7 +355,7 @@ main { flex: 1; width: 100%; max-width: 1160px; margin: 0 auto; padding: 4px 32p
 .connection-notice { padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--pin-soft); color: var(--text); font-size: 13.5px; overflow-wrap: anywhere; }
 .connection-notice strong, .connection-notice span { display: block; margin-bottom: 4px; }
 .connection-notice a { display: inline-block; padding: 7px 0; color: var(--accent); }
-.settings-local { overflow-wrap: anywhere; }
+.settings-local, .settings-network { overflow-wrap: anywhere; }
 .old-banner { border-color: color-mix(in srgb, var(--pin) 40%, var(--border)); background: var(--pin-soft); color: var(--text); }
 .old-banner a { font-weight: 600; margin-left: 4px; }
 .seen-banner p { margin: 0; }

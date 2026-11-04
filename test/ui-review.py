@@ -560,6 +560,25 @@ class ReviewUI(unittest.TestCase):
         self.assertIn('starts at boot', self.page.locator('.upd-dlg.upd-ok').inner_text())
         self.assertEqual(self.page.locator('.upd-cmd').count(), 0)
 
+    def test_https_redirect_switch_persists_and_reports_unavailable_connections(self):
+        config=self.home/'config.json';saved=config.read_text();self.addCleanup(lambda:config.write_text(saved))
+        state={'value':'unavailable','reason':'certificate'}
+        self.page.route('**/api/https-access*',lambda r:r.fulfill(json={'state':state['value'],'reason':state['reason']}))
+        self.go('/settings')
+        self.page.wait_for_function("()=>document.querySelector('[data-https-state]').textContent.includes('certificate could not be verified')")
+        toggle=self.page.locator('[name=httpsRedirect]');self.assertTrue(toggle.is_checked());toggle.uncheck()
+        for _ in range(100):
+            if json.loads(config.read_text()).get('httpsRedirect') is False:break
+            self.page.wait_for_timeout(50)
+        self.assertIs(json.loads(config.read_text()).get('httpsRedirect'),False)
+        self.page.reload();self.assertFalse(toggle.is_checked())
+        state.update(value='ready',reason=None);self.page.locator('[data-https-check]').click()
+        self.page.wait_for_function("()=>document.querySelector('[data-https-state]').textContent.includes('HTTPS is ready')")
+        self.assertFalse(toggle.is_checked())
+        self.page.set_viewport_size({'width':390,'height':844});self.page.locator('#https-access').scroll_into_view_if_needed()
+        self.assertLessEqual(self.page.evaluate('document.documentElement.scrollWidth'),390)
+        self.shot('https-access-mobile',full_page=False)
+
     def test_local_entry_survives_tailnet_disconnect_without_losing_drafts(self):
         config = self.home / 'config.json'; saved = config.read_text()
         data = json.loads(saved); data.update(access='tailscale', baseUrl='http://example-tailnet', httpsUrl='https://offline.example.ts.net')

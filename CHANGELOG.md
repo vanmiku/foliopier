@@ -2,6 +2,8 @@
 
 ## 0.2.5 (2026-11-04)
 
+- Redirect HTTP Tailnet pages to HTTPS only after native certificate verification and installation-identity checks pass for both the workbench and isolated content origin. Readiness expires and is invalidated by address changes; background checks are shared and bounded so pages remain usable while HTTPS is unavailable. Settings show the actual network address, connection state and an automatic-redirect switch restricted to local/trusted Tailnet access. Access-mode changes discard inherited HTTPS addresses.
+
 - Connect to already loaded original sessions in the newer shared Codex app-server daemon over its private Unix WebSocket, including its protected socket symlink. Verify the project, thread and direct-input capability before enabling send; preserve the original model and permissions. Keep the desktop broker fallback for older installations and never switch transports to retry an unconfirmed submission. Add pinned `ws` for the native WebSocket framing/handshake (no framework or new network listener).
 
 - Classify explicit Codex protocol-version/missing-handler errors as incompatible connections. Add a read-only support probe, compatible with existing 0.2.4 code, that reports App versions, socket checks and per-RPC codes without exposing conversations or starting delivery workers.

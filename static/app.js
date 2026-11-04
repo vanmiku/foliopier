@@ -1104,6 +1104,7 @@
     const autoData = () => ({
       ...(q('sessionsOn') ? { terminalSessions: { enabled: q('sessionsOn').checked, send: q('sessionsSend').checked } } : {}),
       autoArchiveDays: Number(q('autoArchiveDays').value), daily: q('dailyOn').checked ? q('daily').value : '',
+      ...(q('httpsRedirect') ? { httpsRedirect: q('httpsRedirect').checked } : {}),
       ...(q('updateMode') ? { updateMode: q('updateMode').value } : {}),
       prompts: { enabled: q('promptsOn').checked, chat: q('promptsChat').checked, mode: q('promptsMode').value, codexMode: q('promptsCodex').value, pushDelay: Number(q('promptsPush').value) },
     });
@@ -1120,6 +1121,41 @@
         } catch { oops(); }
       });
     });
+    // Read cached HTTPS readiness without blocking the settings page or editing drafts.
+    const httpsState = setForm.querySelector('[data-https-state]');
+    let httpsLoading = false, httpsPoll;
+    const httpsText = j => j.state === 'ready'
+      ? T('HTTPS is ready. Automatic redirection follows your setting.')
+      : j.state === 'unconfigured'
+        ? T('HTTPS is not configured. HTTP remains available.')
+        : j.state === 'invalid'
+          ? T('The saved HTTPS address does not match this device. Automatic redirection is paused.')
+          : j.state === 'checking'
+            ? T('Checking HTTPS. HTTP remains available.')
+            : j.reason === 'identity'
+              ? T('HTTPS points to a different installation. Automatic redirection is paused.')
+              : j.reason === 'certificate'
+                ? T('The HTTPS certificate could not be verified. Automatic redirection is paused.')
+                : j.reason === 'content'
+                  ? T('HTTPS content access is unavailable. Automatic redirection is paused.')
+                  : T('HTTPS is unavailable. HTTP remains available.');
+    const loadHttps = async (retry = false) => {
+      if (!httpsState || httpsLoading || document.hidden) return;
+      httpsLoading = true; clearTimeout(httpsPoll);
+      const button = setForm.querySelector('[data-https-check]');
+      button.disabled = true;
+      try {
+        const response = await fetch('/api/https-access' + (retry ? '?refresh=1' : ''));
+        if (!response.ok) throw Error();
+        const j = await response.json(); httpsState.textContent = httpsText(j);
+        httpsPoll = setTimeout(() => loadHttps(), j.state === 'checking' ? 2000 : 30000);
+      } catch {
+        httpsState.textContent = T('The connection check failed. Your saved settings are kept.');
+      } finally { httpsLoading = false; button.disabled = false; }
+    };
+    setForm.querySelector('[data-https-check]')?.addEventListener('click', () => loadHttps(true));
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) loadHttps(); });
+    loadHttps();
     // 推送渠道
     const push = $('#set-push');
     if (push) {
