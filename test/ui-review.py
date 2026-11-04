@@ -1125,6 +1125,22 @@ class ReviewUI(unittest.TestCase):
         self.assertFalse((self.home/'state/agents'/(ident+'.json')).exists())
         self.assertEqual(self.page.locator('[data-article-send-help]').inner_text(),'Connected to Codex App')
 
+    def test_shared_codex_daemon_exposes_its_actual_source_and_readonly_reason(self):
+        self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
+        self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))
+        ident=self.session_fixture('daemon-browser-111','codex');mode={'connected':True};sent=[]
+        def chat(route):
+            route.fulfill(json={'session':{'canSend':mode['connected'],'canConnect':False,'sendReason':None if mode['connected'] else 'daemon_readonly','connectionSource':'daemon','transport':'codex-app' if mode['connected'] else None,'deliveries':[]},'stateLabel':'Idle','html':'<p>Original daemon conversation</p>'})
+        self.page.route('**/api/sessions/'+ident,chat)
+        self.page.route('**/api/sessions/send',lambda route:sent.append(route.request.post_data_json))
+        self.page.set_viewport_size({'width':1366,'height':650});self.go('/p/test/session-document');self.page.locator('[data-article-agent=codex]').click()
+        self.page.wait_for_function("()=>document.querySelector('[data-article-send-help]').textContent==='Connected to the original Codex session'")
+        self.page.locator('#article-message').fill('Preserve my draft')
+        mode['connected']=False
+        self.page.wait_for_function("()=>document.querySelector('#article-send-reason').textContent.includes('does not allow direct input')",timeout=15000)
+        self.assertEqual(self.page.locator('#article-message').input_value(),'Preserve my draft')
+        self.assertTrue(self.page.locator('.article-compose [type=submit]').is_disabled());self.assertEqual(sent,[])
+
     def test_claude_tmux_send_tracks_receipt_and_reply_and_exposes_only_a_valid_app_link(self):
         self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
         self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))

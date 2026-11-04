@@ -125,7 +125,9 @@
         const hint = document.querySelector('[data-session-send-hint]');
         hint.textContent = data.session.canSend
           ? data.session.transport === 'codex-app'
-            ? T('Connected to Codex App')
+            ? data.session.connectionSource === 'daemon'
+              ? T('Connected to the original Codex session')
+              : T('Connected to Codex App')
             : data.session.transport === 'claude-remote'
               ? T('Connected to Claude Remote Control')
               : T('Connected to the original tmux session')
@@ -141,13 +143,23 @@
                   : T(
                       'mydash can open this original conversation on the hosting Mac without sending a message.'
                     )
-            : data.session.sendReason === 'app_history_limit'
-              ? T('This Codex conversation is too large to sync. Select a shorter conversation to connect.')
-              : data.session.sendReason === 'claude_busy'
+            : data.session.sendReason === 'daemon_not_loaded'
+              ? T(
+                  'This Codex session is not loaded in the shared background service. Reopen it in the original Codex client; its records and your draft are kept.'
+                )
+              : data.session.sendReason === 'daemon_readonly'
                 ? T(
-                    'Claude is working or waiting for approval. Send when it is idle, or continue in Claude App.'
+                    'Codex does not allow direct input to this session. Continue in the original client; mydash will not change its permissions.'
                   )
-                : T('Sending is unavailable. Check the connection or messaging settings.');
+                : data.session.sendReason === 'app_history_limit'
+                  ? T(
+                      'This Codex conversation is too large to sync. Select a shorter conversation to connect.'
+                    )
+                  : data.session.sendReason === 'claude_busy'
+                    ? T(
+                        'Claude is working or waiting for approval. Send when it is idle, or continue in Claude App.'
+                      )
+                    : T('Sending is unavailable. Check the connection or messaging settings.');
         const writable = data.session.canSend || data.session.canConnect;
         text.disabled = !writable;
         form.querySelector('[type=submit]').disabled = !writable;

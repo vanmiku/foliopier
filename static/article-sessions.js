@@ -50,6 +50,7 @@
     connection = null,
     sendReason = 'not_connected',
     transport = null,
+    connectionSource = null,
     waitingForReply = false,
     generation = 0,
     lastHtml = null,
@@ -130,7 +131,9 @@
       ? T('Choose a session to continue.')
       : available
         ? transport === 'codex-app'
-          ? T('Connected to Codex App')
+          ? connectionSource === 'daemon'
+            ? T('Connected to the original Codex session')
+            : T('Connected to Codex App')
           : transport === 'claude-remote'
             ? T('Connected to Claude Remote Control')
             : T('Connected to the original tmux session')
@@ -213,31 +216,39 @@
                                     : T(
                                         'In Claude App, open this session and turn on Remote Control in its details. A running tmux session can also connect directly.'
                                       )
-                        : sendReason === 'app_not_open'
+                        : sendReason === 'daemon_not_loaded'
                           ? T(
-                              'Codex App is running, but this conversation is not connected. Open this exact conversation on the computer hosting mydash, then retry.'
+                              'This Codex session is not loaded in the shared background service. Reopen it in the original Codex client; its records and your draft are kept.'
                             )
-                          : sendReason === 'app_closed'
-                            ? T('Start Codex App on this computer to connect this conversation.')
-                            : sendReason === 'app_mismatch'
+                          : sendReason === 'daemon_readonly'
+                            ? T(
+                                'Codex does not allow direct input to this session. Continue in the original client; mydash will not change its permissions.'
+                              )
+                            : sendReason === 'app_not_open'
                               ? T(
-                                  'The App conversation belongs to a different project folder. Select the correct conversation in Codex App.'
+                                  'Codex App is running, but this conversation is not connected. Open this exact conversation on the computer hosting mydash, then retry.'
                                 )
-                              : sendReason === 'app_incompatible'
-                                ? T(
-                                    'This Codex App connection version is unsupported. Sending is paused to protect the conversation.'
-                                  )
-                                : sendReason === 'app_history_limit'
+                              : sendReason === 'app_closed'
+                                ? T('Start Codex App on this computer to connect this conversation.')
+                                : sendReason === 'app_mismatch'
                                   ? T(
-                                      'This Codex conversation is too large to sync. Select a shorter conversation to connect.'
+                                      'The App conversation belongs to a different project folder. Select the correct conversation in Codex App.'
                                     )
-                                  : sendReason === 'app_unavailable'
+                                  : sendReason === 'app_incompatible'
                                     ? T(
-                                        'Codex App did not respond. Keep the App running and open this conversation, then try again.'
+                                        'This Codex App connection version is unsupported. Sending is paused to protect the conversation.'
                                       )
-                                    : T(
-                                        'Open this conversation in Codex App on this computer. mydash will connect automatically.'
-                                      ));
+                                    : sendReason === 'app_history_limit'
+                                      ? T(
+                                          'This Codex conversation is too large to sync. Select a shorter conversation to connect.'
+                                        )
+                                      : sendReason === 'app_unavailable'
+                                        ? T(
+                                            'Codex App did not respond. Keep the App running and open this conversation, then try again.'
+                                          )
+                                        : T(
+                                            'Open this conversation in Codex App on this computer. mydash will connect automatically.'
+                                          ));
     const explanation = $('#article-send-reason');
     explanation.textContent = reason;
     const reasonKey = agent + ':' + sendReason + ':' + Boolean(id);
@@ -246,7 +257,11 @@
       help.setAttribute('aria-expanded', 'false');
     } else if (
       help.dataset.reason !== reasonKey &&
-      (agent === 'claude' || !id || sendReason.startsWith('app_') || sendReason === 'ended')
+      (agent === 'claude' ||
+        !id ||
+        sendReason.startsWith('app_') ||
+        sendReason.startsWith('daemon_') ||
+        sendReason === 'ended')
     ) {
       explanation.hidden = false;
       help.setAttribute('aria-expanded', 'true');
@@ -258,7 +273,11 @@
       ['disabled', 'lan'].includes(sendReason) ||
       !sessions.some((s) => s.agent === 'codex' && s.state !== 'ended');
     $('[data-article-reconnect]').hidden =
-      available || !id || agent !== 'codex' || (!canConnect && !sendReason.startsWith('app_'));
+      available ||
+      !id ||
+      agent !== 'codex' ||
+      (!canConnect && !sendReason.startsWith('app_')) ||
+      sendReason.startsWith('daemon_');
     $('[data-article-reconnect]').disabled = waking();
     $('.article-send-hint').textContent = writable()
       ? agent === 'codex'
@@ -472,7 +491,9 @@
           if (session.preview) o.append(text('span', session.preview, 'article-picker-preview'));
           const source =
             session.transport === 'codex-app'
-              ? 'Codex App'
+              ? session.connectionSource === 'daemon'
+                ? 'Codex'
+                : 'Codex App'
               : session.transport === 'claude-remote'
                 ? 'Claude Remote Control'
                 : session.transport === 'tmux'
@@ -627,6 +648,7 @@
         lastHtml = r.html;
       }
       transport = r.session.transport;
+      connectionSource = r.session.connectionSource;
       const details = $('[data-article-session-detail]');
       let appLink = details.querySelector('a');
       if (/^claude:\/\/code\/session_[A-Za-z0-9]{8,80}$/.test(r.session.appUrl || '')) {

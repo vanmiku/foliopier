@@ -89,50 +89,79 @@ try {
   const cwd = record.launchCwd || record.cwd;
   result.sessionFound = Boolean(cwd && path.isAbsolute(cwd));
   if (!result.sessionFound) throw Error('session-not-found');
-  bridge = new CodexAppBridge({ timeoutMs: 5000 });
-  result.socket = socketInfo(bridge.socketPath);
-  result.socketDirectory = socketInfo(path.dirname(bridge.socketPath));
-  result.secureSocket = bridge.secure();
-  const write = bridge.write.bind(bridge),
-    request = bridge.request.bind(bridge),
-    connect = bridge.connect.bind(bridge);
-  const methods = new Set(['initialize', 'thread-follower-read-model-settings', 'thread-owner-discovery']);
-  bridge.write = (message) => {
-    if (
-      !(message.type === 'request' && methods.has(message.method)) &&
-      !(message.type === 'broadcast' && message.method === 'thread-stream-following-changed') &&
-      message.type !== 'client-discovery-response'
-    )
-      throw Error('diagnostic-write-blocked');
-    return write(message);
-  };
-  bridge.request = async (...params) => {
-    const at = Date.now(),
-      row = { method: params[0], version: params[2], targeted: Boolean(params[3]) };
+  const daemonFile = path.join(app, 'lib/codex-daemon.mjs');
+  if (fs.existsSync(daemonFile)) {
+    const { CodexDaemonBridge } = await import(pathToFileURL(daemonFile).href);
+    const daemon = new CodexDaemonBridge({ timeoutMs: 5000 });
+    const request = daemon.request.bind(daemon);
+    const allowed = new Set(['initialize', 'thread/read', 'thread/loaded/list', 'thread/turns/list']);
+    daemon.request = (method, params, mutation) => {
+      if (mutation || !allowed.has(method)) throw Error('diagnostic-write-blocked');
+      return request(method, params, false);
+    };
     try {
-      const response = await request(...params);
-      row.ok = true;
-      return response;
-    } catch (e) {
-      row.ok = false;
-      row.code = codeOf(e);
-      throw e;
+      const view = await daemon.observe(id, cwd);
+      result.sharedDaemon = {
+        secureSocket: daemon.secure(),
+        connected: Boolean(view.connected),
+        reason: view.reason || null,
+      };
+      if (view.connected) {
+        result.connected = true;
+        result.connectionSource = 'daemon';
+        result.reason = null;
+      }
     } finally {
-      row.elapsedMs = Date.now() - at;
-      result.rpc.push(row);
+      daemon.close();
     }
-  };
-  bridge.connect = async () => {
-    try {
-      return await connect();
-    } catch (e) {
-      result.connectError = codeOf(e);
-      throw e;
-    }
-  };
-  const view = await bridge.observe(id, cwd);
-  result.connected = Boolean(view.connected);
-  result.reason = view.reason || null;
+  }
+  if (!result.connected) {
+    bridge = new CodexAppBridge({ timeoutMs: 5000 });
+    result.socket = socketInfo(bridge.socketPath);
+    result.socketDirectory = socketInfo(path.dirname(bridge.socketPath));
+    result.secureSocket = bridge.secure();
+    const write = bridge.write.bind(bridge),
+      request = bridge.request.bind(bridge),
+      connect = bridge.connect.bind(bridge);
+    const methods = new Set(['initialize', 'thread-follower-read-model-settings', 'thread-owner-discovery']);
+    bridge.write = (message) => {
+      if (
+        !(message.type === 'request' && methods.has(message.method)) &&
+        !(message.type === 'broadcast' && message.method === 'thread-stream-following-changed') &&
+        message.type !== 'client-discovery-response'
+      )
+        throw Error('diagnostic-write-blocked');
+      return write(message);
+    };
+    bridge.request = async (...params) => {
+      const at = Date.now(),
+        row = { method: params[0], version: params[2], targeted: Boolean(params[3]) };
+      try {
+        const response = await request(...params);
+        row.ok = true;
+        return response;
+      } catch (e) {
+        row.ok = false;
+        row.code = codeOf(e);
+        throw e;
+      } finally {
+        row.elapsedMs = Date.now() - at;
+        result.rpc.push(row);
+      }
+    };
+    bridge.connect = async () => {
+      try {
+        return await connect();
+      } catch (e) {
+        result.connectError = codeOf(e);
+        throw e;
+      }
+    };
+    const view = await bridge.observe(id, cwd);
+    result.connected = Boolean(view.connected);
+    result.reason = view.reason || null;
+    result.connectionSource = 'desktop';
+  }
 } catch (e) {
   result.error = ['invalid-options', 'invalid-session', 'session-not-found'].includes(e.message)
     ? e.message

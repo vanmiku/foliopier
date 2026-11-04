@@ -2,6 +2,8 @@
 
 ## 0.2.5 (2026-11-04)
 
+- Connect to already loaded original sessions in the newer shared Codex app-server daemon over its private Unix WebSocket, including its protected socket symlink. Verify the project, thread and direct-input capability before enabling send; preserve the original model and permissions. Keep the desktop broker fallback for older installations and never switch transports to retry an unconfirmed submission. Add pinned `ws` for the native WebSocket framing/handshake (no framework or new network listener).
+
 - Classify explicit Codex protocol-version/missing-handler errors as incompatible connections. Add a read-only support probe, compatible with existing 0.2.4 code, that reports App versions, socket checks and per-RPC codes without exposing conversations or starting delivery workers.
 
 - Doctor verifies both Serve forwards for standalone Tailscale nodes and checks the installation identity behind network addresses. A running node, another mydash instance or an unrelated HTTP 200 response no longer hides a broken network setup. The installation guide explains actual addresses, name collisions and MagicDNS prerequisites.

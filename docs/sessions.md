@@ -10,6 +10,8 @@ Each article has one row of tabs: **Contents / Codex / Claude Code**. Articles w
 
 Resumed Codex rollout files may include a continuation ID suffix. mydash validates the original thread ID in the launch header and selects the newest valid transcript. Background App owners are located through read-only routing, then their exact ownership and input capability are verified. Saved Codex messages appear before App discovery finishes. With web messaging enabled on macOS, opening a visible Codex conversation panel automatically opens that existing thread on the hosting Mac in the background. This works from a trusted Tailnet phone too; the phone does not launch its own App. No placeholder message is sent. Contents, closed mobile panels, hidden pages and view-only access do not wake the App. Attempts are deduplicated and rate limited, and open only the selected thread. The hosting Mac needs a logged-in GUI session with Codex installed; sign-in and App permission prompts still require that user's interaction. Retry connection retains the draft. Other platforms retain their existing connection methods.
 
+
+Newer Codex clients can instead use the shared app-server daemon. mydash connects to its existing private Unix WebSocket, verifies the original thread and project, and enables sending only when Codex explicitly permits direct input. An already loaded session needs no Desktop App wake or preliminary message. An unloaded or protected thread remains view-only; mydash never starts a second executor or changes its model, approval policy or sandbox. Connection source is shown as the original Codex session.
 ## Connection capabilities
 
 | Connection | Read recent messages | Send text | Send images | Delivery behavior |
