@@ -60,3 +60,15 @@ Claude Remote Control 目前仅在空闲时接受 mydash 消息，不在工作�
 Claude 登录错误请在原客户端重新登录；用量限制、Trusted Devices 等要求也应在 Claude 中处理，mydash 不会修改这些限制。不确定是否送达时，先核对原会话再重试。App 协议不兼容时，更新 mydash 或继续在原 App 中使用。
 
 信任边界、凭据处理和数据保留详见 [SECURITY.md](../SECURITY.md)。macOS 的 GUI 凭据辅助进程仅为后台服务读取现有已解锁登录钥匙串，`mydash uninstall` 会移除它。
+
+## Codex 连接的只读诊断
+
+App 和准确会话已打开却仍无法发送时，可在部署 mydash 的电脑执行：
+
+```sh
+node ~/.mydash/app/bin/diagnose-codex.mjs --session <会话UUID>
+```
+
+单独拿到的 `diagnose-codex.mjs` 也能读取已安装的 0.2.4 代码，检查本地连接。它读取会话元数据及只读 App 状态，不载入发送队列工作进程；输出 App/mydash 版本、socket 安全检查及各阶段错误码，不包含对话正文、模型设置和用户文件路径，也不打开会话或提交问题。终端检查成功后，仍需核对后台服务的运行环境，才能确认网页连接恢复。
+
+明确的协议版本错误或处理器缺失会显示为连接不兼容；保留原 App 的权限与 socket 保护，不直接放宽文件权限。

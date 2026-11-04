@@ -78,6 +78,15 @@ async function fixture(t, options = {}) {
           continue;
         }
         if (m.type !== 'request') continue;
+        if (options.rpcError?.[m.method]) {
+          send({
+            type: 'response',
+            requestId: m.requestId,
+            resultType: 'error',
+            error: options.rpcError[m.method],
+          });
+          continue;
+        }
         if (
           (options.noOwner &&
             ['thread-owner-discovery', 'thread-follower-read-model-settings'].includes(m.method)) ||
@@ -163,6 +172,73 @@ test('native App bridge binds the actual owner and snapshots, sends literal text
   for (const key of ['model', 'approvalPolicy', 'sandboxPolicy', 'permissions', 'cwd'])
     assert.equal(key in m.params.turnStart.request, false);
   assert.equal(m.params.turnStart.context.inheritThreadSettings, true);
+});
+
+test('explicit App protocol errors are compatibility failures rather than misleading nonresponse', async (t) => {
+  if (process.platform === 'win32') return t.skip('desktop Unix IPC adapter');
+  for (const error of ['request-version-mismatch', 'no-handler-for-request']) {
+    const f = await fixture(t, { rpcError: { 'thread-follower-read-model-settings': error } });
+    const b = new api.CodexAppBridge({ socketPath: f.socketPath, timeoutMs: 200 });
+    t.after(() => b.close());
+    assert.equal((await b.observe(sid, f.dir)).reason, 'app_incompatible');
+    assert.equal(
+      f.calls.some((x) => x.method === 'thread-follower-start-turn'),
+      false
+    );
+  }
+});
+
+test('a read-only diagnostic identifies the failed RPC without including conversations or sending input', async (t) => {
+  if (process.platform === 'win32') return t.skip('desktop Unix IPC adapter');
+  const { spawn } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  for (const broken of [false, true]) {
+    const f = await fixture(
+      t,
+      broken ? { rpcError: { 'thread-follower-read-model-settings': 'request-version-mismatch' } } : {}
+    );
+    fs.mkdirSync(path.join(f.dir, 'sessions'), { recursive: true });
+    fs.writeFileSync(
+      path.join(f.dir, 'sessions', 'rollout-2026-11-04T10-00-00-' + sid + '.jsonl'),
+      JSON.stringify({ type: 'session_meta', payload: { id: sid, cwd: f.dir } }) + '\n'
+    );
+    f.state.turns.push({
+      turnId: 'private',
+      status: 'completed',
+      items: [{ type: 'agentMessage', text: 'DO_NOT_INCLUDE_THIS_CONVERSATION' }],
+    });
+    const child = spawn(
+      process.execPath,
+      [path.join(root, 'bin/diagnose-codex.mjs'), '--session', sid, '--app-dir', root],
+      {
+        env: { ...process.env, MYDASH_CODEX_HOME: f.dir, MYDASH_HOME: path.join(f.dir, 'mydash') },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
+    );
+    let stdout = '',
+      stderr = '';
+    child.stdout.on('data', (b) => (stdout += b));
+    child.stderr.on('data', (b) => (stderr += b));
+    const code = await new Promise((r) => child.once('close', r));
+    assert.equal(code, broken ? 1 : 0, stderr);
+    const result = JSON.parse(stdout);
+    assert.equal(result.ok, !broken);
+    assert.equal(result.readOnly, true);
+    assert.equal(result.connected, !broken);
+    assert.equal(stdout.includes(f.dir), false);
+    assert.equal(stdout.includes('DO_NOT_INCLUDE_THIS_CONVERSATION'), false);
+    assert.equal(
+      f.calls.some((x) => x.method === 'thread-follower-start-turn'),
+      false
+    );
+    if (broken)
+      assert.ok(
+        result.rpc.some(
+          (x) => x.method === 'thread-follower-read-model-settings' && x.code === 'request-version-mismatch'
+        )
+      );
+  }
 });
 test('wrong project, insecure socket and unsupported stream protocol never permit sending', async (t) => {
   if (process.platform === 'win32') return t.skip('desktop Unix IPC adapter');

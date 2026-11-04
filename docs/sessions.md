@@ -56,3 +56,15 @@ On the hosting computer, bookmark `http://127.0.0.1:4870/`, or run `mydash url -
 For Claude login errors, sign in in the original Claude client. For an account/usage limit or Trusted Devices requirement, resolve it in Claude; mydash does not change these restrictions. If the App or terminal cannot confirm delivery, inspect the original session before retrying. For an unsupported App protocol, update mydash or continue in the original App.
 
 See [SECURITY.md](../SECURITY.md) for trust boundaries, credential handling and retained data. The macOS GUI credential helper only reads the existing unlocked login keychain for the background service; it is removed by `mydash uninstall`.
+
+## Read-only Codex connection diagnostics
+
+If Codex App and the exact thread are open but the connection remains unavailable, run the support probe on the computer hosting mydash:
+
+```sh
+node ~/.mydash/app/bin/diagnose-codex.mjs --session <thread-UUID>
+```
+
+A separately supplied copy of `diagnose-codex.mjs` can also inspect an existing 0.2.4 installation. It loads that installation's App bridge and session metadata, without importing the delivery worker. Only read-only initialization, settings, owner discovery and state-following traffic is allowed. The JSON output includes App/mydash versions, socket security checks and per-RPC error codes; it omits conversation text, model settings and user file paths. It neither opens a thread nor submits a prompt. A successful terminal probe does not prove that the background service has the same environment or permissions.
+
+Explicit protocol-version and missing-handler errors indicate an incompatible connection rather than an unresponsive App. Keep the App's existing permissions; do not remove socket protection to make it connect.

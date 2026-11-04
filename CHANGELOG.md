@@ -2,6 +2,8 @@
 
 ## 0.2.5 (2026-11-04)
 
+- Classify explicit Codex protocol-version/missing-handler errors as incompatible connections. Add a read-only support probe, compatible with existing 0.2.4 code, that reports App versions, socket checks and per-RPC codes without exposing conversations or starting delivery workers.
+
 - Doctor verifies both Serve forwards for standalone Tailscale nodes and checks the installation identity behind network addresses. A running node, another mydash instance or an unrelated HTTP 200 response no longer hides a broken network setup. The installation guide explains actual addresses, name collisions and MagicDNS prerequisites.
 
 - Completed, cancelled and stopped delivery notices disappear after five seconds; old success notices are not replayed. Each notice can be dismissed without cancelling the message or Agent work. Hidden pending statuses remain accessible, and new errors or confirmation requests can surface again. Article and standalone conversations share this behavior.
