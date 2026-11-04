@@ -819,10 +819,12 @@ test('long App conversations above 32 MiB connect without exposing tool output',
       ],
     },
   ];
-  const b = new api.CodexAppBridge({ socketPath: f.socketPath, timeoutMs: 3000 });
+  // This is a framing/privacy regression, not a 3-second performance SLA.
+  // Shared Intel CI runners must get the same bounded budget as production.
+  const b = new api.CodexAppBridge({ socketPath: f.socketPath });
   t.after(() => b.close());
   const view = await b.observe(sid, f.dir);
-  assert.equal(view.connected, true);
+  assert.equal(view.connected, true, view.reason);
   assert.equal(view.messages.at(-1).text, '**Original conversation reply**');
   assert.ok(JSON.stringify(view).length < 10000, 'tool output stays inside the private protocol state');
   assert.equal(
