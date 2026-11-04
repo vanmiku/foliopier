@@ -807,7 +807,8 @@ check "设置里切回「先在这里答」：权限那一步不再出题" "test
 node -e 'const f=process.argv[1],fs=require("fs"),c=JSON.parse(fs.readFileSync(f));delete c.prompts;fs.writeFileSync(f,JSON.stringify(c,null,2))' "$MYDASH_HOME/config.json"
 check "设置页能选两种问法" "curl -s '$B/settings' | grep 'name=\"promptsMode\"' >/dev/null"
 
-echo "Codex：软件里先问，mydash 只提醒（默认）"
+echo "Codex：显式 app 模式，mydash 只提醒"
+node -e 'const f=process.argv[1],fs=require("fs"),c=JSON.parse(fs.readFileSync(f));c.prompts={codexMode:"app"};fs.writeFileSync(f,JSON.stringify(c))' "$MYDASH_HOME/config.json"
 printf '%s\n' '{"type":"session_meta","payload":{"cwd":"/x/prproj"}}' > "$TMP/cx-roll.jsonl"
 printf '%s' '{"hook_event_name":"PreToolUse","session_id":"thr-3","cwd":"/x/prproj","tool_name":"request_user_input","tool_use_id":"call_app1","transcript_path":"'"$TMP/cx-roll.jsonl"'","tool_input":{"questions":[{"id":"d","question":"选哪条路？","options":[{"label":"甲","description":""},{"label":"乙","description":""}]}]}}' > "$TMP/cx-app.json"
 node "$ROOT/bin/agent-ask.mjs" codex < "$TMP/cx-app.json" > "$TMP/cx-app.out" 2>&1; sleep 1; PCA=$(PID1)
@@ -1111,7 +1112,9 @@ check "Codex 桌面版的选择题（request_user_input_async）也到了 mydash
 printf '%s\n%s\n' '{"type":"response_item","payload":{"type":"function_call_output","call_id":"call_async1","output":"queued"}}' '{"type":"event_msg","payload":{"type":"task_complete"}}' >> "$RV/cx-async.jsonl"; sleep 4
 check "桌面版：工具马上返回、这一轮结束了，题还在等用户" "test \"\$(pstatus $PAS)\" = pending"
 printf '%s\n' '{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<send_user_message_question_reply>[{\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call_async1\\\",0]\",\"answer\":\"甲\"}]</send_user_message_question_reply>"}]}}' >> "$RV/cx-async.jsonl"; sleep 4
-check "桌面版：用户在软件里答了，mydash 那份关掉" "test \"\$(pstatus $PAS)\" = terminal"
+check "桌面版：只答第一题，整组问题仍在等" "test \"\$(pstatus $PAS)\" = pending"
+printf '%s\n' '{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<send_user_message_question_reply>[{\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call_async1\\\",1]\",\"answer\":\"无\"}]</send_user_message_question_reply>"}]}}' >> "$RV/cx-async.jsonl"; sleep 4
+check "桌面版：用户在软件里全部答了，mydash 那份关掉" "test \"\$(pstatus $PAS)\" = terminal"
 # --- 接入：只动这一份安装装过的东西 ---
 printf '# 我的规则\n' > "$CH/CLAUDE.md"; $CLI integrate claude >/dev/null
 MYDASH_HOME="$RV/other-home" node "$ROOT/bin/mydash.mjs" integrate claude --remove >/dev/null 2>&1
