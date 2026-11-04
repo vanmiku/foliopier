@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.5 (2026-11-04)
+
+- Redirect HTTP Tailnet pages to HTTPS only after native certificate verification and installation-identity checks pass for both the workbench and isolated content origin. Readiness expires and is invalidated by address changes; background checks are shared and bounded so pages remain usable while HTTPS is unavailable. Settings show the actual network address, connection state and an automatic-redirect switch restricted to local/trusted Tailnet access. Access-mode changes discard inherited HTTPS addresses.
+
+- Connect to already loaded original sessions in the newer shared Codex app-server daemon over its private Unix WebSocket, including its protected socket symlink. Verify the project, thread and direct-input capability before enabling send; preserve the original model and permissions. Keep the desktop broker fallback for older installations and never switch transports to retry an unconfirmed submission. Add pinned `ws` for the native WebSocket framing/handshake (no framework or new network listener).
+
+- Classify explicit Codex protocol-version/missing-handler errors as incompatible connections. Add a read-only support probe, compatible with existing 0.2.4 code, that reports App versions, socket checks and per-RPC codes without exposing conversations or starting delivery workers.
+
+- Doctor verifies both Serve forwards for standalone Tailscale nodes and checks the installation identity behind network addresses. A running node, another mydash instance or an unrelated HTTP 200 response no longer hides a broken network setup. The installation guide explains actual addresses, name collisions and MagicDNS prerequisites.
+
+- Completed, cancelled and stopped delivery notices disappear after five seconds; old success notices are not replayed. Each notice can be dismissed without cancelling the message or Agent work. Hidden pending statuses remain accessible, and new errors or confirmation requests can surface again. Article and standalone conversations share this behavior.
+
+- Show saved Codex messages immediately while the native App connection is discovered in the background. Only the selected, visible conversation is opened on the hosting Mac; viewing Contents or closing the mobile panel does not wake it.
+- With web messaging enabled on macOS, automatically open an existing original Codex thread through its registered App link. No dummy message, separate executor or permission changes are used. Connection attempts are deduplicated, bounded and rate limited; GUI login and connection failures retain drafts and provide a retry.
+- Accept first messages into the durable Codex queue while connecting, with cancellation, retry deduplication, permission revocation checks and the existing 30-minute expiry. Ordinary LAN browsers remain view-only and cannot wake the App. Settings explain the automatic-opening behavior; other platforms retain their existing connection methods.
+
 ## 0.2.4 (2026-11-04)
 
 - Discover resumed Codex rollout files with continuation ID suffixes, resolve duplicate files to the newest validated transcript and look up known threads beyond incremental indexing budgets. Active projects no longer fall back to stale copies or the wrong older conversation.

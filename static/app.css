@@ -355,7 +355,7 @@ main { flex: 1; width: 100%; max-width: 1160px; margin: 0 auto; padding: 4px 32p
 .connection-notice { padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--pin-soft); color: var(--text); font-size: 13.5px; overflow-wrap: anywhere; }
 .connection-notice strong, .connection-notice span { display: block; margin-bottom: 4px; }
 .connection-notice a { display: inline-block; padding: 7px 0; color: var(--accent); }
-.settings-local { overflow-wrap: anywhere; }
+.settings-local, .settings-network { overflow-wrap: anywhere; }
 .old-banner { border-color: color-mix(in srgb, var(--pin) 40%, var(--border)); background: var(--pin-soft); color: var(--text); }
 .old-banner a { font-weight: 600; margin-left: 4px; }
 .seen-banner p { margin: 0; }
@@ -1399,6 +1399,10 @@ mark.cm-hl { background: var(--pin-soft); color: inherit; border-bottom: 2px sol
 /* Keep every unfinished delivery actionable without taking the whole message pane. */
 .article-delivery { max-height:min(30dvh,240px); overflow:auto; }
 .delivery-item + .delivery-item { border-top:1px solid var(--border); margin-top:6px; padding-top:6px; }
+.delivery-item { position:relative; min-height:34px; }
+.delivery-item > p { padding-right:36px; }
+.delivery-notice-close { position:absolute; top:0; right:0; width:34px; height:34px; padding:0; color:var(--text-2); text-decoration:none; font-size:20px; }
+.article-delivery[data-state="collapsed"] { padding:0; background:transparent; border:0; }
 .session-deliveries { margin:14px 0; }
 
 /* Upgrade feature discovery; matches the existing settings/update dialog. */

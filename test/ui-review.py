@@ -560,6 +560,25 @@ class ReviewUI(unittest.TestCase):
         self.assertIn('starts at boot', self.page.locator('.upd-dlg.upd-ok').inner_text())
         self.assertEqual(self.page.locator('.upd-cmd').count(), 0)
 
+    def test_https_redirect_switch_persists_and_reports_unavailable_connections(self):
+        config=self.home/'config.json';saved=config.read_text();self.addCleanup(lambda:config.write_text(saved))
+        state={'value':'unavailable','reason':'certificate'}
+        self.page.route('**/api/https-access*',lambda r:r.fulfill(json={'state':state['value'],'reason':state['reason']}))
+        self.go('/settings')
+        self.page.wait_for_function("()=>document.querySelector('[data-https-state]').textContent.includes('certificate could not be verified')")
+        toggle=self.page.locator('[name=httpsRedirect]');self.assertTrue(toggle.is_checked());toggle.uncheck()
+        for _ in range(100):
+            if json.loads(config.read_text()).get('httpsRedirect') is False:break
+            self.page.wait_for_timeout(50)
+        self.assertIs(json.loads(config.read_text()).get('httpsRedirect'),False)
+        self.page.reload();self.assertFalse(toggle.is_checked())
+        state.update(value='ready',reason=None);self.page.locator('[data-https-check]').click()
+        self.page.wait_for_function("()=>document.querySelector('[data-https-state]').textContent.includes('HTTPS is ready')")
+        self.assertFalse(toggle.is_checked())
+        self.page.set_viewport_size({'width':390,'height':844});self.page.locator('#https-access').scroll_into_view_if_needed()
+        self.assertLessEqual(self.page.evaluate('document.documentElement.scrollWidth'),390)
+        self.shot('https-access-mobile',full_page=False)
+
     def test_local_entry_survives_tailnet_disconnect_without_losing_drafts(self):
         config = self.home / 'config.json'; saved = config.read_text()
         data = json.loads(saved); data.update(access='tailscale', baseUrl='http://example-tailnet', httpsUrl='https://offline.example.ts.net')
@@ -974,6 +993,64 @@ class ReviewUI(unittest.TestCase):
         self.assertNotIn('Queued.',self.page.locator('.article-send-status').inner_text())
         self.page.reload();self.page.wait_for_function("()=>document.querySelector('.article-delivery').textContent.includes('finished replying')")
 
+    def delivery_notice_fixture(self, standalone=False):
+        self.post('/api/settings', {'terminalSessions': {'enabled': True, 'send': True}})
+        self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions': {'enabled': False, 'send': False}}))
+        ident=self.session_fixture('notice-lifecycle-111','codex')
+        rows=[{'nonce':'notice-message-111','state':'working','label':'Codex is working. Waiting for its reply…','text':'A fixture question','transport':'codex-app','updatedAt':int(time.time()*1000)}]
+        actions=[]
+        self.page.route('**/api/sessions/'+ident,lambda r:r.fulfill(json={'session':{'canSend':True,'transport':'codex-app','deliveries':rows},'stateLabel':'Idle','html':'<p>Original conversation is retained.</p>'}))
+        self.page.route('**/api/sessions/cancel',lambda r:(actions.append(r.request.post_data_json),r.fulfill(json={'ok':True})))
+        self.page.set_viewport_size({'width':1366,'height':700})
+        self.go('/sessions/'+ident if standalone else '/p/test/session-document')
+        if not standalone:self.show_article_conversation()
+        self.page.wait_for_selector('.delivery-item')
+        return rows,actions
+
+    def test_completed_delivery_notice_auto_hides_without_a_new_poll_and_stays_hidden_after_reload(self):
+        rows,actions=self.delivery_notice_fixture()
+        rows[0].update({'state':'completed','label':'Codex has finished replying.','updatedAt':int(time.time()*1000)})
+        self.page.wait_for_function('()=>document.querySelector(".delivery-item")?.dataset.state==="completed"')
+        self.page.wait_for_selector('.article-delivery',state='hidden',timeout=10000)
+        self.page.reload();self.page.wait_for_timeout(500)
+        self.assertTrue(self.page.locator('.article-delivery').is_hidden())
+        self.assertIn('Original conversation',self.page.locator('.article-messages').inner_text())
+        self.assertEqual(actions,[])
+
+    def test_dismissal_hides_working_notice_without_cancelling_and_new_errors_can_reappear(self):
+        rows,actions=self.delivery_notice_fixture()
+        self.page.locator('#article-message').fill('Keep my draft')
+        self.page.locator('[data-delivery-dismiss]').click()
+        self.page.wait_for_timeout(3300)
+        self.assertEqual(self.page.locator('.delivery-item').count(),0)
+        self.assertEqual(actions,[])
+        self.page.reload();self.page.wait_for_timeout(400)
+        self.assertEqual(self.page.locator('.delivery-item').count(),0)
+        self.assertEqual(self.page.locator('#article-message').input_value(),'Keep my draft')
+        self.page.locator('[data-delivery-show]').click()
+        self.page.wait_for_selector('.delivery-item')
+        self.page.locator('[data-delivery-dismiss]').click()
+        rows[0].update({'state':'uncertain','label':'Delivery unconfirmed. Check the original App.'})
+        self.page.wait_for_function('()=>document.querySelector(".delivery-item")?.dataset.state==="uncertain"')
+        self.assertTrue(self.page.locator('[data-article-cancel-delivery]').is_visible())
+        self.page.wait_for_timeout(5500)
+        self.assertTrue(self.page.locator('.delivery-item[data-state=uncertain]').is_visible())
+        self.assertEqual(actions,[])
+        self.shot('delivery-notice-dismissible',full_page=False)
+        self.page.locator('[data-delivery-dismiss]').click()
+        rows.append({'nonce':'notice-message-222','state':'queued','label':'Another message queued','text':'Another fixture question','transport':'codex-app'})
+        self.page.wait_for_selector('.delivery-item[data-nonce=notice-message-222]')
+        self.assertEqual(actions,[])
+
+    def test_standalone_notice_can_close_and_old_completed_messages_are_not_replayed(self):
+        rows,actions=self.delivery_notice_fixture(standalone=True)
+        self.page.locator('[data-delivery-dismiss]').click()
+        self.assertEqual(self.page.locator('.delivery-item').count(),0)
+        self.assertEqual(actions,[])
+        rows[0].update({'state':'completed','label':'Codex has finished replying.','updatedAt':int(time.time()*1000)-60000})
+        self.page.reload();self.page.wait_for_timeout(500)
+        self.assertTrue(self.page.locator('.session-deliveries').is_hidden())
+
     def test_every_pending_delivery_remains_actionable_after_a_later_message_is_cancelled(self):
         self.post('/api/settings', {'terminalSessions': {'enabled': True, 'send': True}})
         self.addCleanup(lambda: self.post('/api/settings', {'terminalSessions': {'enabled': False, 'send': False}}))
@@ -1066,6 +1143,22 @@ class ReviewUI(unittest.TestCase):
         self.page.wait_for_function("()=>document.querySelector('.article-messages').textContent.includes('Existing App conversation found')",timeout=15000)
         self.assertFalse((self.home/'state/agents'/(ident+'.json')).exists())
         self.assertEqual(self.page.locator('[data-article-send-help]').inner_text(),'Connected to Codex App')
+
+    def test_shared_codex_daemon_exposes_its_actual_source_and_readonly_reason(self):
+        self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
+        self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))
+        ident=self.session_fixture('daemon-browser-111','codex');mode={'connected':True};sent=[]
+        def chat(route):
+            route.fulfill(json={'session':{'canSend':mode['connected'],'canConnect':False,'sendReason':None if mode['connected'] else 'daemon_readonly','connectionSource':'daemon','transport':'codex-app' if mode['connected'] else None,'deliveries':[]},'stateLabel':'Idle','html':'<p>Original daemon conversation</p>'})
+        self.page.route('**/api/sessions/'+ident,chat)
+        self.page.route('**/api/sessions/send',lambda route:sent.append(route.request.post_data_json))
+        self.page.set_viewport_size({'width':1366,'height':650});self.go('/p/test/session-document');self.page.locator('[data-article-agent=codex]').click()
+        self.page.wait_for_function("()=>document.querySelector('[data-article-send-help]').textContent==='Connected to the original Codex session'")
+        self.page.locator('#article-message').fill('Preserve my draft')
+        mode['connected']=False
+        self.page.wait_for_function("()=>document.querySelector('#article-send-reason').textContent.includes('does not allow direct input')",timeout=15000)
+        self.assertEqual(self.page.locator('#article-message').input_value(),'Preserve my draft')
+        self.assertTrue(self.page.locator('.article-compose [type=submit]').is_disabled());self.assertEqual(sent,[])
 
     def test_claude_tmux_send_tracks_receipt_and_reply_and_exposes_only_a_valid_app_link(self):
         self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
@@ -1211,6 +1304,61 @@ class ReviewUI(unittest.TestCase):
         self.page.wait_for_function('()=>!document.querySelector("[data-article-reconnect]").disabled')
         self.assertGreater(len(calls),count);self.assertEqual(sent,[])
         self.assertEqual(self.page.locator('#article-message').input_value(),'Keep this question')
+
+    def auto_wake_fixture(self):
+        self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
+        self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))
+        ident=self.session_fixture('auto-wake-fixture-111','codex');opened=[];sent=[]
+        self.page.route('**/api/sessions/'+ident,lambda r:r.fulfill(json={
+            'session':{'canSend':False,'canConnect':True,'sendReason':'app_not_open','deliveries':[],
+                       'connection':{'state':'connecting'} if opened else None},
+            'stateLabel':'Idle','html':'<p>Saved conversation available immediately</p>'}))
+        self.page.route('**/api/sessions/connect',lambda r:(opened.append(r.request.post_data_json),r.fulfill(status=202,json={'connection':{'state':'connecting'}})))
+        self.page.route('**/api/sessions/send',lambda r:(sent.append(r.request.post_data_json),r.fulfill(status=202,json={'transport':'codex-app','delivery':{'state':'queued'}})))
+        return ident,opened,sent
+
+    def test_selected_codex_wakes_without_message_and_can_queue_first_message(self):
+        ident,opened,sent=self.auto_wake_fixture()
+        self.page.set_viewport_size({'width':1366,'height':820});self.go('/p/test/session-document')
+        self.page.wait_for_function('()=>document.querySelector("[data-article-send-help]").textContent.includes("Connecting")')
+        self.assertIn('Saved conversation',self.page.locator('.article-messages').inner_text())
+        self.assertEqual(len(opened),1);self.assertEqual(opened[0]['id'],ident);self.assertEqual(sent,[])
+        self.assertNotIn('text',opened[0])
+        self.page.locator('#article-message').fill('Only this message')
+        self.page.locator('.article-compose [type=submit]').click()
+        self.page.wait_for_timeout(200)
+        self.assertEqual(len(sent),1);self.assertEqual(sent[0]['text'],'Only this message')
+        self.assertEqual(self.page.locator('#article-message').input_value(),'')
+        self.page.wait_for_timeout(3300);self.assertEqual(len(opened),1)
+        self.shot('codex-auto-wake-desktop',full_page=False)
+
+    def test_standalone_session_uses_the_same_automatic_wake_without_submitting_input(self):
+        ident,opened,sent=self.auto_wake_fixture();self.go('/sessions/'+ident)
+        self.page.wait_for_function('()=>document.querySelector("[data-session-send-hint]").textContent.includes("Connecting")')
+        self.assertEqual(len(opened),1);self.assertEqual(sent,[])
+        self.assertTrue(self.page.locator('#session-text').is_enabled())
+        self.assertEqual(self.page.locator('#session-send [type=submit]').inner_text(),'Connect and send')
+        self.page.locator('#session-text').fill('Standalone draft')
+        self.page.wait_for_timeout(3100)
+        self.assertEqual(len(opened),1)
+        self.assertEqual(self.page.locator('#session-text').input_value(),'Standalone draft')
+
+    def test_mobile_closed_panel_and_contents_do_not_wake_codex(self):
+        ident,opened,sent=self.auto_wake_fixture();self.go('/p/test/session-document')
+        self.assertEqual(opened,[])
+        self.page.locator('[data-article-open=contents]').click()
+        self.page.wait_for_timeout(300);self.assertEqual(opened,[])
+        self.page.locator('[data-article-agent=codex]').click()
+        self.page.wait_for_timeout(300);self.assertEqual(len(opened),1);self.assertEqual(sent,[])
+        self.assertIn('Saved conversation',self.page.locator('.article-messages').inner_text())
+        self.shot('codex-auto-wake-mobile',full_page=False)
+
+    def test_view_only_article_never_requests_wake_even_if_server_metadata_is_stale(self):
+        ident,opened,sent=self.auto_wake_fixture()
+        self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':False}})
+        self.page.set_viewport_size({'width':1366,'height':820});self.go('/p/test/session-document')
+        self.assertEqual(opened,[]);self.assertEqual(sent,[])
+        self.assertTrue(self.page.locator('.article-compose [type=submit]').is_hidden())
 
     def test_project_current_conversation_is_shared_across_articles(self):
         self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
@@ -1375,12 +1523,12 @@ class ReviewUI(unittest.TestCase):
         ident=self.session_fixture('ui-session-333')
         self.page.route('**/api/sessions/send',lambda r:r.fulfill(status=409,content_type='application/json',body='{"error":"Check the terminal first"}'))
         self.go('/sessions/'+ident)
-        self.page.locator('#session-text').evaluate('(e)=>e.disabled=false'); self.page.locator('#session-send button').evaluate('(e)=>e.disabled=false')
+        self.page.locator('#session-text').evaluate('(e)=>e.disabled=false'); self.page.locator('#session-send [type=submit]').evaluate('(e)=>e.disabled=false')
         self.page.locator('#session-text').fill('Please explain')
-        self.page.locator('#session-send button').click()
+        self.page.locator('#session-send [type=submit]').click()
         self.page.wait_for_function("() => document.querySelector('.session-send-status').textContent.includes('Check the terminal')")
         self.assertEqual(self.page.locator('#session-text').input_value(),'Please explain')
-        self.assertTrue(self.page.locator('#session-send button').is_enabled())
+        self.assertTrue(self.page.locator('#session-send [type=submit]').is_enabled())
 
     def test_session_retry_keeps_message_identifier_across_reload(self):
         self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
@@ -1392,13 +1540,13 @@ class ReviewUI(unittest.TestCase):
             else: route.fulfill(status=200,content_type='application/json',body='{"ok":true}')
         self.page.route('**/api/sessions/send',deliver)
         self.go('/sessions/'+ident)
-        self.page.locator('#session-text').evaluate('(e)=>e.disabled=false'); self.page.locator('#session-send button').evaluate('(e)=>e.disabled=false')
+        self.page.locator('#session-text').evaluate('(e)=>e.disabled=false'); self.page.locator('#session-send [type=submit]').evaluate('(e)=>e.disabled=false')
         self.page.locator('#session-text').fill('Do this once')
-        self.page.locator('#session-send button').click()
+        self.page.locator('#session-send [type=submit]').click()
         self.page.wait_for_function("() => document.querySelector('.session-send-status').textContent.length > 0")
         self.page.reload(); self.page.wait_for_selector('#session-text')
-        self.page.locator('#session-text').evaluate('(e)=>e.disabled=false'); self.page.locator('#session-send button').evaluate('(e)=>e.disabled=false')
-        self.page.locator('#session-send button').click()
+        self.page.locator('#session-text').evaluate('(e)=>e.disabled=false'); self.page.locator('#session-send [type=submit]').evaluate('(e)=>e.disabled=false')
+        self.page.locator('#session-send [type=submit]').click()
         self.page.wait_for_function("() => document.querySelector('#session-text').value === ''")
         self.assertEqual(len(nonces),2); self.assertEqual(nonces[0],nonces[1])
 

@@ -46,8 +46,11 @@
     pending = false,
     uploading = false,
     available = false,
+    canConnect = false,
+    connection = null,
     sendReason = 'not_connected',
     transport = null,
+    connectionSource = null,
     waitingForReply = false,
     generation = 0,
     lastHtml = null,
@@ -60,6 +63,9 @@
   let inertNodes = [],
     priorOverflow = '',
     articleScroll = null;
+  const wakeAttempts = new Set();
+  const writable = () => available || canConnect;
+  const waking = () => canConnect && ['opening', 'connecting'].includes(connection?.state);
   const draftKey = () => prefix + '.' + agent + '.' + (id || 'unselected');
   function save() {
     draft.text = input.value;
@@ -83,7 +89,7 @@
       ? T('Hide input')
       : input.value.trim() || draft.quote
         ? T('Continue question')
-        : available
+        : writable()
           ? T('Message {agent}', { agent: agentName() })
           : T('Record a question');
     if (manual) {
@@ -102,12 +108,15 @@
     detail.hidden = !detail.hidden;
     button.setAttribute('aria-expanded', String(!detail.hidden));
   });
-  function setAvailable(value, reason = sendReason) {
+  function setAvailable(value, reason = sendReason, connectable = canConnect, progress = connection) {
     available = value;
+    canConnect = Boolean(connectable && document.body.dataset.sessionSend === '1');
+    connection = progress;
     sendReason = reason;
-    if (value && !composerTouched) compose(true);
+    if (writable() && !composerTouched) compose(true);
     else compose(!form.hidden);
-    send.disabled = pending || uploading || !available || !id;
+    send.disabled = pending || uploading || !writable() || !id;
+    send.textContent = available ? T('Send') : T('Connect and send');
     const imageButton = $('[data-article-add-image]');
     imageButton.hidden = agent !== 'codex' || transport !== 'codex-app';
     imageButton.disabled = pending || uploading || !available || (draft.images?.length || 0) >= 4;
@@ -122,11 +131,17 @@
       ? T('Choose a session to continue.')
       : available
         ? transport === 'codex-app'
-          ? T('Connected to Codex App')
+          ? connectionSource === 'daemon'
+            ? T('Connected to the original Codex session')
+            : T('Connected to Codex App')
           : transport === 'claude-remote'
             ? T('Connected to Claude Remote Control')
             : T('Connected to the original tmux session')
-        : T('Sync only');
+        : canConnect
+          ? waking()
+            ? T('Connecting to Codex App…')
+            : T('Connect automatically')
+          : T('Sync only');
     help.disabled = available || !id;
     help.title = available
       ? T('Messages go to this project conversation.')
@@ -147,71 +162,93 @@
               : null;
     const reason =
       contextReason ||
-      (!id
-        ? agent === 'codex'
-          ? T('No Codex conversation has synced for this project. Open it in Codex App and send a message.')
-          : T('No Claude Code conversation has synced for this project yet.')
-        : sendReason === 'disabled'
-          ? T('Web messaging is turned off in Settings. Conversation syncing still works.')
-          : sendReason === 'ended'
-            ? T('This conversation has ended. Its records are still available.')
-            : sendReason === 'lan'
-              ? T(
-                  'This device can view conversations. Sending is available only on this computer or a trusted Tailscale connection.'
-                )
-              : agent === 'claude'
-                ? sendReason === 'claude_busy'
+      (waking()
+        ? T(
+            'Opening this conversation on the computer hosting mydash. You can keep reading or queue a message.'
+          )
+        : sendReason === 'app_login_required'
+          ? T('Sign in to the Mac hosting mydash to wake Codex App. Your queued message is kept.')
+          : ['app_wake_timeout', 'app_wake_failed', 'app_wake_busy'].includes(sendReason)
+            ? T(
+                'Automatic connection did not finish. Retry connection; your draft and queued messages are kept.'
+              )
+            : canConnect
+              ? T('mydash can open this original conversation on the hosting Mac without sending a message.')
+              : !id
+                ? agent === 'codex'
                   ? T(
-                      'Claude is working or waiting for approval. Send when it is idle, or continue in Claude App.'
+                      'No Codex conversation has synced for this project. Open it in Codex App and send a message.'
                     )
-                  : sendReason === 'claude_login'
-                    ? T(
-                        'Sign in to Claude Code on this computer, then try again. mydash uses your existing account.'
-                      )
-                    : sendReason === 'claude_forbidden'
+                  : T('No Claude Code conversation has synced for this project yet.')
+                : sendReason === 'disabled'
+                  ? T('Web messaging is turned off in Settings. Conversation syncing still works.')
+                  : sendReason === 'ended'
+                    ? T('This conversation has ended. Its records are still available.')
+                    : sendReason === 'lan'
                       ? T(
-                          'Claude refused access to this conversation. Check the account and connection permissions in Claude App.'
+                          'This device can view conversations. Sending is available only on this computer or a trusted Tailscale connection.'
                         )
-                      : sendReason === 'claude_trusted'
-                        ? T(
-                            'Claude requires trusted-device verification for this conversation. Continue in Claude App; mydash cannot send to protected sessions yet.'
-                          )
-                        : sendReason === 'claude_offline'
+                      : agent === 'claude'
+                        ? sendReason === 'claude_busy'
                           ? T(
-                              'The original Claude session is offline. Open it and keep Remote Control connected.'
+                              'Claude is working or waiting for approval. Send when it is idle, or continue in Claude App.'
                             )
-                          : sendReason === 'claude_unavailable'
+                          : sendReason === 'claude_login'
                             ? T(
-                                'Claude Remote Control did not respond. Keep the original session open and try again.'
+                                'Sign in to Claude Code on this computer, then try again. mydash uses your existing account.'
                               )
-                            : T(
-                                'In Claude App, open this session and turn on Remote Control in its details. A running tmux session can also connect directly.'
-                              )
-                : sendReason === 'app_not_open'
-                  ? T(
-                      'Codex App is running, but this conversation is not connected. Open this exact conversation on the computer hosting mydash, then retry.'
-                    )
-                  : sendReason === 'app_closed'
-                    ? T('Start Codex App on this computer to connect this conversation.')
-                    : sendReason === 'app_mismatch'
-                      ? T(
-                          'The App conversation belongs to a different project folder. Select the correct conversation in Codex App.'
-                        )
-                      : sendReason === 'app_incompatible'
-                        ? T(
-                            'This Codex App connection version is unsupported. Sending is paused to protect the conversation.'
-                          )
-                        : sendReason === 'app_history_limit'
+                            : sendReason === 'claude_forbidden'
+                              ? T(
+                                  'Claude refused access to this conversation. Check the account and connection permissions in Claude App.'
+                                )
+                              : sendReason === 'claude_trusted'
+                                ? T(
+                                    'Claude requires trusted-device verification for this conversation. Continue in Claude App; mydash cannot send to protected sessions yet.'
+                                  )
+                                : sendReason === 'claude_offline'
+                                  ? T(
+                                      'The original Claude session is offline. Open it and keep Remote Control connected.'
+                                    )
+                                  : sendReason === 'claude_unavailable'
+                                    ? T(
+                                        'Claude Remote Control did not respond. Keep the original session open and try again.'
+                                      )
+                                    : T(
+                                        'In Claude App, open this session and turn on Remote Control in its details. A running tmux session can also connect directly.'
+                                      )
+                        : sendReason === 'daemon_not_loaded'
                           ? T(
-                              'This Codex conversation is too large to sync. Select a shorter conversation to connect.'
+                              'This Codex session is not loaded in the shared background service. Reopen it in the original Codex client; its records and your draft are kept.'
                             )
-                          : sendReason === 'app_unavailable'
+                          : sendReason === 'daemon_readonly'
                             ? T(
-                                'Codex App did not respond. Keep the App running and open this conversation, then try again.'
+                                'Codex does not allow direct input to this session. Continue in the original client; mydash will not change its permissions.'
                               )
-                            : T(
-                                'Open this conversation in Codex App on this computer. mydash will connect automatically.'
-                              ));
+                            : sendReason === 'app_not_open'
+                              ? T(
+                                  'Codex App is running, but this conversation is not connected. Open this exact conversation on the computer hosting mydash, then retry.'
+                                )
+                              : sendReason === 'app_closed'
+                                ? T('Start Codex App on this computer to connect this conversation.')
+                                : sendReason === 'app_mismatch'
+                                  ? T(
+                                      'The App conversation belongs to a different project folder. Select the correct conversation in Codex App.'
+                                    )
+                                  : sendReason === 'app_incompatible'
+                                    ? T(
+                                        'This Codex App connection version is unsupported. Sending is paused to protect the conversation.'
+                                      )
+                                    : sendReason === 'app_history_limit'
+                                      ? T(
+                                          'This Codex conversation is too large to sync. Select a shorter conversation to connect.'
+                                        )
+                                      : sendReason === 'app_unavailable'
+                                        ? T(
+                                            'Codex App did not respond. Keep the App running and open this conversation, then try again.'
+                                          )
+                                        : T(
+                                            'Open this conversation in Codex App on this computer. mydash will connect automatically.'
+                                          ));
     const explanation = $('#article-send-reason');
     explanation.textContent = reason;
     const reasonKey = agent + ':' + sendReason + ':' + Boolean(id);
@@ -220,7 +257,11 @@
       help.setAttribute('aria-expanded', 'false');
     } else if (
       help.dataset.reason !== reasonKey &&
-      (agent === 'claude' || !id || sendReason.startsWith('app_') || sendReason === 'ended')
+      (agent === 'claude' ||
+        !id ||
+        sendReason.startsWith('app_') ||
+        sendReason.startsWith('daemon_') ||
+        sendReason === 'ended')
     ) {
       explanation.hidden = false;
       help.setAttribute('aria-expanded', 'true');
@@ -232,32 +273,61 @@
       ['disabled', 'lan'].includes(sendReason) ||
       !sessions.some((s) => s.agent === 'codex' && s.state !== 'ended');
     $('[data-article-reconnect]').hidden =
-      available || !id || agent !== 'codex' || !sendReason.startsWith('app_');
-    $('.article-send-hint').textContent = available
+      available ||
+      !id ||
+      agent !== 'codex' ||
+      (!canConnect && !sendReason.startsWith('app_')) ||
+      sendReason.startsWith('daemon_');
+    $('[data-article-reconnect]').disabled = waking();
+    $('.article-send-hint').textContent = writable()
       ? agent === 'codex'
         ? T('Only your message and the images or passages you attach will be sent.')
         : T('Only your message and any passages you attach will be sent.')
       : T('Kept on this page. Copy it and paste it into the original conversation to send.');
-    form.querySelector('label').textContent = available
+    form.querySelector('label').textContent = writable()
       ? T('Message {agent}', { agent: agentName() })
       : T('Question to keep for {agent}', { agent: agentName() });
     input.placeholder = T('For example: explain this paragraph or suggest a change…');
-    send.hidden = !available;
-    $('[data-article-copy]').hidden = available;
-    $('[data-article-quote]').textContent = available ? T('Attach passage') : T('Add to question');
+    send.hidden = !writable();
+    $('[data-article-copy]').hidden = writable();
+    $('[data-article-quote]').textContent = writable() ? T('Attach passage') : T('Add to question');
+  }
+  async function connect(manual = false) {
+    if (
+      !id ||
+      agent !== 'codex' ||
+      document.hidden ||
+      document.body.dataset.sessionSend !== '1' ||
+      $('#article-conversation-pane').hidden ||
+      (mobile.matches && !rail.classList.contains('is-open'))
+    )
+      return;
+    const token = generation,
+      target = id;
+    if (!manual && (!canConnect || available || wakeAttempts.has(target))) return;
+    wakeAttempts.add(target);
+    const button = $('[data-article-reconnect]');
+    button.disabled = true;
+    try {
+      const response = await fetch('/api/sessions/connect', {
+        method: 'POST',
+        headers: { 'X-Mydash': '1', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: target, manual, article: { id: data.id, v: data.v, file: data.file } }),
+      });
+      const result = await response.json();
+      if (token !== generation) return;
+      if (!response.ok) throw Error(result.error);
+      connection = result.connection;
+      hint();
+    } catch (error) {
+      if (token === generation && manual) status.textContent = error.message;
+    } finally {
+      if (token === generation) button.disabled = waking();
+    }
   }
   $('[data-article-reconnect]').addEventListener('click', async () => {
-    const token = generation,
-      button = $('[data-article-reconnect]');
-    const label = T('Connecting to Codex App…');
-    button.disabled = true;
-    status.textContent = label;
-    try {
-      await pollChat();
-    } finally {
-      button.disabled = false;
-      if (token === generation && status.textContent === label) status.textContent = '';
-    }
+    if (canConnect) await connect(true);
+    await pollChat();
   });
   $('[data-article-switch-codex]').addEventListener('click', () => {
     if (pending || uploading) return;
@@ -421,7 +491,9 @@
           if (session.preview) o.append(text('span', session.preview, 'article-picker-preview'));
           const source =
             session.transport === 'codex-app'
-              ? 'Codex App'
+              ? session.connectionSource === 'daemon'
+                ? 'Codex'
+                : 'Codex App'
               : session.transport === 'claude-remote'
                 ? 'Claude Remote Control'
                 : session.transport === 'tmux'
@@ -487,7 +559,7 @@
     box.appendChild(empty);
     syncTabs();
     renderSelect();
-    setAvailable(false);
+    setAvailable(false, sendReason, false, null);
     hint();
     const s = current.find((s) => s.id === id);
     state.textContent = s ? T('Loading conversation…') : T('Choose a session to continue.');
@@ -522,7 +594,7 @@
         'uncertain',
       ].includes(d.state)
     );
-    window.mydashRenderDeliveries(card, deliveries, transport);
+    window.mydashRenderDeliveries(card, deliveries, transport, id);
   }
   $('.article-delivery').addEventListener('click', async (event) => {
     const button = event.target.closest('[data-article-cancel-delivery]');
@@ -576,6 +648,7 @@
         lastHtml = r.html;
       }
       transport = r.session.transport;
+      connectionSource = r.session.connectionSource;
       const details = $('[data-article-session-detail]');
       let appLink = details.querySelector('a');
       if (/^claude:\/\/code\/session_[A-Za-z0-9]{8,80}$/.test(r.session.appUrl || '')) {
@@ -587,11 +660,17 @@
         appLink.textContent = T('View this shared conversation in Claude App');
       } else if (appLink) appLink.remove();
       showDelivery(r.session.deliveries);
-      setAvailable(r.session.canSend, r.session.sendReason || 'not_connected');
+      setAvailable(
+        r.session.canSend,
+        r.session.sendReason || 'not_connected',
+        r.session.canConnect,
+        r.session.connection
+      );
       hint();
+      connect();
     } catch {
       if (token !== generation) return;
-      setAvailable(false);
+      setAvailable(false, sendReason, false, null);
       hint();
       state.textContent = T('Session unavailable');
       status.textContent = T('The session is unavailable. Your draft is kept.');
@@ -610,7 +689,7 @@
     try {
       const r = await read('/api/article-sessions?id=' + encodeURIComponent(data.id) + '&v=' + data.v);
       if (r.scope !== undefined && data.scope && r.scope !== data.scope) {
-        setAvailable(false);
+        setAvailable(false, sendReason, false, null);
         status.textContent = T('The project folder changed. Refresh to load its current conversations.');
         return;
       }
@@ -645,11 +724,11 @@
         }
       } else $('.article-session-update').hidden = true;
       if (id && !sessions.some((s) => s.id === id)) {
-        setAvailable(false);
+        setAvailable(false, sendReason, false, null);
         state.textContent = T('Session unavailable');
       } else await pollChat();
     } catch {
-      setAvailable(false);
+      setAvailable(false, sendReason, false, null);
       status.textContent = T('The session is unavailable. Your draft is kept.');
     } finally {
       polling = false;
@@ -831,7 +910,7 @@
   });
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (pending || uploading || !available || !id || (!input.value.trim() && !draft.images?.length)) return;
+    if (pending || uploading || !writable() || !id || (!input.value.trim() && !draft.images?.length)) return;
     const payload = JSON.stringify({
       text: input.value,
       quote: draft.quote || '',

@@ -52,7 +52,8 @@
   let last = '',
     busy = false,
     nonce = null,
-    savedText = null;
+    savedText = null,
+    wakeAttempted = false;
   const key = chat ? 'mydash.session.draft.' + chat.dataset.sessionId : null;
   function saveDraft() {
     try {
@@ -76,6 +77,22 @@
     nonce = null;
     saveDraft();
   });
+  async function connect(manual = false) {
+    if (!chat || document.hidden || (!manual && wakeAttempted)) return;
+    wakeAttempted = true;
+    try {
+      const r = await fetch('/api/sessions/connect', {
+        method: 'POST',
+        headers: { 'X-Mydash': '1', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: chat.dataset.sessionId, manual }),
+      });
+      const data = await r.json();
+      if (!r.ok && manual) status.textContent = data.error;
+    } catch {
+      if (manual) status.textContent = T('The session is unavailable. Your draft is kept.');
+    }
+  }
+  document.querySelector('[data-session-connect]')?.addEventListener('click', () => connect(true));
   async function poll() {
     if (document.hidden || busy) return;
     try {
@@ -99,29 +116,59 @@
           last = data.html;
           if (atBottom) form.scrollIntoView({ block: 'end' });
         }
-        const delivery = data.session.deliveries?.at(-1);
-        if (delivery) status.textContent = delivery.label;
         window.mydashRenderDeliveries(
           document.querySelector('.session-deliveries'),
           data.session.deliveries,
-          data.session.transport
+          data.session.transport,
+          chat.dataset.sessionId
         );
         const hint = document.querySelector('[data-session-send-hint]');
         hint.textContent = data.session.canSend
           ? data.session.transport === 'codex-app'
-            ? T('Connected to Codex App')
+            ? data.session.connectionSource === 'daemon'
+              ? T('Connected to the original Codex session')
+              : T('Connected to Codex App')
             : data.session.transport === 'claude-remote'
               ? T('Connected to Claude Remote Control')
               : T('Connected to the original tmux session')
-          : data.session.sendReason === 'app_history_limit'
-            ? T('This Codex conversation is too large to sync. Select a shorter conversation to connect.')
-            : data.session.sendReason === 'claude_busy'
+          : data.session.canConnect
+            ? ['opening', 'connecting'].includes(data.session.connection?.state)
+              ? T('Connecting to Codex App…')
+              : data.session.connection?.reason === 'app_login_required'
+                ? T('Sign in to the Mac hosting mydash to wake Codex App. Your queued message is kept.')
+                : data.session.connection?.state === 'failed'
+                  ? T(
+                      'Automatic connection did not finish. Retry connection; your draft and queued messages are kept.'
+                    )
+                  : T(
+                      'mydash can open this original conversation on the hosting Mac without sending a message.'
+                    )
+            : data.session.sendReason === 'daemon_not_loaded'
               ? T(
-                  'Claude is working or waiting for approval. Send when it is idle, or continue in Claude App.'
+                  'This Codex session is not loaded in the shared background service. Reopen it in the original Codex client; its records and your draft are kept.'
                 )
-              : T('Sending is unavailable. Check the connection or messaging settings.');
-        text.disabled = !data.session.canSend;
-        form.querySelector('button').disabled = !data.session.canSend;
+              : data.session.sendReason === 'daemon_readonly'
+                ? T(
+                    'Codex does not allow direct input to this session. Continue in the original client; mydash will not change its permissions.'
+                  )
+                : data.session.sendReason === 'app_history_limit'
+                  ? T(
+                      'This Codex conversation is too large to sync. Select a shorter conversation to connect.'
+                    )
+                  : data.session.sendReason === 'claude_busy'
+                    ? T(
+                        'Claude is working or waiting for approval. Send when it is idle, or continue in Claude App.'
+                      )
+                    : T('Sending is unavailable. Check the connection or messaging settings.');
+        const writable = data.session.canSend || data.session.canConnect;
+        text.disabled = !writable;
+        form.querySelector('[type=submit]').disabled = !writable;
+        form.querySelector('[type=submit]').textContent =
+          !data.session.canSend && data.session.canConnect ? T('Connect and send') : T('Send');
+        const retry = document.querySelector('[data-session-connect]');
+        retry.hidden = !data.session.canConnect || data.session.canSend;
+        retry.disabled = ['opening', 'connecting'].includes(data.session.connection?.state);
+        if (data.session.canConnect && !data.session.canSend) connect();
       }
     } catch {
       if (status) status.textContent = T('The session is unavailable. Your draft is kept.');
@@ -178,7 +225,8 @@
     e.preventDefault();
     if (busy || !text.value.trim()) return;
     busy = true;
-    form.querySelector('button').disabled = true;
+    let accepted = false;
+    form.querySelector('[type=submit]').disabled = true;
     if (savedText !== text.value) {
       nonce = newId();
       savedText = text.value;
@@ -195,6 +243,7 @@
       if (!r.ok) {
         throw Error(data.error || T('That did not work. Try again in a moment.'));
       }
+      accepted = true;
       if (text.value === savedText) {
         text.value = '';
         try {
@@ -205,7 +254,7 @@
       savedText = null;
       if (text.value) saveDraft();
       status.textContent = ['codex-app', 'claude-remote'].includes(data.transport)
-        ? data.delivery.label
+        ? ''
         : T('Handed to the terminal. Waiting for the conversation to update.');
     } catch (e) {
       saveDraft();
@@ -213,7 +262,8 @@
         e.message || T('Check the terminal before retrying. The previous delivery may have reached it.');
     } finally {
       busy = false;
-      form.querySelector('button').disabled = false;
+      form.querySelector('[type=submit]').disabled = false;
+      if (accepted) poll();
     }
   });
 })();
