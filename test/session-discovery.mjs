@@ -238,3 +238,57 @@ test('fast project identity follows changed worktree metadata and removed folder
   fs.rmSync(wt, { recursive: true, force: true });
   assert.equal(canonicalProject(wt), null);
 });
+
+test('resumed Codex rollout suffixes retain the logical thread ID and replace stale copies', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'md-resume-file-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const cwd = path.join(dir, 'project'),
+    codex = path.join(dir, 'codex');
+  const day = path.join(codex, 'sessions/2026/10/31');
+  fs.mkdirSync(cwd);
+  fs.mkdirSync(day, { recursive: true });
+  const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const suffix = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const old = path.join(day, `rollout-2026-10-31T00-34-00-${id}.jsonl`);
+  const resumed = path.join(day, `rollout-2026-10-31T00-35-00-${id}_${suffix}.jsonl`);
+  const header = JSON.stringify({ type: 'session_meta', payload: { id, cwd, source: 'vscode' } }) + '\n';
+  fs.writeFileSync(old, header);
+  fs.utimesSync(old, new Date('2026-10-31'), new Date('2026-10-31'));
+  fs.writeFileSync(resumed, header);
+  const d = new SessionDiscovery({ codexHome: codex, claudeHome: path.join(dir, 'claude') });
+  assert.equal(d.get(id)?.transcript, resumed);
+  assert.equal(d.forProject(cwd).filter((x) => x.id === id).length, 1);
+  assert.equal(d.get(suffix), null, 'the continuation filename suffix is not another thread');
+  fs.unlinkSync(resumed);
+  d.invalidate();
+  assert.equal(d.get(id)?.transcript, old);
+});
+
+test('known resumed Codex IDs bypass listing budgets and still validate the launch header', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'md-resume-direct-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const cwd = path.join(dir, 'project'),
+    codex = path.join(dir, 'codex'),
+    day = path.join(codex, 'sessions/2026/11/04');
+  fs.mkdirSync(cwd);
+  fs.mkdirSync(day, { recursive: true });
+  const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    suffix = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  for (const [name, logical] of [
+    [`rollout-a-${id}_${suffix}.jsonl`, id],
+    ['rollout-z-other-session-111.jsonl', 'other-session-111'],
+  ])
+    fs.writeFileSync(
+      path.join(day, name),
+      JSON.stringify({ type: 'session_meta', payload: { id: logical, cwd, source: 'cli' } }) + '\n'
+    );
+  const d = new SessionDiscovery({ codexHome: codex, claudeHome: path.join(dir, 'claude'), scanBudget: 1 });
+  assert.equal(d.get(id)?.id, id);
+  const invalid = path.join(day, `rollout-b-cccccccc-cccc-4ccc-8ccc-cccccccccccc_${suffix}.jsonl`);
+  fs.writeFileSync(
+    invalid,
+    JSON.stringify({ type: 'session_meta', payload: { id, cwd, source: 'cli' } }) + '\n'
+  );
+  d.invalidate();
+  assert.equal(d.get('cccccccc-cccc-4ccc-8ccc-cccccccccccc'), null);
+});

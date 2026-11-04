@@ -78,8 +78,21 @@ async function fixture(t, options = {}) {
           continue;
         }
         if (m.type !== 'request') continue;
-        if (m.method === 'thread-owner-discovery' && options.noOwner) {
-          send({ type: 'response', requestId: m.requestId, resultType: 'error', error: 'no-client-found' });
+        if (
+          (options.noOwner &&
+            ['thread-owner-discovery', 'thread-follower-read-model-settings'].includes(m.method)) ||
+          (options.blindDiscovery && m.method === 'thread-owner-discovery' && !m.targetClientId)
+        ) {
+          setTimeout(
+            () =>
+              send({
+                type: 'response',
+                requestId: m.requestId,
+                resultType: 'error',
+                error: 'no-client-found',
+              }),
+            options.ownerDelayMs || 0
+          );
           continue;
         }
         const result =
@@ -773,5 +786,25 @@ test('small App patches retain unrelated large history while preserving the prio
   assert.ok(
     next.state.history === history,
     'an unrelated large transcript must not be copied for a small status patch'
+  );
+});
+
+test('owner discovery waits for the native no-owner response instead of misreporting an App timeout', async (t) => {
+  if (process.platform === 'win32') return t.skip('desktop Unix IPC adapter');
+  const f = await fixture(t, { noOwner: true, ownerDelayMs: 90 });
+  const b = new api.CodexAppBridge({ socketPath: f.socketPath, timeoutMs: 40 });
+  t.after(() => b.close());
+  assert.equal((await b.observe(sid, f.dir)).reason, 'app_not_open');
+});
+
+test('an existing App owner connects when broadcast owner discovery misses a background conversation', async (t) => {
+  if (process.platform === 'win32') return t.skip('desktop Unix IPC adapter');
+  const f = await fixture(t, { blindDiscovery: true });
+  const b = new api.CodexAppBridge({ socketPath: f.socketPath, timeoutMs: 300 });
+  t.after(() => b.close());
+  assert.equal((await b.observe(sid, f.dir)).connected, true);
+  assert.equal(
+    f.calls.some((x) => x.method === 'thread-follower-start-turn'),
+    false
   );
 });

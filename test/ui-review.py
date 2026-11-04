@@ -1196,6 +1196,22 @@ class ReviewUI(unittest.TestCase):
         self.assertLessEqual(rect['y']+rect['height'],844)
         self.shot('conversation-picker-mobile',full_page=False)
 
+    def test_unloaded_codex_thread_explains_host_computer_and_can_retry_without_sending(self):
+        self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
+        self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))
+        ident=self.session_fixture('unloaded-codex-111','codex');calls=[];sent=[]
+        def chat(route):
+            calls.append(1);route.fulfill(json={'session':{'canSend':False,'sendReason':'app_not_open','deliveries':[]},'stateLabel':'Idle','html':'<p>Saved conversation</p>'})
+        self.page.route('**/api/sessions/'+ident,chat)
+        self.page.route('**/api/sessions/send',lambda r:(sent.append(1),r.fulfill(status=500,json={})))
+        self.page.set_viewport_size({'width':1366,'height':820});self.go('/p/test/session-document')
+        self.assertIn('computer hosting mydash',self.page.locator('#article-send-reason').inner_text())
+        self.open_article_composer();self.page.locator('#article-message').fill('Keep this question')
+        count=len(calls);self.page.locator('[data-article-reconnect]').click()
+        self.page.wait_for_function('()=>!document.querySelector("[data-article-reconnect]").disabled')
+        self.assertGreater(len(calls),count);self.assertEqual(sent,[])
+        self.assertEqual(self.page.locator('#article-message').input_value(),'Keep this question')
+
     def test_project_current_conversation_is_shared_across_articles(self):
         self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
         self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))

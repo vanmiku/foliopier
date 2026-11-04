@@ -1445,3 +1445,5 @@ mark.cm-hl { background: var(--pin-soft); color: inherit; border-bottom: 2px sol
 .article-target-copy small { display: flex; align-items: center; flex-wrap: wrap; gap: 0 4px; }
 .article-target-copy .article-session-state { margin: 0; font-size: inherit; color: inherit; }
 .article-picker-details { flex: none; min-height: 34px; color: var(--text-2); text-decoration: none; font-size: 12.5px; }
+
+.article-reconnect { align-self: flex-start; min-height: 34px; font-size: 12.5px; }
