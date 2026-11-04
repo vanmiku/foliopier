@@ -8,6 +8,8 @@ If viewing is off, the new-feature introduction appears once in this browser. **
 
 Each article has one row of tabs: **Contents / Codex / Claude Code**. Articles with the same canonical project folder share the current Agent choice and manually selected conversation in this browser tab. Two unrelated folders with the same name do not share a conversation. Worktrees resolve to their main project folder. Republishing an article from its current folder updates that article's project association; missing or ambiguous folders are explained instead of guessed.
 
+Resumed Codex rollout files may include a continuation ID suffix. mydash validates the original thread ID in the launch header and selects the newest valid transcript. Background App owners are located through read-only routing, then their exact ownership and input capability are verified. A running App does not imply that every historical thread is connected. If the selected conversation is not connected, open it on the hosting computer and use Retry connection; its draft is retained.
+
 ## Connections in 0.2.1
 
 | Connection | Read recent messages | Send text | Send images | Delivery behavior |

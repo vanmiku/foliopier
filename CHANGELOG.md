@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.4 (2026-11-04)
+
+- Discover resumed Codex rollout files with continuation ID suffixes, resolve duplicate files to the newest validated transcript and look up known threads beyond incremental indexing budgets. Active projects no longer fall back to stale copies or the wrong older conversation.
+- Locate background Codex App owners through read-only model-settings routing before verifying the exact owner and input capability. Allow the native broker to return its no-owner result before timing out, distinguish an unconnected conversation from a nonresponsive App, and provide a retry action that keeps the draft.
+
 ## 0.2.3 (2026-11-03)
 
 - Keep the selected conversation title and automatic/manual target mode visible beside each article. Replace the native select with a searchable, keyboard-accessible conversation picker that shows working/idle/unknown states, latest-project markers, update times, recent message previews, connection sources and short IDs. Opening the picker does not move messages; drafts remain attached to their original target.

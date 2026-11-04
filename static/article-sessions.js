@@ -187,27 +187,31 @@
                             : T(
                                 'In Claude App, open this session and turn on Remote Control in its details. A running tmux session can also connect directly.'
                               )
-                : sendReason === 'app_closed'
-                  ? T('Start Codex App on this computer to connect this conversation.')
-                  : sendReason === 'app_mismatch'
-                    ? T(
-                        'The App conversation belongs to a different project folder. Select the correct conversation in Codex App.'
-                      )
-                    : sendReason === 'app_incompatible'
+                : sendReason === 'app_not_open'
+                  ? T(
+                      'Codex App is running, but this conversation is not connected. Open this exact conversation on the computer hosting mydash, then retry.'
+                    )
+                  : sendReason === 'app_closed'
+                    ? T('Start Codex App on this computer to connect this conversation.')
+                    : sendReason === 'app_mismatch'
                       ? T(
-                          'This Codex App connection version is unsupported. Sending is paused to protect the conversation.'
+                          'The App conversation belongs to a different project folder. Select the correct conversation in Codex App.'
                         )
-                      : sendReason === 'app_history_limit'
+                      : sendReason === 'app_incompatible'
                         ? T(
-                            'This Codex conversation is too large to sync. Select a shorter conversation to connect.'
+                            'This Codex App connection version is unsupported. Sending is paused to protect the conversation.'
                           )
-                        : sendReason === 'app_unavailable'
+                        : sendReason === 'app_history_limit'
                           ? T(
-                              'Codex App did not respond. Keep the App running and open this conversation, then try again.'
+                              'This Codex conversation is too large to sync. Select a shorter conversation to connect.'
                             )
-                          : T(
-                              'Open this conversation in Codex App on this computer. mydash will connect automatically.'
-                            ));
+                          : sendReason === 'app_unavailable'
+                            ? T(
+                                'Codex App did not respond. Keep the App running and open this conversation, then try again.'
+                              )
+                            : T(
+                                'Open this conversation in Codex App on this computer. mydash will connect automatically.'
+                              ));
     const explanation = $('#article-send-reason');
     explanation.textContent = reason;
     const reasonKey = agent + ':' + sendReason + ':' + Boolean(id);
@@ -227,6 +231,8 @@
       agent !== 'claude' ||
       ['disabled', 'lan'].includes(sendReason) ||
       !sessions.some((s) => s.agent === 'codex' && s.state !== 'ended');
+    $('[data-article-reconnect]').hidden =
+      available || !id || agent !== 'codex' || !sendReason.startsWith('app_');
     $('.article-send-hint').textContent = available
       ? agent === 'codex'
         ? T('Only your message and the images or passages you attach will be sent.')
@@ -240,6 +246,19 @@
     $('[data-article-copy]').hidden = available;
     $('[data-article-quote]').textContent = available ? T('Attach passage') : T('Add to question');
   }
+  $('[data-article-reconnect]').addEventListener('click', async () => {
+    const token = generation,
+      button = $('[data-article-reconnect]');
+    const label = T('Connecting to Codex App…');
+    button.disabled = true;
+    status.textContent = label;
+    try {
+      await pollChat();
+    } finally {
+      button.disabled = false;
+      if (token === generation && status.textContent === label) status.textContent = '';
+    }
+  });
   $('[data-article-switch-codex]').addEventListener('click', () => {
     if (pending || uploading) return;
     choose('codex', '', true);
