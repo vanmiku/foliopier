@@ -20,7 +20,7 @@ This file is for coding agents changing mydash itself. To install mydash for a u
 | `lib/responses.mjs`, `lib/feedback.mjs` | Comments the user leaves on items (`responses.json` per item) and `mydash feedback` |
 | `lib/approval.mjs`, `lib/waiting.mjs` | Approval forms in Markdown (```approval blocks); their lifecycle (pending / submitted / done / closed in chat / superseded / expired) and `state/open-items.json` |
 | `lib/todo.mjs`, `lib/todocheck.mjs` | To-dos: task lists in to-do items, or in ```todo blocks inside any document, that the user ticks off on the page (`mydash todos`); `<!-- check: cmd -->` items tick themselves |
-| `lib/prompts.mjs`, `lib/askcli.mjs`, `bin/agent-ask.mjs`, `bin/agent-state.mjs` | Questions from agents: hooks hand Claude Code / Codex choice questions, plan approvals and permission prompts to mydash (`/prompts/<id>`), `mydash ask` for other tools; busy / idle state, the plain-text-question check at Stop, and reminders |
+| `lib/prompts.mjs`, `lib/codex-questions.mjs`, `lib/askcli.mjs`, `bin/agent-ask.mjs`, `bin/agent-state.mjs` | Questions from agents: hooks hand Claude Code / Codex choice questions, plan approvals and permission prompts to mydash (`/prompts/<id>`), `mydash ask` for other tools; busy / idle state, the plain-text-question check at Stop, and reminders. Native Codex questions remain visible in the App; supported desktop connections can answer the exact original question from mydash |
 | `lib/diff.mjs` | Line and word diff between versions |
 | `lib/quiet.mjs` | Muted projects, manual and automatic archive |
 | `lib/search.mjs` | Full-text search over the latest versions |

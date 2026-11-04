@@ -5,13 +5,14 @@
 //   Codex（命令行和 ChatGPT 桌面版里的 Codex 都走这里）：PreToolUse（request_user_input；桌面版用 request_user_input_async）和 PermissionRequest
 //   没人看着的会话（claude -p、SDK）不接：那里的权限请求本来就该马上被拒，不能等一天
 //   用法：node agent-ask.mjs claude | codex（钩子的超时要设得很长，用户可能过很久才答）
-//   Codex 默认「软件里先问」：钩子不拦，题目马上在 Codex 里弹出；mydash 只记一份、没人答时推送提醒。
-//   Codex 不让外面替已经弹出的题作答，所以这份只能看、不能答；后台起一个小进程（watch）盯着会话记录，答了就关掉它。
+//   Codex 默认两边同时提问：钩子不拦原生卡片，mydash 按原会话、原问题回传答案。
+//   后台 watch 盯着原生答复，另一边答完就关闭镜像；不支持回传的连接仍可在 Codex 作答。
 // 任何一步不顺（mydash 没开、总开关关了、用户点了「回 … 里答」、看不懂这次的输入）都什么也不输出、正常退出：那边照常问。
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 
 const agent = process.argv[2] === 'codex' ? 'codex' : 'claude';
 const watching = process.argv[2] === 'watch';
@@ -24,16 +25,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const post = (p, b) => fetch(BASE + p, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Mydash': '1' }, body: JSON.stringify(b), signal: AbortSignal.timeout(5000) })
   .then(r => (r.ok ? r.json() : null)).catch(() => null);
 
-// 会话记录里新写进来的部分：从 pos 读到末尾（每次最多 8 MB），前后接上一小段，免得要找的字样正好被切开
+// 只读新追加的内容（每次最多 8 MB）；解码器保留跨块的 UTF-8 字节，watch 自己接上未完成的记录。
 function reader(file, pos) {
-  let carry = '';
+  let decoder = new StringDecoder('utf8');
   return () => {
     try {
       const fd = fs.openSync(file, 'r'); const size = fs.fstatSync(fd).size;
-      if (size < pos) pos = 0;
+      if (size < pos) { pos = 0; decoder = new StringDecoder('utf8'); }
       const len = Math.min(size - pos, 8 * 1024 * 1024); const b = Buffer.alloc(Math.max(0, len));
       if (len > 0) fs.readSync(fd, b, 0, len, pos); fs.closeSync(fd); pos += Math.max(0, len);
-      const s = carry + b.toString('utf8'); carry = s.slice(-300); return s;
+      return decoder.write(b);
     } catch { return ''; }
   };
 }
@@ -76,21 +77,38 @@ function commandStarted(command, owners) {
 // watch <id> <会话记录> <call_id> <起始位置> <工具名> <Codex 的进程号>：Codex 软件里那道题答了，就把 mydash 上那份标成「在 Codex 里答了」。
 //   request_user_input：记录里出现这道题的输出，或者这一轮结束、被打断了
 //   request_user_input_async（桌面版）：工具马上就返回，答案是之后用户发来的一条消息（send_user_message_question_reply，带着 call_id）；
-//     用户没答题、直接发了别的消息，也算这道题过去了
+//     只认原问题的用户答复；多题要全部答完，不用无关消息推断已回答
 //   Codex 进程没了（软件崩了、退出了），题也就没了。同时每 25 秒来问一次，免得被当成没人等了收掉。最多等一天
 if (watching) {
-  const [, , , id, file, callId, from, toolName, ownerPid] = process.argv; const t0 = Date.now();
+  const [, , , id, file, callId, from, toolName, ownerPid, questionCount] = process.argv; const t0 = Date.now();
   const isAsync = toolName === 'request_user_input_async';
-  const next = reader(file, Number(from) || 0); let seen = '';
+  const next = reader(file, Number(from) || 0); let seen = ''; const answered = new Set();
   const started = process.env.MYDASH_WATCH_CMD ? commandStarted(process.env.MYDASH_WATCH_CMD, new Set([Number(ownerPid)])) : null;
   const done = () => {
     if (started?.()) return true;
-    seen = (seen + next()).slice(-2 * 1024 * 1024);
-    if (isAsync) return (callId && seen.includes(callId) && seen.includes('send_user_message_question_reply')) || seen.includes('"type":"user_message"');
+    const chunk = next(); if (!chunk) return false;
+    seen = (seen + chunk).slice(-2 * 1024 * 1024);
+    if (isAsync) {
+      for (const line of seen.split('\n')) {
+        try {
+          const row = JSON.parse(line), p = row.payload;
+          if (row.type !== 'response_item' || p?.type !== 'message' || p.role !== 'user') continue;
+          const text = (p.content || []).filter(x => x.type === 'input_text' || x.type === 'text').map(x => x.text || '').join('\n').trim();
+          const m = /^<send_user_message_question_reply>\s*([\s\S]*?)\s*<\/send_user_message_question_reply>$/.exec(text);
+          if (!m) continue;
+          const replies = JSON.parse(m[1]);
+          for (const r of Array.isArray(replies) ? replies : [replies]) {
+            const id = JSON.parse(r.questionItemId);
+            if (Array.isArray(id) && id[0] === toolName && id[1] === callId && Number.isInteger(id[2]) && typeof r.answer === 'string') answered.add(id[2]);
+          }
+        } catch {}
+      }
+      return Array.from({ length: Number(questionCount) || 1 }, (_, i) => i).every(i => answered.has(i));
+    }
     return (callId ? seen.includes(`"call_id":"${callId}"`) : /"type":"(function_call_output|custom_tool_call_output)"/.test(seen)) || /"type":"(task_complete|turn_aborted)"/.test(seen);
   };
   setInterval(async () => {
-    if (done() || Date.now() - t0 > 86400_000) { await post(`/api/prompts/${id}/cancel`, { reason: 'terminal' }); process.exit(0); }
+    if (done() || Date.now() - t0 > 86400_000) { const r = await post(`/api/prompts/${id}/cancel`, { reason: 'terminal' }); if (r?.prompt?.status !== 'pending') process.exit(0); }
     if (!alive(Number(ownerPid))) { await post(`/api/prompts/${id}/cancel`, {}); process.exit(0); }
   }, 2000);
   for (;;) {
@@ -106,8 +124,9 @@ const event = input.hook_event_name; const tool = String(input.tool_name || '');
 //   parallel（默认）：终端照常马上弹出，mydash 上同时出一份，哪边先答算哪边（走 PermissionRequest，和终端的对话框同时开着）
 //   hold：PreToolUse 先拦下，终端什么都不显示，等 mydash 答了或点「交回」才在终端问（config.prompts.mode = 'hold'）
 const parallel = agent === 'claude' && (process.env.MYDASH_PROMPT_MODE || cfg.prompts?.mode || 'parallel') !== 'hold';
-// Codex：app（默认，软件里先问、mydash 只提醒）· hold（先在 mydash 答，Codex 等着；config.prompts.codexMode = 'hold'）
-const codexApp = agent === 'codex' && (process.env.MYDASH_PROMPT_MODE || cfg.prompts?.codexMode || 'app') !== 'hold';
+// Codex：parallel（默认，两边同时问）· app（软件问，网页提醒）· hold（网页先答）
+const codexMode = process.env.MYDASH_PROMPT_MODE || cfg.prompts?.codexMode || 'parallel';
+const codexApp = agent === 'codex' && codexMode !== 'hold';
 
 let kind, payload;
 if (event === 'PreToolUse' && (tool === 'AskUserQuestion' || tool === 'ExitPlanMode') && parallel) process.exit(0);
@@ -132,12 +151,14 @@ const print = o => process.stdout.write(JSON.stringify(o));
 
 const transcript0 = typeof input.transcript_path === 'string' ? input.transcript_path : '';
 if (codexApp && !transcript0) process.exit(0); // 没有会话记录就没法知道答没答，干脆只在软件里问
-const created = await post('/api/prompts', { tool: agent, kind, session: input.session_id || '', cwd: input.cwd || '', payload, both: agent === 'claude' && event === 'PermissionRequest', appOnly: codexApp });
+if (agent === 'codex' && kind === 'question' && ti.questions?.some(q => q.isSecret)) process.exit(0);
+const codexBoth = codexApp && codexMode === 'parallel' && kind === 'question' && typeof input.tool_use_id === 'string' && input.tool_use_id.length > 0;
+const created = await post('/api/prompts', { tool: agent, kind, session: input.session_id || '', cwd: input.cwd || '', payload, both: (agent === 'claude' && event === 'PermissionRequest') || codexBoth, appOnly: codexApp && !codexBoth, ...(codexBoth ? { native: { tool, callId: input.tool_use_id } } : {}) });
 if (!created?.id) process.exit(0);
 if (codexApp) {
   let size = 0; try { size = fs.statSync(transcript0).size; } catch {}
   const env = { ...process.env, ...(kind === 'permission' && typeof ti.command === 'string' ? { MYDASH_WATCH_CMD: ti.command } : {}) };
-  spawn(process.execPath, [process.argv[1], 'watch', created.id, transcript0, String(input.tool_use_id || ''), String(size), tool, String(process.ppid)], { detached: true, stdio: 'ignore', windowsHide: true, env }).unref();
+  spawn(process.execPath, [process.argv[1], 'watch', created.id, transcript0, String(input.tool_use_id || ''), String(size), tool, String(process.ppid), String(payload.questions?.length || 0)], { detached: true, stdio: 'ignore', windowsHide: true, env }).unref();
   process.exit(0); // 不输出：Codex 照常在软件里弹出
 }
 

@@ -886,8 +886,14 @@
       for (const b of $$('.pr-acts button')) b.disabled = true;
       try {
         const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Mydash': '1' }, body: JSON.stringify(body) });
-        if (r.status === 409) { toast(T('This was already handled elsewhere.')); return setTimeout(() => location.reload(), 900); }
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const result = await r.json().catch(() => ({}));
+        if (r.status === 409 && result.status !== 'pending') { toast(T('This was already handled elsewhere.')); return setTimeout(() => location.reload(), 900); }
+        if (!r.ok) {
+          toast((r.status >= 500 || result.uncertain) && result.error ? result.error : T('That did not work. Try again in a moment.'));
+          if (result.uncertain) return setTimeout(() => location.reload(), 900);
+          for (const b of $$('.pr-acts button')) b.disabled = false;
+          return;
+        }
         toast(okMsg); setTimeout(() => location.reload(), 700);
       } catch { toast(T('That did not work. Try again in a moment.')); for (const b of $$('.pr-acts button')) b.disabled = false; }
     };

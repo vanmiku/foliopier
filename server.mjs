@@ -4,6 +4,7 @@ import { sessionRows, sessionSection, messageRows, sessionPage, stateLabel } fro
 // 两个端口：PORT 是工作台；CONTENT_PORT 只提供原始文件，网页类产物在这里运行，和工作台不同源，脚本碰不到工作台的接口。
 import http from 'node:http';
 import { HttpsAccess } from './lib/https-access.mjs';
+import { CodexQuestions } from './lib/codex-questions.mjs';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -20,7 +21,7 @@ import { readResponses, addApproval, addComment, deleteComment, latestApproval, 
 import { versionTodos, todoProgress, checksAllowed } from './lib/todo.mjs';
 import { approvalStatus, syncOpen } from './lib/waiting.mjs';
 import { runChecks } from './lib/todocheck.mjs';
-import { createPrompt, getPrompt, allPrompts, answerPrompt, setPromptStatus, touchPrompt, reapPrompts, promptTitle, promptsEnabled } from './lib/prompts.mjs';
+import { createPrompt, getPrompt, allPrompts, answerPrompt, validatePromptAnswer, setNativeDelivery, setPromptStatus, touchPrompt, reapPrompts, promptTitle, promptsEnabled } from './lib/prompts.mjs';
 import { projectForSession, agentInfo } from './lib/agents.mjs';
 import { questionsOf, validateAnswers, summarize } from './lib/approval.mjs';
 import { renderDiff } from './lib/diff.mjs';
@@ -57,6 +58,8 @@ const HTTPS_CONTENT_PORT = httpsContentPort();
 const httpsAccess = new HttpsAccess({ config: readConfig, installationId: INSTALL_ID, contentPort: () => HTTPS_CONTENT_PORT });
 const verifiedHttps = () => httpsAccess.peek().state === 'ready' ? httpsAccess.peek().httpsUrl : '';
 const shareUrl = () => verifiedHttps() || baseUrl();
+const nativeQuestions = new CodexQuestions();
+const questionOwner = crypto.randomUUID();
 const checkHttps = () => httpsAccess.refresh().catch(() => {});
 setTimeout(checkHttps, 500).unref();
 setInterval(checkHttps, 15000).unref();
@@ -613,7 +616,7 @@ async function handlePost(req, res) {
   if (url.pathname === '/api/prompts') {
     if (!promptsEnabled()) return json(409, { error: 'prompts are turned off' });
     const tool = String(body.tool || 'cli');
-    const p = createPrompt({ tool, kind: String(body.kind || ''), project: String(body.project || '') || projectForSession(tool, String(body.session || ''), String(body.cwd || '')), session: body.session, cwd: body.cwd, payload: body.payload, both: body.both === true, appOnly: body.appOnly === true });
+    const p = createPrompt({ tool, kind: String(body.kind || ''), project: String(body.project || '') || projectForSession(tool, String(body.session || ''), String(body.cwd || '')), session: body.session, cwd: body.cwd, payload: body.payload, both: body.both === true, appOnly: body.appOnly === true, native: body.native });
     if (!p) return json(400, { error: 'not a prompt mydash understands' });
     schedulePromptPush(p); wakePrompt(p.id);
     return json(200, { ok: true, id: p.id, url: `${shareUrl().replace(/\/+$/, '')}/prompts/${p.id}` });
@@ -623,13 +626,37 @@ async function handlePost(req, res) {
     if (m) {
       const [, id, action] = m;
       if (action === 'answer') {
-        if (getPrompt(id)?.appOnly) return json(409, { error: 'answer it in the app', status: 'pending' });
+        const p = getPrompt(id);
+        if (p?.appOnly) return json(409, { error: 'answer it in the app', status: 'pending' });
+        if (p?.native) {
+          if (req.mydashWhere === 'lan') return json(403, { error: t('Answer this native Codex question on the hosting computer or a trusted Tailscale connection.') });
+          const checked = validatePromptAnswer(p, body);
+          if (!checked.ok) return json(checked.code, { error: checked.error, ...(checked.question ? { question: checked.question } : {}), status: p.status });
+          if (p.nativeDelivery) return json(423, { error: t('This answer is already being sent or is awaiting confirmation. Check Codex before trying again.'), uncertain: true });
+          const claim = { state: 'dispatching', owner: questionOwner, clientId: crypto.randomUUID(), at: Date.now(), candidate: checked.answer };
+          setNativeDelivery(id, claim);
+          try {
+            const receipt = await nativeQuestions.answer(p, checked.answer, { clientId: claim.clientId, authorize: () => getPrompt(id)?.status === 'pending' && getPrompt(id)?.nativeDelivery?.clientId === claim.clientId });
+            if (receipt.source === 'native') {
+              setNativeDelivery(id, null); setPromptStatus(id, 'terminal'); wakePrompt(id);
+              return json(409, { error: 'already handled in Codex', status: 'terminal' });
+            }
+            setNativeDelivery(id, { ...claim, state: 'delivered' });
+          } catch (e) {
+            setNativeDelivery(id, e.uncertain ? { ...claim, state: 'uncertain' } : null);
+            if (e.uncertain) return json(423, { error: t('Delivery is unconfirmed. Check the native Codex question before trying again.'), uncertain: true });
+            return json(503, { error: e.reason === 'question_partial' ? t('Some questions were answered in Codex. Finish the remaining questions there.') : t('The native Codex question is not connected yet. Your choice is kept; retry or answer in Codex.') });
+          }
+        }
         const r = answerPrompt(id, body, { by: 'web' });
         if (!r.ok) return json(r.code, { error: r.error, ...(r.question ? { question: r.question } : {}), ...(r.status ? { status: r.status } : {}) });
         wakePrompt(id); return json(200, { ok: true, prompt: r.prompt });
       }
       const p = getPrompt(id); if (!p) return json(404, { error: 'no such prompt' });
       if (p.status !== 'pending') return json(409, { error: 'already ' + p.status, status: p.status });
+      // The transcript watcher can see our own native response before its HTTP
+      // receipt arrives. Let the in-flight sender reconcile which side won.
+      if (p.nativeDelivery?.state === 'dispatching' && p.nativeDelivery.owner === questionOwner) return json(200, { ok: true, prompt: p });
       setPromptStatus(id, action === 'release' ? 'released' : body.reason === 'terminal' ? 'terminal' : 'cancelled'); wakePrompt(id);
       return json(200, { ok: true, prompt: getPrompt(id) });
     }
@@ -705,7 +732,7 @@ async function handlePost(req, res) {
     // AI 工具的提问：总开关、两种问法、文字提问兜底、推送延迟（-1 不推）
     if (body.prompts && typeof body.prompts === 'object') {
       const p = { ...(cur.prompts || {}), ...body.prompts };
-      patch.prompts = { enabled: p.enabled !== false, chat: p.chat !== false, mode: p.mode === 'hold' ? 'hold' : 'parallel', codexMode: p.codexMode === 'hold' ? 'hold' : 'app', pushDelay: [-1, 0, 30, 60].includes(Number(p.pushDelay)) ? Number(p.pushDelay) : 30 };
+      patch.prompts = { enabled: p.enabled !== false, chat: p.chat !== false, mode: p.mode === 'hold' ? 'hold' : 'parallel', codexMode: ['hold', 'app', 'parallel'].includes(p.codexMode) ? p.codexMode : 'parallel', pushDelay: [-1, 0, 30, 60].includes(Number(p.pushDelay)) ? Number(p.pushDelay) : 30 };
     }
     if (body.updateMode !== undefined) {
       if (!['notify', 'auto', 'off'].includes(body.updateMode)) return json(400, { error: 'updateMode must be notify, auto or off', field: 'updateMode' });

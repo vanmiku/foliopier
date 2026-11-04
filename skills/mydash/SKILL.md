@@ -36,7 +36,7 @@ Each comment has an id, the version it was made on, the quoted passage if any, a
 
 Do not leave a choice as a question at the end of your reply: it does not reach mydash or the user's phone.
 
-- **One short choice:** in Claude Code, use the AskUserQuestion tool; in Codex, the request_user_input tool when it is available, otherwise `mydash ask`. With mydash's hooks installed, the user also sees it in mydash and gets a reminder on their phone if nobody answers. Any tool can run `mydash ask "<question>" "<option 1>" "<option 2>" [--multi]`: it waits for the answer and prints it (exit code 3: the user wants to answer in the conversation).
+- **One short choice:** in Claude Code, use the AskUserQuestion tool; in Codex, use `request_user_input` when available in the current mode, otherwise use `request_user_input_async` if it is available. Only use `mydash ask` when neither native tool is available; show the question and choices in the conversation before waiting on that fallback. Do not choose the CLI fallback merely because the synchronous tool is unavailable in Default mode. With mydash's hooks installed, the user also sees it in mydash and gets a reminder on their phone if nobody answers. Any tool can run `mydash ask "<question>" "<option 1>" "<option 2>" [--multi]`: it waits for the answer and prints it (exit code 3: the user wants to answer in the conversation).
 - **A long write-up with several decisions:** publish an approval form. Put a fenced `approval` block (JSON) in the Markdown, where the decisions belong:
 
   ````markdown

@@ -104,6 +104,40 @@ class ReviewUI(unittest.TestCase):
         except Exception: pass  # The EventSource can remain open.
         self.page.evaluate('document.fonts.ready')
 
+    def test_native_codex_question_keeps_choice_when_not_connected(self):
+        p = self.post('/api/prompts', {'tool': 'codex', 'kind': 'question', 'cwd': '/isolated/native-question',
+            'session': '44444444-4444-4444-8444-444444444444', 'both': True,
+            'native': {'tool': 'request_user_input_async', 'callId': 'browser-question'},
+            'payload': {'questions': [{'question': 'Which route?', 'options': ['A', 'B']}]}})
+        self.go('/prompts/' + p['id'])
+        self.page.locator('.pr-q input[value="A"]').check()
+        self.page.locator('.pr-go').click()
+        self.page.get_by_text('The native Codex question is not connected yet.', exact=False).wait_for()
+        self.assertTrue(self.page.locator('.pr-q input[value="A"]').is_checked())
+        self.assertTrue(self.page.locator('.pr-go').is_enabled())
+        self.assertEqual(self.page.locator('.pr-status').count(), 0)
+        self.post('/api/prompts/' + p['id'] + '/cancel', {})
+
+    def test_native_codex_question_does_not_retry_unconfirmed_delivery(self):
+        p = self.post('/api/prompts', {'tool': 'codex', 'kind': 'question', 'cwd': '/isolated/native-question',
+            'session': '44444444-4444-4444-8444-444444444444', 'both': True,
+            'native': {'tool': 'request_user_input_async', 'callId': 'browser-uncertain'},
+            'payload': {'questions': [{'question': 'Which route?', 'options': ['A', 'B']}]}})
+        self.go('/prompts/' + p['id'])
+        self.page.route('**/api/prompts/' + p['id'] + '/answer', lambda route: route.fulfill(status=423,
+            content_type='application/json', body=json.dumps({'error': 'Delivery is unconfirmed.', 'uncertain': True})))
+        self.page.locator('.pr-q input[value="B"]').check()
+        self.page.locator('.pr-go').click()
+        self.page.get_by_text('Delivery is unconfirmed.', exact=True).wait_for()
+        self.assertTrue(self.page.locator('.pr-go').is_disabled())
+        self.assertTrue(self.page.locator('.pr-q input[value="B"]').is_checked())
+        self.post('/api/prompts/' + p['id'] + '/cancel', {})
+
+    def test_native_codex_default_question_mode(self):
+        self.go('/settings')
+        self.assertEqual(self.page.locator('#s-pcodex').input_value(), 'parallel')
+        self.assertEqual(self.page.locator('#s-pcodex option').count(), 3)
+
     def show_article_conversation(self):
         agent=self.page.locator('#article-rail').get_attribute('data-agent')
         self.page.locator('[data-article-agent='+agent+']').click()

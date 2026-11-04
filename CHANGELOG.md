@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.6 (2026-11-04)
+
+- Codex choice questions now prefer the native question tools, including the desktop asynchronous tool in Default mode. The question stays visible in Codex while mydash shows a mirror; the CLI fallback is used only when neither native tool is available.
+- New installations default to asking in both places. Supported desktop connections can submit an answer to the exact original question; existing explicit app-only and mydash-first settings are preserved. Command approvals keep their existing behavior and permissions.
+- Native answer delivery checks the project, question, and current owner. Duplicate submissions and uncertain delivery are held for confirmation, and a disconnected connection keeps the user's selection. Multi-question mirrors close after all original questions have been answered.
+- Existing installations refresh managed agent guidance on update. User-maintained instructions that explicitly require `mydash ask` may need to be updated to prefer the native asynchronous tool too.
+
 ## 0.2.5 (2026-11-04)
 
 - Redirect HTTP Tailnet pages to HTTPS only after native certificate verification and installation-identity checks pass for both the workbench and isolated content origin. Readiness expires and is invalidated by address changes; background checks are shared and bounded so pages remain usable while HTTPS is unavailable. Settings show the actual network address, connection state and an automatic-redirect switch restricted to local/trusted Tailnet access. Access-mode changes discard inherited HTTPS addresses.
