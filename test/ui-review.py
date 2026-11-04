@@ -974,6 +974,64 @@ class ReviewUI(unittest.TestCase):
         self.assertNotIn('Queued.',self.page.locator('.article-send-status').inner_text())
         self.page.reload();self.page.wait_for_function("()=>document.querySelector('.article-delivery').textContent.includes('finished replying')")
 
+    def delivery_notice_fixture(self, standalone=False):
+        self.post('/api/settings', {'terminalSessions': {'enabled': True, 'send': True}})
+        self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions': {'enabled': False, 'send': False}}))
+        ident=self.session_fixture('notice-lifecycle-111','codex')
+        rows=[{'nonce':'notice-message-111','state':'working','label':'Codex is working. Waiting for its reply…','text':'A fixture question','transport':'codex-app','updatedAt':int(time.time()*1000)}]
+        actions=[]
+        self.page.route('**/api/sessions/'+ident,lambda r:r.fulfill(json={'session':{'canSend':True,'transport':'codex-app','deliveries':rows},'stateLabel':'Idle','html':'<p>Original conversation is retained.</p>'}))
+        self.page.route('**/api/sessions/cancel',lambda r:(actions.append(r.request.post_data_json),r.fulfill(json={'ok':True})))
+        self.page.set_viewport_size({'width':1366,'height':700})
+        self.go('/sessions/'+ident if standalone else '/p/test/session-document')
+        if not standalone:self.show_article_conversation()
+        self.page.wait_for_selector('.delivery-item')
+        return rows,actions
+
+    def test_completed_delivery_notice_auto_hides_without_a_new_poll_and_stays_hidden_after_reload(self):
+        rows,actions=self.delivery_notice_fixture()
+        rows[0].update({'state':'completed','label':'Codex has finished replying.','updatedAt':int(time.time()*1000)})
+        self.page.wait_for_function('()=>document.querySelector(".delivery-item")?.dataset.state==="completed"')
+        self.page.wait_for_selector('.article-delivery',state='hidden',timeout=10000)
+        self.page.reload();self.page.wait_for_timeout(500)
+        self.assertTrue(self.page.locator('.article-delivery').is_hidden())
+        self.assertIn('Original conversation',self.page.locator('.article-messages').inner_text())
+        self.assertEqual(actions,[])
+
+    def test_dismissal_hides_working_notice_without_cancelling_and_new_errors_can_reappear(self):
+        rows,actions=self.delivery_notice_fixture()
+        self.page.locator('#article-message').fill('Keep my draft')
+        self.page.locator('[data-delivery-dismiss]').click()
+        self.page.wait_for_timeout(3300)
+        self.assertEqual(self.page.locator('.delivery-item').count(),0)
+        self.assertEqual(actions,[])
+        self.page.reload();self.page.wait_for_timeout(400)
+        self.assertEqual(self.page.locator('.delivery-item').count(),0)
+        self.assertEqual(self.page.locator('#article-message').input_value(),'Keep my draft')
+        self.page.locator('[data-delivery-show]').click()
+        self.page.wait_for_selector('.delivery-item')
+        self.page.locator('[data-delivery-dismiss]').click()
+        rows[0].update({'state':'uncertain','label':'Delivery unconfirmed. Check the original App.'})
+        self.page.wait_for_function('()=>document.querySelector(".delivery-item")?.dataset.state==="uncertain"')
+        self.assertTrue(self.page.locator('[data-article-cancel-delivery]').is_visible())
+        self.page.wait_for_timeout(5500)
+        self.assertTrue(self.page.locator('.delivery-item[data-state=uncertain]').is_visible())
+        self.assertEqual(actions,[])
+        self.shot('delivery-notice-dismissible',full_page=False)
+        self.page.locator('[data-delivery-dismiss]').click()
+        rows.append({'nonce':'notice-message-222','state':'queued','label':'Another message queued','text':'Another fixture question','transport':'codex-app'})
+        self.page.wait_for_selector('.delivery-item[data-nonce=notice-message-222]')
+        self.assertEqual(actions,[])
+
+    def test_standalone_notice_can_close_and_old_completed_messages_are_not_replayed(self):
+        rows,actions=self.delivery_notice_fixture(standalone=True)
+        self.page.locator('[data-delivery-dismiss]').click()
+        self.assertEqual(self.page.locator('.delivery-item').count(),0)
+        self.assertEqual(actions,[])
+        rows[0].update({'state':'completed','label':'Codex has finished replying.','updatedAt':int(time.time()*1000)-60000})
+        self.page.reload();self.page.wait_for_timeout(500)
+        self.assertTrue(self.page.locator('.session-deliveries').is_hidden())
+
     def test_every_pending_delivery_remains_actionable_after_a_later_message_is_cancelled(self):
         self.post('/api/settings', {'terminalSessions': {'enabled': True, 'send': True}})
         self.addCleanup(lambda: self.post('/api/settings', {'terminalSessions': {'enabled': False, 'send': False}}))

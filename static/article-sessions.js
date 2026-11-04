@@ -573,7 +573,7 @@
         'uncertain',
       ].includes(d.state)
     );
-    window.mydashRenderDeliveries(card, deliveries, transport);
+    window.mydashRenderDeliveries(card, deliveries, transport, id);
   }
   $('.article-delivery').addEventListener('click', async (event) => {
     const button = event.target.closest('[data-article-cancel-delivery]');

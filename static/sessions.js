@@ -116,12 +116,11 @@
           last = data.html;
           if (atBottom) form.scrollIntoView({ block: 'end' });
         }
-        const delivery = data.session.deliveries?.at(-1);
-        if (delivery) status.textContent = delivery.label;
         window.mydashRenderDeliveries(
           document.querySelector('.session-deliveries'),
           data.session.deliveries,
-          data.session.transport
+          data.session.transport,
+          chat.dataset.sessionId
         );
         const hint = document.querySelector('[data-session-send-hint]');
         hint.textContent = data.session.canSend
@@ -214,6 +213,7 @@
     e.preventDefault();
     if (busy || !text.value.trim()) return;
     busy = true;
+    let accepted = false;
     form.querySelector('[type=submit]').disabled = true;
     if (savedText !== text.value) {
       nonce = newId();
@@ -231,6 +231,7 @@
       if (!r.ok) {
         throw Error(data.error || T('That did not work. Try again in a moment.'));
       }
+      accepted = true;
       if (text.value === savedText) {
         text.value = '';
         try {
@@ -241,7 +242,7 @@
       savedText = null;
       if (text.value) saveDraft();
       status.textContent = ['codex-app', 'claude-remote'].includes(data.transport)
-        ? data.delivery.label
+        ? ''
         : T('Handed to the terminal. Waiting for the conversation to update.');
     } catch (e) {
       saveDraft();
@@ -250,6 +251,7 @@
     } finally {
       busy = false;
       form.querySelector('[type=submit]').disabled = false;
+      if (accepted) poll();
     }
   });
 })();

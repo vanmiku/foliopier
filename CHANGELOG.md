@@ -2,6 +2,8 @@
 
 ## 0.2.5 (2026-11-04)
 
+- Completed, cancelled and stopped delivery notices disappear after five seconds; old success notices are not replayed. Each notice can be dismissed without cancelling the message or Agent work. Hidden pending statuses remain accessible, and new errors or confirmation requests can surface again. Article and standalone conversations share this behavior.
+
 - Show saved Codex messages immediately while the native App connection is discovered in the background. Only the selected, visible conversation is opened on the hosting Mac; viewing Contents or closing the mobile panel does not wake it.
 - With web messaging enabled on macOS, automatically open an existing original Codex thread through its registered App link. No dummy message, separate executor or permission changes are used. Connection attempts are deduplicated, bounded and rate limited; GUI login and connection failures retain drafts and provide a retry.
 - Accept first messages into the durable Codex queue while connecting, with cancellation, retry deduplication, permission revocation checks and the existing 30-minute expiry. Ordinary LAN browsers remain view-only and cannot wake the App. Settings explain the automatic-opening behavior; other platforms retain their existing connection methods.
