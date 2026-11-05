@@ -60,6 +60,10 @@ function fixture(sync = false) {
     secure: () => true,
     request: async (method, params, version, owner, mutation) => {
       calls.push({ method, params, version, owner, mutation });
+      // Local envelopes omit top-level hostId: match the App's method table.
+      if (method === 'thread-follower-steer-turn' || method === 'thread-follower-submit-user-input')
+        assert.equal(version, 1);
+      if (method === 'thread-follower-start-turn') assert.equal(version, 2);
       if (method === 'thread-owner-discovery')
         return { handledByClientId: 'owner', result: { supportsUntrustedAppInput: true } };
       if (method === 'thread-follower-submit-user-input') {
@@ -103,7 +107,7 @@ test('native synchronous question receives an exact request response without sta
   assert.equal(write[0].method, 'thread-follower-submit-user-input');
   assert.equal(write[0].params.requestId, 7);
   assert.deepEqual(write[0].params.response, { answers: { route: { answers: ['A'] } } });
-  assert.equal(write[0].version, 2);
+  assert.equal(write[0].version, 1);
 });
 test('async question response uses native question IDs and only the user-selected answer', async () => {
   const f = fixture();
@@ -286,4 +290,24 @@ test('question wake cannot run for a changed project, revoked authorization or u
   );
   assert.equal(opened, 0);
   assert.equal(f.calls.filter((x) => x.mutation).length, 0);
+});
+
+test('a lost cached owner is refreshed before dispatch and the chosen answer is sent only once', async () => {
+  const f = fixture();
+  let ownerReads = 0,
+    refreshes = 0;
+  f.bridge.refresh = async () => {
+    refreshes++;
+    return f.bridge.observe();
+  };
+  const request = f.bridge.request;
+  f.bridge.request = async (...args) => {
+    if (args[0] === 'thread-owner-discovery' && ownerReads++ === 0)
+      throw Object.assign(Error('no-client-found'), { uncertain: false });
+    return request(...args);
+  };
+  await f.service.answer(f.prompt, { answers });
+  assert.equal(refreshes, 1);
+  assert.equal(ownerReads, 2);
+  assert.equal(f.calls.filter((x) => x.mutation).length, 1);
 });

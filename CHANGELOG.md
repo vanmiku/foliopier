@@ -2,9 +2,10 @@
 
 ## 0.2.7 (2026-11-05)
 
-- Answering native Codex questions while the original turn is active now supplies the draft context required by the App steering interface, while preserving the original model and permissions. An unanswered question with a live original session and waiting process can be answered later.
+- Answering native Codex questions while the original turn is active now uses the correct local steering protocol version and supplies the draft context required by the App, while preserving the original model and permissions. Synchronous question replies also use their correct protocol version. An unanswered question with a live original session and waiting process can be answered later.
 - Persist waiting-process heartbeats at a bounded frequency so the file-based Stop guard still recognizes long-running native questions; do not treat a live waiter as stale just because no other prompt changed.
 - Add a read-only “Reconnect Codex” action on pending native questions. It refreshes only the original session connection, can load that same original thread on the hosting Mac when necessary, keeps the current selection, and never submits an answer or retries an unconfirmed delivery. Preserve specific safe failure codes and show recovery messages inline instead of only in a short-lived toast.
+- Refresh a changed App owner before dispatching a question answer. Only discovery is repeated; the answer itself is sent at most once. Keep bounded failure-stage diagnostics without recording private conversation text.
 
 ## 0.2.6 (2026-11-04)
 

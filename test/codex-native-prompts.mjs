@@ -100,6 +100,18 @@ async function fixture(t) {
           continue;
         }
         if (q.type !== 'request') continue;
+        // Mirror the native local protocol's version gate, not just its payload.
+        const expectedVersion =
+          q.method === 'initialize' ? 0 : q.method === 'thread-follower-start-turn' ? 2 : 1;
+        if (q.version !== expectedVersion) {
+          send(socket, {
+            type: 'response',
+            requestId: q.requestId,
+            resultType: 'error',
+            error: 'request-version-mismatch',
+          });
+          continue;
+        }
         (async () => {
           let result = {};
           if (q.method === 'initialize') result = { clientId: 'mydash-client' };

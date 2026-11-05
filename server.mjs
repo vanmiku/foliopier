@@ -637,8 +637,8 @@ async function handlePost(req, res) {
           if (result.state === 'answered') { setPromptStatus(id, 'terminal'); wakePrompt(id); }
           return json(200, { ok: true, ...result });
         } catch (e) {
-          const reason = nativeFailureReason(e.reason); setNativeFailure(id, reason);
-          return json(503, { error: nativeFailureMessage(reason), reason });
+          const reason = nativeFailureReason(e.reason); setNativeFailure(id, reason, e);
+          return json(503, { error: nativeFailureMessage(reason), ...getPrompt(id).nativeFailure });
         }
       }
       if (action === 'answer') {
@@ -662,8 +662,8 @@ async function handlePost(req, res) {
           } catch (e) {
             setNativeDelivery(id, e.uncertain ? { ...claim, state: 'uncertain' } : null);
             if (e.uncertain) return json(423, { error: t('Delivery is unconfirmed. Check the native Codex question before trying again.'), uncertain: true });
-            const reason = nativeFailureReason(e.reason); setNativeFailure(id, reason);
-            return json(503, { error: nativeFailureMessage(reason), reason });
+            const reason = nativeFailureReason(e.reason); setNativeFailure(id, reason, e);
+            return json(503, { error: nativeFailureMessage(reason), ...getPrompt(id).nativeFailure });
           }
         }
         const r = answerPrompt(id, body, { by: 'web' });
