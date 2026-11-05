@@ -150,7 +150,7 @@ class ReviewUI(unittest.TestCase):
         self.assertTrue(self.page.locator('.pr-go').is_enabled())
         self.assertFalse(any(url.endswith('/answer') for url in requests))
         self.assertEqual(len([url for url in requests if url.endswith('/reconnect')]), 1)
-        self.shot('native-question-reconnected-mobile.png')
+        self.shot('native-question-reconnected-mobile')
         self.post('/api/prompts/' + p['id'] + '/cancel', {})
 
     def test_native_codex_default_question_mode(self):
