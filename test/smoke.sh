@@ -29,6 +29,23 @@ POSTJ() { curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: appli
 POSTB() { curl -s -X POST -H 'Content-Type: application/json' "$@"; }
 CHID() { node -e 'const c=require(process.argv[1]).notify.channels.find(x=>x.type===process.argv[2]&&(!process.argv[3]||JSON.stringify(x).includes(process.argv[3])));process.stdout.write(c?c.id:"")' "$MYDASH_HOME/config.json" "$1" "${2:-}"; }
 PID1() { curl -s "$B/api/prompts" | node -e 'const j=JSON.parse(require("fs").readFileSync(0));process.stdout.write((j.prompts.at(-1)||{}).id||"")'; }
+# Wait for the exact prompt instead of assuming a background CLI starts in 1s.
+# Slow runners must not submit to an empty ID or to an unrelated pending prompt.
+waitprompt() {
+  node --input-type=module - "$B" "$1" <<'JS'
+const [base, title] = process.argv.slice(2), until = Date.now() + 10_000;
+while (Date.now() < until) {
+  try {
+    const r = await fetch(base + '/api/prompts', { signal: AbortSignal.timeout(1000) });
+    const p = (await r.json()).prompts.find(p => p.title === title);
+    if (p) { process.stdout.write(p.id); process.exit(0); }
+  } catch {}
+  await new Promise(r => setTimeout(r, 100));
+}
+console.error('Timed out waiting for prompt: ' + title);
+process.exit(1);
+JS
+}
 waitgone() { for i in 1 2 3 4 5 6 7 8; do kill -0 $1 2>/dev/null || return 0; sleep 1; done; }
 refreshj() { node -e 'import(process.argv[1]).then(m=>process.stdout.write(JSON.stringify(m.refresh(process.argv[2]))))' "$ROOT/lib/integrate.mjs" "$1"; }
 hookchk() { $CLI doctor --json 2>/dev/null | node -e 'const c=JSON.parse(require("fs").readFileSync(0)).checks.find(x=>x.id===process.argv[1]);process.stdout.write(c?(c.ok?"ok":"bad"):"none")' "$1"; }
@@ -778,7 +795,7 @@ printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_
 check "终端先答了：钩子自己退出、不输出，mydash 上标成在终端答了" "! kill -0 $AP9 2>/dev/null && test ! -s '$TMP/pr-t.out' && curl -s '$B/prompts/$PT' | grep 'pr-status pr-terminal' >/dev/null"
 printf '%s' '{"hook_event_name":"PermissionRequest","session_id":"sess-pr-2","cwd":"/x/prproj","tool_name":"AskUserQuestion","tool_input":{"questions":[]}}' | node "$ROOT/bin/agent-ask.mjs" claude > "$TMP/pr-dup.out" 2>&1
 check "选择题的权限那一步不再重复出一道题" "test ! -s '$TMP/pr-dup.out' && test -z \"\$(PID1)\""
-$CLI ask "选哪个？" 甲 乙 --json > "$TMP/pr-ask.out" 2>/dev/null & AP7=$!; sleep 1.5; PA=$(PID1)
+$CLI ask "选哪个？" 甲 乙 --json > "$TMP/pr-ask.out" 2>/dev/null & AP7=$!; PA=$(waitprompt '选哪个？')
 POSTJ -H 'X-Mydash: 1' -d '{"answers":{"选哪个？":"乙"}}' "$B/api/prompts/$PA/answer" >/dev/null; waitgone $AP7
 check "mydash ask：别的工具也能问，答完拿到答案" "grep '\"answer\":\"乙\"' '$TMP/pr-ask.out' >/dev/null"
 check "等你处理里不再有答完的题" "! curl -s '$B/' | grep 'href=\"/prompts/' >/dev/null"
@@ -1075,7 +1092,7 @@ check "这一轮因为 API 出错结束（StopFailure）：记成闲，不拦" "
 # 一条消息里并行两个 Bash：按命令对上是哪一个
 printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_par_a","name":"Bash","input":{"command":"touch a"}},{"type":"tool_use","id":"toolu_par_b","name":"Bash","input":{"command":"touch b"}}]}}' > "$RV/par-tr.jsonl"
 printf '%s' '{"hook_event_name":"PermissionRequest","session_id":"sess-par","cwd":"/x/revproj","tool_name":"Bash","tool_input":{"command":"touch a"},"transcript_path":"'"$RV/par-tr.jsonl"'"}' > "$RV/par-a.json"
-node "$ROOT/bin/agent-ask.mjs" claude < "$RV/par-a.json" > "$RV/par-a.out" 2>&1 & PPA=$!; sleep 1; PPAID=$(PID1)
+node "$ROOT/bin/agent-ask.mjs" claude < "$RV/par-a.json" > "$RV/par-a.out" 2>&1 & PPA=$!; PPAID=$(waitprompt 'Bash: touch a')
 printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_par_b","content":"ok"}]}}' >> "$RV/par-tr.jsonl"; sleep 3
 check "并行的另一个调用先有结果：这一个还在等" "kill -0 $PPA 2>/dev/null && test \"\$(pstatus $PPAID)\" = pending"
 node -e 'process.stdout.write(JSON.stringify({type:"user",message:{content:[{type:"tool_result",tool_use_id:"toolu_par_a",content:"x".repeat(400000)}]}})+"\n")' >> "$RV/par-tr.jsonl"; waitgone $PPA

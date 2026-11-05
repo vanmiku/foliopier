@@ -60,12 +60,21 @@ function fixture(sync = false) {
     secure: () => true,
     request: async (method, params, version, owner, mutation) => {
       calls.push({ method, params, version, owner, mutation });
+      // Local envelopes omit top-level hostId: match the App's method table.
+      if (method === 'thread-follower-steer-turn' || method === 'thread-follower-submit-user-input')
+        assert.equal(version, 1);
+      if (method === 'thread-follower-start-turn') assert.equal(version, 2);
       if (method === 'thread-owner-discovery')
         return { handledByClientId: 'owner', result: { supportsUntrustedAppInput: true } };
       if (method === 'thread-follower-submit-user-input') {
         state.requests = [];
         state.turns[0].items.push({ type: 'userInputResponse', requestId: 7, answers: { route: ['A'] } });
       } else {
+        if (method === 'thread-follower-steer-turn') {
+          // The native App dereferences restoreMessage before dispatch.
+          assert.equal(params.restoreMessage.cwd, home);
+          assert.ok(params.restoreMessage.context);
+        }
         const input = params.turnStart?.request?.input || params.input;
         state.turns.push({
           turnId: 'answer-turn',
@@ -98,7 +107,7 @@ test('native synchronous question receives an exact request response without sta
   assert.equal(write[0].method, 'thread-follower-submit-user-input');
   assert.equal(write[0].params.requestId, 7);
   assert.deepEqual(write[0].params.response, { answers: { route: { answers: ['A'] } } });
-  assert.equal(write[0].version, 2);
+  assert.equal(write[0].version, 1);
 });
 test('async question response uses native question IDs and only the user-selected answer', async () => {
   const f = fixture();
@@ -163,6 +172,8 @@ test('wrong thread/project/call, changed question, secret question and command a
 test('active async questions use steering and a lost submission remains uncertain', async () => {
   const f = fixture();
   f.state.turns[0].status = 'inProgress';
+  f.state.turns[0].turnStartedAtMs = Date.now() - 3 * 3600_000;
+  f.prompt.at = new Date(Date.now() - 3 * 3600_000).toISOString();
   await f.service.answer(f.prompt, { answers });
   assert.equal(f.calls.find((x) => x.mutation).method, 'thread-follower-steer-turn');
   const g = fixture();
@@ -217,4 +228,86 @@ test('partly answered native groups stay unresolved and cannot resend the answer
     (e) => e.reason === 'question_partial'
   );
   assert.equal(f.calls.filter((x) => x.mutation).length, 0);
+});
+
+test('reconnecting an old question refreshes only its original connection without submitting an answer', async () => {
+  const f = fixture();
+  let refreshed = null;
+  f.bridge.refresh = async (id, cwd) => {
+    refreshed = { id, cwd };
+    return f.bridge.observe(id, cwd);
+  };
+  const result = await f.service.check(f.prompt, { refresh: true });
+  assert.deepEqual(refreshed, { id: sid, cwd: home });
+  assert.equal(result.state, 'ready');
+  assert.equal(f.calls.filter((x) => x.mutation).length, 0);
+});
+
+test('explicit reconnect can wake an unloaded original App session without sending a choice', async () => {
+  const f = fixture();
+  let opened = 0,
+    awake = false;
+  const observe = f.bridge.observe,
+    peek = f.bridge.peek;
+  f.bridge.observe = async () => (awake ? observe() : { connected: false, reason: 'app_not_open' });
+  f.bridge.refresh = f.bridge.observe;
+  f.bridge.peek = () => (awake ? peek() : { connected: false, reason: 'app_not_open' });
+  const service = new api.CodexQuestions({
+    bridge: f.bridge,
+    resolve: () => ({ cwd: home }),
+    platform: 'darwin',
+    open: async (id) => {
+      assert.equal(id, sid);
+      opened++;
+      awake = true;
+    },
+    wakeOptions: { probeMs: 1, retryMs: 1, timeoutMs: 100 },
+  });
+  const result = await service.check(f.prompt, { refresh: true, recover: true });
+  assert.equal(result.state, 'ready');
+  assert.equal(opened, 1);
+  assert.equal(f.calls.filter((x) => x.mutation).length, 0);
+});
+test('question wake cannot run for a changed project, revoked authorization or unconfirmed delivery', async () => {
+  const f = fixture();
+  let opened = 0;
+  f.bridge.observe = async () => ({ connected: false, reason: 'app_not_open' });
+  f.bridge.refresh = f.bridge.observe;
+  f.bridge.peek = () => ({ connected: false, reason: 'app_not_open' });
+  const service = new api.CodexQuestions({
+    bridge: f.bridge,
+    resolve: () => ({ cwd: home }),
+    platform: 'darwin',
+    open: async () => opened++,
+    wakeOptions: { probeMs: 1, retryMs: 1, timeoutMs: 10 },
+  });
+  await assert.rejects(
+    service.check({ ...f.prompt, cwd: path.dirname(home) }, { refresh: true, recover: true })
+  );
+  await assert.rejects(service.check(f.prompt, { refresh: true, recover: true, authorize: () => false }));
+  await assert.rejects(
+    service.check({ ...f.prompt, nativeDelivery: { state: 'uncertain' } }, { refresh: true, recover: true })
+  );
+  assert.equal(opened, 0);
+  assert.equal(f.calls.filter((x) => x.mutation).length, 0);
+});
+
+test('a lost cached owner is refreshed before dispatch and the chosen answer is sent only once', async () => {
+  const f = fixture();
+  let ownerReads = 0,
+    refreshes = 0;
+  f.bridge.refresh = async () => {
+    refreshes++;
+    return f.bridge.observe();
+  };
+  const request = f.bridge.request;
+  f.bridge.request = async (...args) => {
+    if (args[0] === 'thread-owner-discovery' && ownerReads++ === 0)
+      throw Object.assign(Error('no-client-found'), { uncertain: false });
+    return request(...args);
+  };
+  await f.service.answer(f.prompt, { answers });
+  assert.equal(refreshes, 1);
+  assert.equal(ownerReads, 2);
+  assert.equal(f.calls.filter((x) => x.mutation).length, 1);
 });

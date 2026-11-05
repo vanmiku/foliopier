@@ -21,7 +21,7 @@ import { readResponses, addApproval, addComment, deleteComment, latestApproval, 
 import { versionTodos, todoProgress, checksAllowed } from './lib/todo.mjs';
 import { approvalStatus, syncOpen } from './lib/waiting.mjs';
 import { runChecks } from './lib/todocheck.mjs';
-import { createPrompt, getPrompt, allPrompts, answerPrompt, validatePromptAnswer, setNativeDelivery, setPromptStatus, touchPrompt, reapPrompts, promptTitle, promptsEnabled } from './lib/prompts.mjs';
+import { createPrompt, getPrompt, allPrompts, answerPrompt, validatePromptAnswer, nativeFailureReason, nativeFailureMessage, setNativeFailure, setNativeDelivery, setPromptStatus, touchPrompt, reapPrompts, promptTitle, promptsEnabled } from './lib/prompts.mjs';
 import { projectForSession, agentInfo } from './lib/agents.mjs';
 import { questionsOf, validateAnswers, summarize } from './lib/approval.mjs';
 import { renderDiff } from './lib/diff.mjs';
@@ -622,9 +622,25 @@ async function handlePost(req, res) {
     return json(200, { ok: true, id: p.id, url: `${shareUrl().replace(/\/+$/, '')}/prompts/${p.id}` });
   }
   {
-    const m = url.pathname.match(/^\/api\/prompts\/(p[0-9a-f]{10})\/(answer|release|cancel)$/);
+    const m = url.pathname.match(/^\/api\/prompts\/(p[0-9a-f]{10})\/(answer|reconnect|release|cancel)$/);
     if (m) {
       const [, id, action] = m;
+      if (action === 'reconnect') {
+        const p = getPrompt(id);
+        if (!p?.native) return json(404, { error: 'no native question' });
+        if (p.status !== 'pending') return json(409, { error: 'already handled', status: p.status });
+        if (req.mydashWhere === 'lan') return json(403, { error: t('Answer this native Codex question on the hosting computer or a trusted Tailscale connection.') });
+        if (p.nativeDelivery) return json(423, { error: t('This answer is already being sent or is awaiting confirmation. Check Codex before trying again.'), uncertain: true });
+        try {
+          const result = await nativeQuestions.check(p, { refresh: true, recover: true, authorize: () => promptsEnabled() && getPrompt(id)?.status === 'pending' && !getPrompt(id)?.nativeDelivery });
+          setNativeFailure(id, null);
+          if (result.state === 'answered') { setPromptStatus(id, 'terminal'); wakePrompt(id); }
+          return json(200, { ok: true, ...result });
+        } catch (e) {
+          const reason = nativeFailureReason(e.reason); setNativeFailure(id, reason, e);
+          return json(503, { error: nativeFailureMessage(reason), ...getPrompt(id).nativeFailure });
+        }
+      }
       if (action === 'answer') {
         const p = getPrompt(id);
         if (p?.appOnly) return json(409, { error: 'answer it in the app', status: 'pending' });
@@ -641,11 +657,13 @@ async function handlePost(req, res) {
               setNativeDelivery(id, null); setPromptStatus(id, 'terminal'); wakePrompt(id);
               return json(409, { error: 'already handled in Codex', status: 'terminal' });
             }
+            setNativeFailure(id, null);
             setNativeDelivery(id, { ...claim, state: 'delivered' });
           } catch (e) {
             setNativeDelivery(id, e.uncertain ? { ...claim, state: 'uncertain' } : null);
             if (e.uncertain) return json(423, { error: t('Delivery is unconfirmed. Check the native Codex question before trying again.'), uncertain: true });
-            return json(503, { error: e.reason === 'question_partial' ? t('Some questions were answered in Codex. Finish the remaining questions there.') : t('The native Codex question is not connected yet. Your choice is kept; retry or answer in Codex.') });
+            const reason = nativeFailureReason(e.reason); setNativeFailure(id, reason, e);
+            return json(503, { error: nativeFailureMessage(reason), ...getPrompt(id).nativeFailure });
           }
         }
         const r = answerPrompt(id, body, { by: 'web' });

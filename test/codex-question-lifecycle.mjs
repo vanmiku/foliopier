@@ -86,3 +86,43 @@ test('the first-message reminder includes the asynchronous native tool instead o
   const r = f.run({ state: 'busy', event: 'UserPromptSubmit', prompts: [] });
   assert.match(r.output, /request_user_input_async/);
 });
+
+test('long-lived question heartbeats remain durable for the file-based Stop guard', async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-question-heartbeat-'));
+  const previous = process.env.MYDASH_HOME,
+    originalNow = Date.now;
+  process.env.MYDASH_HOME = home;
+  let now = originalNow();
+  Date.now = () => now;
+  try {
+    const { createPrompt, touchPrompt } = await import('../lib/prompts.mjs');
+    const p = createPrompt({
+      tool: 'codex',
+      kind: 'question',
+      session: sid,
+      cwd: home,
+      both: true,
+      native: { tool: 'request_user_input_async', callId: 'heartbeat' },
+      payload: { questions: [{ question: 'Still waiting?', options: ['A', 'B'] }] },
+    });
+    now += 20_000;
+    touchPrompt(p.id);
+    const saved = JSON.parse(fs.readFileSync(path.join(home, 'state/prompts.json'))).items.find(
+      (x) => x.id === p.id
+    );
+    assert.equal(saved.polledAt, now, 'the Stop hook must see the refreshed heartbeat after long polling');
+    const before = fs.readFileSync(path.join(home, 'state/prompts.json'), 'utf8');
+    now += 500;
+    touchPrompt(p.id);
+    assert.equal(
+      fs.readFileSync(path.join(home, 'state/prompts.json'), 'utf8'),
+      before,
+      'frequent polls must not rewrite the store each time'
+    );
+  } finally {
+    Date.now = originalNow;
+    if (previous === undefined) delete process.env.MYDASH_HOME;
+    else process.env.MYDASH_HOME = previous;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

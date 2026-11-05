@@ -902,3 +902,25 @@ test('an existing App owner connects when broadcast owner discovery misses a bac
     false
   );
 });
+
+test('refresh rediscovers only the selected native owner and leaves other projects connected', async (t) => {
+  if (process.platform === 'win32') return t.skip('desktop Unix IPC adapter');
+  const f = await fixture(t, { multi: true });
+  const b = new api.CodexAppBridge({ socketPath: f.socketPath, timeoutMs: 300 });
+  t.after(() => b.close());
+  const other = '22222222-2222-4222-8222-222222222222';
+  await b.observe(sid, f.dir);
+  await b.observe(other, f.dir);
+  const reads = f.calls.filter(
+    (x) => x.method === 'thread-follower-read-model-settings' && x.params.conversationId === sid
+  ).length;
+  assert.equal((await b.refresh(sid, f.dir)).connected, true);
+  assert.equal(b.peek(other, f.dir).connected, true);
+  assert.equal(
+    f.calls.filter(
+      (x) => x.method === 'thread-follower-read-model-settings' && x.params.conversationId === sid
+    ).length,
+    reads + 1
+  );
+  assert.equal(f.calls.filter((x) => /submit|steer|start-turn/.test(x.method || '')).length, 0);
+});

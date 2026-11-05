@@ -112,7 +112,7 @@ class ReviewUI(unittest.TestCase):
         self.go('/prompts/' + p['id'])
         self.page.locator('.pr-q input[value="A"]').check()
         self.page.locator('.pr-go').click()
-        self.page.get_by_text('The native Codex question is not connected yet.', exact=False).wait_for()
+        self.page.locator('#pr-connection').filter(has_text='The Codex project does not match this question.').wait_for()
         self.assertTrue(self.page.locator('.pr-q input[value="A"]').is_checked())
         self.assertTrue(self.page.locator('.pr-go').is_enabled())
         self.assertEqual(self.page.locator('.pr-status').count(), 0)
@@ -131,6 +131,26 @@ class ReviewUI(unittest.TestCase):
         self.page.get_by_text('Delivery is unconfirmed.', exact=True).wait_for()
         self.assertTrue(self.page.locator('.pr-go').is_disabled())
         self.assertTrue(self.page.locator('.pr-q input[value="B"]').is_checked())
+        self.post('/api/prompts/' + p['id'] + '/cancel', {})
+
+    def test_native_question_reconnect_does_not_submit_or_clear_choice(self):
+        p = self.post('/api/prompts', {'tool': 'codex', 'kind': 'question', 'cwd': '/isolated/reconnect-question',
+            'session': '55555555-5555-4555-8555-555555555555', 'both': True,
+            'native': {'tool': 'request_user_input_async', 'callId': 'browser-reconnect'},
+            'payload': {'questions': [{'question': 'Keep this choice?', 'options': ['A', 'B']}]}})
+        self.go('/prompts/' + p['id'])
+        self.page.locator('.pr-q input[value="A"]').check()
+        requests = []
+        self.page.on('request', lambda r: requests.append(r.url) if '/api/prompts/' + p['id'] + '/' in r.url else None)
+        self.page.route('**/api/prompts/' + p['id'] + '/reconnect', lambda route: route.fulfill(status=200,
+            content_type='application/json', body=json.dumps({'ok': True, 'state': 'ready'})))
+        self.page.locator('[data-act="reconnect"]').click()
+        self.page.locator('#pr-connection').filter(has_text='Connected to the original Codex question.').wait_for()
+        self.assertTrue(self.page.locator('.pr-q input[value="A"]').is_checked())
+        self.assertTrue(self.page.locator('.pr-go').is_enabled())
+        self.assertFalse(any(url.endswith('/answer') for url in requests))
+        self.assertEqual(len([url for url in requests if url.endswith('/reconnect')]), 1)
+        self.shot('native-question-reconnected-mobile')
         self.post('/api/prompts/' + p['id'] + '/cancel', {})
 
     def test_native_codex_default_question_mode(self):

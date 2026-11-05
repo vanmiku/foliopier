@@ -882,6 +882,9 @@
     // 在「其他」里打字就自动选上「其他」
     for (const ot of $$('.pr-q .ap-other-text')) ot.addEventListener('input', () => { const box = ot.closest('.ap-opt')?.querySelector('input[value="__other__"]'); if (box && ot.value) box.checked = true; ot.closest('.pr-q').classList.remove('ap-missing'); });
     for (const q of $$('.pr-q')) q.addEventListener('change', () => q.classList.remove('ap-missing'));
+    const showConnection = message => {
+      const el = $('#pr-connection'); if (el) { el.textContent = message; el.hidden = false; }
+    };
     const go = async (path, body, okMsg) => {
       for (const b of $$('.pr-acts button')) b.disabled = true;
       try {
@@ -889,8 +892,15 @@
         const result = await r.json().catch(() => ({}));
         if (r.status === 409 && result.status !== 'pending') { toast(T('This was already handled elsewhere.')); return setTimeout(() => location.reload(), 900); }
         if (!r.ok) {
-          toast((r.status >= 500 || result.uncertain) && result.error ? result.error : T('That did not work. Try again in a moment.'));
+          if (prData.native && result.error) showConnection(result.error);
+          else toast((r.status >= 500 || result.uncertain) && result.error ? result.error : T('That did not work. Try again in a moment.'));
           if (result.uncertain) return setTimeout(() => location.reload(), 900);
+          for (const b of $$('.pr-acts button')) b.disabled = false;
+          return;
+        }
+        if (path.endsWith('/reconnect')) {
+          if (result.state === 'answered') { toast(T('This was already handled elsewhere.')); return setTimeout(() => location.reload(), 700); }
+          showConnection(T('Connected to the original Codex question. Your choice has not been submitted.'));
           for (const b of $$('.pr-acts button')) b.disabled = false;
           return;
         }
@@ -900,6 +910,7 @@
     for (const b of $$('.pr-acts [data-act]')) b.addEventListener('click', () => {
       const act = b.dataset.act; const base = `/api/prompts/${prData.id}`;
       if (act === 'release') return go(`${base}/release`, {}, T('Handed back.'));
+      if (act === 'reconnect') { showConnection(T('Reconnecting to the original Codex session…')); return go(`${base}/reconnect`, {}, ''); }
       if (prData.kind === 'question') {
         const answers = {}; let missing = null;
         $$('.pr-q').forEach((fs, i) => {
