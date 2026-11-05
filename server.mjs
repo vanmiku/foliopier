@@ -632,7 +632,7 @@ async function handlePost(req, res) {
         if (req.mydashWhere === 'lan') return json(403, { error: t('Answer this native Codex question on the hosting computer or a trusted Tailscale connection.') });
         if (p.nativeDelivery) return json(423, { error: t('This answer is already being sent or is awaiting confirmation. Check Codex before trying again.'), uncertain: true });
         try {
-          const result = await nativeQuestions.check(p, { refresh: true });
+          const result = await nativeQuestions.check(p, { refresh: true, recover: true, authorize: () => promptsEnabled() && getPrompt(id)?.status === 'pending' && !getPrompt(id)?.nativeDelivery });
           setNativeFailure(id, null);
           if (result.state === 'answered') { setPromptStatus(id, 'terminal'); wakePrompt(id); }
           return json(200, { ok: true, ...result });

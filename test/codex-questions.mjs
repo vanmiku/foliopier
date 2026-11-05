@@ -238,3 +238,52 @@ test('reconnecting an old question refreshes only its original connection withou
   assert.equal(result.state, 'ready');
   assert.equal(f.calls.filter((x) => x.mutation).length, 0);
 });
+
+test('explicit reconnect can wake an unloaded original App session without sending a choice', async () => {
+  const f = fixture();
+  let opened = 0,
+    awake = false;
+  const observe = f.bridge.observe,
+    peek = f.bridge.peek;
+  f.bridge.observe = async () => (awake ? observe() : { connected: false, reason: 'app_not_open' });
+  f.bridge.refresh = f.bridge.observe;
+  f.bridge.peek = () => (awake ? peek() : { connected: false, reason: 'app_not_open' });
+  const service = new api.CodexQuestions({
+    bridge: f.bridge,
+    resolve: () => ({ cwd: home }),
+    platform: 'darwin',
+    open: async (id) => {
+      assert.equal(id, sid);
+      opened++;
+      awake = true;
+    },
+    wakeOptions: { probeMs: 1, retryMs: 1, timeoutMs: 100 },
+  });
+  const result = await service.check(f.prompt, { refresh: true, recover: true });
+  assert.equal(result.state, 'ready');
+  assert.equal(opened, 1);
+  assert.equal(f.calls.filter((x) => x.mutation).length, 0);
+});
+test('question wake cannot run for a changed project, revoked authorization or unconfirmed delivery', async () => {
+  const f = fixture();
+  let opened = 0;
+  f.bridge.observe = async () => ({ connected: false, reason: 'app_not_open' });
+  f.bridge.refresh = f.bridge.observe;
+  f.bridge.peek = () => ({ connected: false, reason: 'app_not_open' });
+  const service = new api.CodexQuestions({
+    bridge: f.bridge,
+    resolve: () => ({ cwd: home }),
+    platform: 'darwin',
+    open: async () => opened++,
+    wakeOptions: { probeMs: 1, retryMs: 1, timeoutMs: 10 },
+  });
+  await assert.rejects(
+    service.check({ ...f.prompt, cwd: path.dirname(home) }, { refresh: true, recover: true })
+  );
+  await assert.rejects(service.check(f.prompt, { refresh: true, recover: true, authorize: () => false }));
+  await assert.rejects(
+    service.check({ ...f.prompt, nativeDelivery: { state: 'uncertain' } }, { refresh: true, recover: true })
+  );
+  assert.equal(opened, 0);
+  assert.equal(f.calls.filter((x) => x.mutation).length, 0);
+});

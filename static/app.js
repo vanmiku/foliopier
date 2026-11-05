@@ -910,7 +910,7 @@
     for (const b of $$('.pr-acts [data-act]')) b.addEventListener('click', () => {
       const act = b.dataset.act; const base = `/api/prompts/${prData.id}`;
       if (act === 'release') return go(`${base}/release`, {}, T('Handed back.'));
-      if (act === 'reconnect') return go(`${base}/reconnect`, {}, '');
+      if (act === 'reconnect') { showConnection(T('Reconnecting to the original Codex session…')); return go(`${base}/reconnect`, {}, ''); }
       if (prData.kind === 'question') {
         const answers = {}; let missing = null;
         $$('.pr-q').forEach((fs, i) => {
