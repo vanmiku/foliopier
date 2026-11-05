@@ -882,6 +882,7 @@ dialog.access-dlg::backdrop { background: rgba(10, 10, 14, .45); }
 .pr-alt { border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 .pr-alt.pr-deny { color: var(--unread); }
 .pr-back { margin-left: auto; height: 42px; padding: 0 6px; border: 0; background: none; color: var(--text-2); font: 500 13.5px/1 var(--sans); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.pr-connection { margin: 12px 2px; color: var(--text-2); font-size: 13.5px; line-height: 1.6; overflow-wrap: anywhere; }
 .pr-note { margin: 0 2px 20px; color: var(--text-3); font-size: 12.5px; }
 .pr-status { margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); color: var(--text-2); font-size: 13.5px; }
 .pr-status.pr-answered { background: color-mix(in srgb, var(--ok) 10%, var(--surface)); color: var(--ok); }

@@ -66,6 +66,11 @@ function fixture(sync = false) {
         state.requests = [];
         state.turns[0].items.push({ type: 'userInputResponse', requestId: 7, answers: { route: ['A'] } });
       } else {
+        if (method === 'thread-follower-steer-turn') {
+          // The native App dereferences restoreMessage before dispatch.
+          assert.equal(params.restoreMessage.cwd, home);
+          assert.ok(params.restoreMessage.context);
+        }
         const input = params.turnStart?.request?.input || params.input;
         state.turns.push({
           turnId: 'answer-turn',
@@ -163,6 +168,8 @@ test('wrong thread/project/call, changed question, secret question and command a
 test('active async questions use steering and a lost submission remains uncertain', async () => {
   const f = fixture();
   f.state.turns[0].status = 'inProgress';
+  f.state.turns[0].turnStartedAtMs = Date.now() - 3 * 3600_000;
+  f.prompt.at = new Date(Date.now() - 3 * 3600_000).toISOString();
   await f.service.answer(f.prompt, { answers });
   assert.equal(f.calls.find((x) => x.mutation).method, 'thread-follower-steer-turn');
   const g = fixture();
@@ -216,5 +223,18 @@ test('partly answered native groups stay unresolved and cannot resend the answer
     f.service.answer(f.prompt, { answers: { ...answers, 'Anything else?': 'No' } }),
     (e) => e.reason === 'question_partial'
   );
+  assert.equal(f.calls.filter((x) => x.mutation).length, 0);
+});
+
+test('reconnecting an old question refreshes only its original connection without submitting an answer', async () => {
+  const f = fixture();
+  let refreshed = null;
+  f.bridge.refresh = async (id, cwd) => {
+    refreshed = { id, cwd };
+    return f.bridge.observe(id, cwd);
+  };
+  const result = await f.service.check(f.prompt, { refresh: true });
+  assert.deepEqual(refreshed, { id: sid, cwd: home });
+  assert.equal(result.state, 'ready');
   assert.equal(f.calls.filter((x) => x.mutation).length, 0);
 });

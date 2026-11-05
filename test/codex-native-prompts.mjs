@@ -107,6 +107,10 @@ async function fixture(t) {
             result = { settings: { resumeState: 'resumed' } };
           else if (q.method === 'thread-owner-discovery') result = { supportsUntrustedAppInput: true };
           else if (q.method === 'thread-follower-start-turn' || q.method === 'thread-follower-steer-turn') {
+            if (q.method === 'thread-follower-steer-turn') {
+              assert.equal(q.params.restoreMessage.cwd, project);
+              assert.ok(q.params.restoreMessage.context);
+            }
             writes.push(q);
             if (onWrite) {
               const decision = await onWrite(q);
@@ -236,7 +240,8 @@ test('native and mydash both show the question; web receipt wins without a trans
     { p, text } = await f.ask();
   const page = await (await fetch(f.base + '/prompts/' + p.id)).text();
   assert.match(page, /pr-acts/);
-  assert.match(page, /at the same time/);
+  assert.ok(page.includes('Reconnect Codex'));
+  assert.ok(page.includes('Your question is saved.'));
   f.setOnWrite(async () => {
     const cancelled = await f.post('/api/prompts/' + p.id + '/cancel', { reason: 'terminal' });
     assert.equal(cancelled.data.prompt.status, 'pending');
@@ -283,6 +288,9 @@ test('lost native receipt keeps the question unconfirmed and blocks retry instea
   assert.equal(first.data.uncertain, true);
   const second = await f.post('/api/prompts/' + p.id + '/answer', { answers: { [text]: 'A' } });
   assert.equal(second.status, 423);
+  const reconnect = await f.post('/api/prompts/' + p.id + '/reconnect', {});
+  assert.equal(reconnect.status, 423);
+  assert.equal(reconnect.data.uncertain, true);
   assert.equal(f.writes.length, 1);
   const saved = await f.prompt(p.id);
   assert.equal(saved.status, 'pending');
@@ -290,4 +298,47 @@ test('lost native receipt keeps the question unconfirmed and blocks retry instea
   const page = await (await fetch(f.base + '/prompts/' + p.id)).text();
   assert.match(page, /awaiting confirmation/);
   assert.doesNotMatch(page, /<div class="pr-acts">/);
+});
+
+test('a delayed answer while the original turn is active supplies native restore context', async (t) => {
+  if (process.platform === 'win32') return t.skip('desktop Unix IPC adapter');
+  const f = await fixture(t),
+    { p, text } = await f.ask();
+  f.state.turns[0].status = 'inProgress';
+  f.state.threadRuntimeStatus = { type: 'active' };
+  f.broadcast();
+  const r = await f.post('/api/prompts/' + p.id + '/answer', { answers: { [text]: 'A' } });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(f.writes.length, 1);
+  const q = f.writes[0];
+  assert.equal(q.method, 'thread-follower-steer-turn');
+  assert.equal(q.params.restoreMessage.context.turnTrigger, 'send_user_message_async_question');
+  assert.equal(q.params.restoreMessage.id, q.params.clientUserMessageId);
+  assert.equal(q.params.restoreMessage.text, q.params.input[0].text);
+  assert.equal(q.params.restoreMessage.context.model, undefined);
+  assert.equal(q.params.restoreMessage.context.permissions, undefined);
+});
+test('question reconnect is read-only and a project mismatch has an explicit retained reason', async (t) => {
+  if (process.platform === 'win32') return t.skip('desktop Unix IPC adapter');
+  const f = await fixture(t),
+    { p, text } = await f.ask(),
+    cwd = f.state.cwd;
+  const r = await f.post('/api/prompts/' + p.id + '/reconnect', {});
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.state, 'ready');
+  assert.equal(f.writes.length, 0);
+  assert.equal((await f.prompt(p.id)).status, 'pending');
+  f.state.cwd = '/unrelated-project';
+  f.broadcast();
+  const bad = await f.post('/api/prompts/' + p.id + '/answer', { answers: { [text]: 'A' } });
+  assert.equal(bad.status, 503);
+  assert.equal(bad.data.reason, 'app_mismatch');
+  assert.equal((await f.prompt(p.id)).nativeFailure.reason, 'app_mismatch');
+  assert.equal(f.writes.length, 0);
+  f.state.cwd = cwd;
+  f.broadcast();
+  const again = await f.post('/api/prompts/' + p.id + '/reconnect', {});
+  assert.equal(again.status, 200);
+  assert.equal(again.data.state, 'ready');
+  assert.equal((await f.prompt(p.id)).nativeFailure, undefined);
 });

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.7 (2026-11-05)
+
+- Answering native Codex questions while the original turn is active now supplies the draft context required by the App steering interface, while preserving the original model and permissions. Long waiting time alone does not expire an asynchronous question.
+- Add a read-only “Reconnect Codex” action on pending native questions. It refreshes only the original session connection, keeps the current selection, and never submits an answer or retries an unconfirmed delivery. Preserve specific safe failure codes and show recovery messages inline instead of only in a short-lived toast.
+
 ## 0.2.6 (2026-11-04)
 
 - Keep unanswered native asynchronous questions in the active Codex turn: guidance now waits for the answer before finishing, and a bounded Stop guard catches premature completion that would hide the App controls. First-message and plain-text-question reminders also prefer the asynchronous native tool instead of falling back directly to CLI.
