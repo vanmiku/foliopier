@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.8 (2026-11-06)
+
+- Press Enter to send an Agent message from an article sidebar or a standalone conversation; Shift+Enter inserts a new line. The input tooltip explains the shortcuts. Refresh an already open page after updating; no settings changes are required.
+- Confirming Chinese or other IME composition does not send the message. Held-key repeats, blank messages, unavailable connections and an in-progress submission do not create another delivery. Keyboard sending uses the existing draft, attachment, connection and retry-deduplication flow.
+
 ## 0.2.7 (2026-11-05)
 
 - Answering native Codex questions while the original turn is active now uses the correct local steering protocol version and supplies the draft context required by the App, while preserving the original model and permissions. Synchronous question replies also use their correct protocol version. An unanswered question with a live original session and waiting process can be answered later.

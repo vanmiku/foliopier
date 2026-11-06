@@ -221,6 +221,14 @@
       b.disabled = false;
     }
   });
+  if (text) text.title = T('Enter to send, Shift+Enter for a new line.');
+  text?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    const send = form.querySelector('[type=submit]');
+    if (e.repeat || busy || text.disabled || text.readOnly || send.disabled) return;
+    form.requestSubmit(send);
+  });
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (busy || !text.value.trim()) return;

@@ -1515,6 +1515,59 @@ class ReviewUI(unittest.TestCase):
         self.assertAlmostEqual(self.page.locator('.article-messages').evaluate('e=>e.scrollTop'),before,delta=2)
         self.shot('article-conversation-markdown',full_page=False)
 
+    def check_enter_send_keys(self, textarea, button, sent, inflight):
+        textarea.fill('First line')
+        textarea.press('Shift+Enter')
+        textarea.press('End')
+        self.page.keyboard.insert_text('Second line')
+        self.assertEqual(textarea.input_value(), 'First line\nSecond line')
+        for props in [{'isComposing': True}, {'keyCode': 229}, {'repeat': True}]:
+            textarea.evaluate('(e, props)=>e.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true,...props}))', props)
+        self.assertEqual(sent, [])
+        textarea.fill('   ')
+        textarea.press('Enter')
+        self.assertEqual(sent, [])
+        textarea.fill('First line\nSecond line')
+        button.evaluate('e=>e.disabled=true')
+        textarea.press('Enter')
+        self.assertEqual(sent, [])
+        button.evaluate('e=>e.disabled=false')
+        with self.page.expect_request('**/api/sessions/send', timeout=2000):
+            textarea.press('Enter')
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]['text'], 'First line\nSecond line')
+        textarea.press('Enter')
+        self.assertEqual(len(sent), 1)
+        inflight[0].fulfill(status=409, json={'error': 'Keyboard fixture refusal'})
+        self.page.wait_for_function("()=>document.querySelector('.article-send-status, .session-send-status').textContent==='Keyboard fixture refusal'")
+        self.assertEqual(textarea.input_value(), 'First line\nSecond line')
+        with self.page.expect_request('**/api/sessions/send', timeout=2000):
+            textarea.press('Enter')
+        self.assertEqual(sent[0]['nonce'], sent[1]['nonce'])
+        inflight[1].fulfill(json={'ok': True, 'transport': 'codex-app'})
+        self.page.wait_for_function('(selector)=>document.querySelector(selector).value===\'\'', arg='#' + textarea.get_attribute('id'))
+
+    def test_article_enter_sends_shift_enter_newlines_and_ime_does_not_send(self):
+        self.post('/api/settings', {'terminalSessions': {'enabled': True, 'send': True}})
+        self.addCleanup(lambda: self.post('/api/settings', {'terminalSessions': {'enabled': False, 'send': False}}))
+        ident = self.session_fixture('article-keyboard-111'); sent = []; inflight = []
+        self.page.route('**/api/sessions/' + ident, lambda r: r.fulfill(json={'session': {'canSend': True}, 'stateLabel': 'Idle', 'html': '<p>Keyboard fixture</p>'}))
+        self.page.route('**/api/sessions/send', lambda r: (sent.append(r.request.post_data_json), inflight.append(r)))
+        self.page.set_viewport_size({'width': 1600, 'height': 900}); self.go('/p/test/session-document')
+        self.open_article_composer()
+        self.page.wait_for_function("()=>!document.querySelector('.article-compose [type=submit]').disabled")
+        self.check_enter_send_keys(self.page.locator('#article-message'), self.page.locator('.article-compose [type=submit]'), sent, inflight)
+
+    def test_session_enter_sends_shift_enter_newlines_and_ime_does_not_send(self):
+        self.post('/api/settings', {'terminalSessions': {'enabled': True, 'send': True}})
+        self.addCleanup(lambda: self.post('/api/settings', {'terminalSessions': {'enabled': False, 'send': False}}))
+        ident = self.session_fixture('session-keyboard-111'); sent = []; inflight = []
+        self.page.route('**/api/sessions/' + ident, lambda r: r.fulfill(json={'session': {'canSend': True}, 'stateLabel': 'Idle', 'html': '<p>Keyboard fixture</p>'}))
+        self.page.route('**/api/sessions/send', lambda r: (sent.append(r.request.post_data_json), inflight.append(r)))
+        self.go('/sessions/' + ident)
+        self.page.wait_for_function("()=>!document.querySelector('#session-send [type=submit]').disabled")
+        self.check_enter_send_keys(self.page.locator('#session-text'), self.page.locator('#session-send [type=submit]'), sent, inflight)
+
     def test_article_failed_send_retains_context_and_nonce_after_reload(self):
         self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
         self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))

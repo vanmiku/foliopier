@@ -908,6 +908,14 @@
       status.textContent = T('Could not copy. Select the question and copy it manually.');
     }
   });
+  input.title = T('Enter to send, Shift+Enter for a new line.');
+  input.addEventListener('keydown', (e) => {
+    // IME confirmation can report keyCode 229 after composition ends in Safari.
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    if (e.repeat || input.disabled || input.readOnly || send.disabled) return;
+    form.requestSubmit(send);
+  });
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (pending || uploading || !writable() || !id || (!input.value.trim() && !draft.images?.length)) return;
