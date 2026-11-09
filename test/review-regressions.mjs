@@ -9,12 +9,52 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mydash-review-unit-'));
 process.env.MYDASH_HOME = home;
 process.env.MYDASH_LANG = 'en';
 after(() => fs.rmSync(home, { recursive: true, force: true }));
-const { markdownHtml } = await import('../lib/render.mjs');
+const { markdownHtml, renderFile } = await import('../lib/render.mjs');
 const { questionsOf, validateAnswers } = await import('../lib/approval.mjs');
 const { renderDiff } = await import('../lib/diff.mjs');
 const { addApproval, readResponses } = await import('../lib/responses.mjs');
 
 const block = questions => '```approval\n' + JSON.stringify({ questions }) + '\n```';
+
+async function csvPreview(name, source) {
+  const abs = path.join(home, name); fs.writeFileSync(abs, source);
+  return (await renderFile({ abs, rel: name, project: 'test', slug: 'csv', v: 1 })).html;
+}
+test('CSV delimiter detection ignores separators and newlines inside quoted fields', async () => {
+  const html = await csvPreview('quoted.csv', 'name,notes\nAlice,"one;two;three;four\nnext|part"\n');
+  assert.equal((html.match(/<th[ >]/g) || []).length, 2);
+  assert.match(html, /<td>one;two;three;four\nnext\|part<\/td>/);
+  const semi = await csvPreview('semicolon.csv', 'name;notes\r\nAlice;"one,two,three,four"\r\n');
+  assert.equal((semi.match(/<th[ >]/g) || []).length, 2);
+  assert.match(semi, /<td>one,two,three,four<\/td>/);
+});
+test('CSV with carriage-return rows preserves escaped quotes and quoted CRLF', async () => {
+  const html = await csvPreview('carriage.csv', 'name,notes\rAlice,"says ""hello""\r\nnext"\rBob,end\r');
+  assert.equal((html.match(/<tr>/g) || []).length, 3);
+  assert.match(html, /says &quot;hello&quot;\r\nnext/);
+});
+test('CSV decoding supports UTF-8 BOM, UTF-16 LE/BE and existing GBK files', async () => {
+  const text = 'name,city\r\nAlice,北京\r\n';
+  const le = Buffer.from(text, 'utf16le');
+  for (const [name, source] of [
+    ['utf8', Buffer.from('\uFEFF' + text)],
+    ['utf16le', Buffer.concat([Buffer.from([255, 254]), le])],
+    ['utf16be', Buffer.concat([Buffer.from([254, 255]), Buffer.from(le).swap16()])],
+    ['gbk', Buffer.concat([Buffer.from('name,city\r\nAlice,'), Buffer.from('b1b1bea9', 'hex'), Buffer.from('\r\n')])],
+  ]) {
+    const html = await csvPreview(name + '.csv', source);
+    assert.match(html, /<td>北京<\/td>/, name);
+    assert.equal((html.match(/<tr>/g) || []).length, 2, name);
+  }
+});
+test('CSV separator hints are not shown as headers and ragged columns are retained safely', async () => {
+  const html = await csvPreview('ragged.csv', 'sep=;\r\nname;notes\r\nAlice;"<script>alert(1)</script>";extra\r\nBob\r\n');
+  assert.equal((html.match(/<th[ >]/g) || []).length, 3);
+  assert.equal((html.match(/<td[ >]/g) || []).length, 6);
+  assert.match(html, /<td>extra<\/td>/);
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(html, /<script>|<th[^>]*>sep=/);
+});
 test('approval blocks render the same unique question IDs used to validate answers', () => {
   const md = block([{ type: 'choice', label: 'Publish?', options: ['Yes', 'No'], required: true }]) + '\n\n' +
     block([{ type: 'choice', label: 'Keep the old version?', options: ['Keep', 'Remove'], required: true }]);

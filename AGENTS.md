@@ -6,7 +6,7 @@ This file is for coding agents changing mydash itself. To install mydash for a u
 
 | Path | What |
 |---|---|
-| `server.mjs` | Web server, zero framework. Two ports on 127.0.0.1: the workbench (`port`, default 4870) and a read-only content port (`contentPort`, default 4871) where HTML and SVG run, so their scripts cannot reach the workbench API |
+| `server.mjs` | Web server, zero framework. Two ports on 127.0.0.1: the workbench (`port`, default 4870) and a read-only content port (`contentPort`, default 4871) where HTML and SVG run, so their scripts cannot reach the workbench API. Browser navigation to CSV/TSV raw links shows an inert table on either port; downloads and programmatic reads retain original bytes |
 | `bin/mydash.mjs` | CLI entry point and argument parsing |
 | `lib/publish.mjs` | `mydash publish` / `rebuild`: copies files into a new version, pulls in files referenced from Markdown, refuses secrets |
 | `lib/agents.mjs` | Known agents (`AGENTS`), detecting the Claude Code or Codex session and the folder it started in (the project), `MYDASH_AGENT` for other tools, and the `rebuild --agents` backfill from session logs |

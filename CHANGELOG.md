@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Opening a CSV or TSV raw link in a browser now shows a scrollable table, including on the isolated content port. Downloads, programmatic reads and byte-range requests retain the original file. The table-only preview has no scripts or workbench API access; existing access gates still apply.
+- CSV parsing ignores delimiters inside quoted headings and cells, handles CR/CRLF rows and Excel separator hints, and supports UTF-16 BOM files alongside UTF-8 and GBK. Extra cells in ragged rows are retained and missing cells are padded instead of silently dropping columns.
+
 ## 0.2.8 (2026-11-06)
 
 - Press Enter to send an Agent message from an article sidebar or a standalone conversation; Shift+Enter inserts a new line. The input tooltip explains the shortcuts. Refresh an already open page after updating; no settings changes are required.

@@ -104,6 +104,46 @@ class ReviewUI(unittest.TestCase):
         except Exception: pass  # The EventSource can remain open.
         self.page.evaluate('document.fonts.ready')
 
+    def test_csv_raw_navigation_renders_table_and_preserves_downloads_on_both_ports(self):
+        from urllib.parse import quote, urlsplit
+        file = self.tmp / '明细 rows.csv'
+        source = '\ufeff姓名,备注\r\n甲,"one;two;three|four\n<script>alert(1)</script>"\r\n乙,尾行\r\n'.encode('utf-8')
+        file.write_bytes(source)
+        self.cli('publish', str(file), '--force-project', 'test', '--slug', 'csv-navigation', '--json')
+        raw = '/f/test/csv-navigation/v1/' + quote(file.name)
+        self.go('/p/test/csv-navigation')
+        self.assertEqual(self.page.locator('table.data').count(), 1)
+        # Raw previews intentionally have an opaque sandbox origin. Do not run
+        # the workbench test context's localStorage bootstrap on those pages.
+        self.context.close()
+        self.context = self.browser.new_context(viewport={'width': 390, 'height': 844})
+        self.context.add_cookies([{'name': 'csv-preview-fixture', 'value': 'approved-fixture', 'url': self.base, 'sameSite': 'Lax'}])
+        self.page = self.context.new_page()
+        self.page.on('pageerror', lambda e: self.errors.append(str(e)))
+        downloads = []
+        self.page.on('request', lambda r: downloads.append(r) if '?dl=1' in r.url else None)
+        for origin in [self.base, 'http://127.0.0.1:' + str(urlsplit(self.base).port + 1)]:
+            response = self.page.goto(origin + raw, wait_until='domcontentloaded')
+            self.assertEqual(response.status, 200)
+            self.assertIn('text/html', response.headers['content-type'])
+            self.assertEqual(self.page.locator('table.data th').all_text_contents(), ['姓名', '备注'])
+            self.assertEqual(self.page.locator('table.data tbody tr').count(), 2)
+            self.assertIn('<script>alert(1)</script>', self.page.locator('table.data tbody').inner_text())
+            self.assertEqual(self.page.locator('script').count(), 0)
+            with self.page.expect_download() as download:
+                self.page.get_by_role('link', name='Download the full file').click()
+            self.assertEqual(download.value.suggested_filename, file.name)
+            self.assertEqual(Path(download.value.path()).read_bytes(), source)
+            self.assertIn('csv-preview-fixture=approved-fixture', downloads[-1].all_headers().get('cookie', ''))
+            data = self.context.request.get(origin + raw, headers={'Accept': 'text/csv'})
+            self.assertEqual(data.body(), source)
+            self.assertIn('text/plain', data.headers['content-type'])
+            fetch = self.context.request.get(origin + raw, headers={'Accept': 'text/html', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty'})
+            self.assertEqual(fetch.body(), source)
+            ranged = self.context.request.get(origin + raw, headers={'Range': 'bytes=0-2'})
+            self.assertEqual(ranged.status, 206)
+            self.assertEqual(ranged.body(), source[:3])
+
     def test_native_codex_question_keeps_choice_when_not_connected(self):
         p = self.post('/api/prompts', {'tool': 'codex', 'kind': 'question', 'cwd': '/isolated/native-question',
             'session': '44444444-4444-4444-8444-444444444444', 'both': True,
