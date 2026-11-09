@@ -865,9 +865,12 @@ async function serveRaw(req, res, url, segs, isolated) {
       if (!stat?.isFile()) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
       const rel = rest.join('/');
       const rendered = await renderFile({ abs, rel, project, slug, v: Number(vdir.slice(1)) });
+      // Preserve the origin for authorized downloads from embedded previews.
+      // Scripts remain blocked by both CSP and the sandbox; the content origin
+      // stays separate from the workbench and still has no workbench API.
       return send(res, 200, tableFilePage(path.basename(rel), rendered.html, url.pathname), 'text/html; charset=utf-8', {
         Vary: extra.Vary,
-        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; sandbox allow-downloads",
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; sandbox allow-downloads allow-same-origin",
       });
     }
   }

@@ -113,19 +113,18 @@ class ReviewUI(unittest.TestCase):
         raw = '/f/test/csv-navigation/v1/' + quote(file.name)
         self.go('/p/test/csv-navigation')
         self.assertEqual(self.page.locator('table.data').count(), 1)
-        # Raw previews intentionally have an opaque sandbox origin. Do not run
-        # the workbench test context's localStorage bootstrap on those pages.
+        # Raw previews are self-contained. Exercise them without the workbench
+        # test context's localStorage bootstrap or other injected scripts.
         self.context.close()
         self.context = self.browser.new_context(viewport={'width': 390, 'height': 844})
-        self.context.add_cookies([{'name': 'csv-preview-fixture', 'value': 'approved-fixture', 'url': self.base, 'sameSite': 'Lax'}])
         self.page = self.context.new_page()
         self.page.on('pageerror', lambda e: self.errors.append(str(e)))
-        downloads = []
-        self.page.on('request', lambda r: downloads.append(r) if '?dl=1' in r.url else None)
         for origin in [self.base, 'http://127.0.0.1:' + str(urlsplit(self.base).port + 1)]:
             response = self.page.goto(origin + raw, wait_until='domcontentloaded')
             self.assertEqual(response.status, 200)
             self.assertIn('text/html', response.headers['content-type'])
+            self.assertIn("default-src 'none'", response.headers['content-security-policy'])
+            self.assertNotIn('allow-scripts', response.headers['content-security-policy'])
             self.assertEqual(self.page.locator('table.data th').all_text_contents(), ['姓名', '备注'])
             self.assertEqual(self.page.locator('table.data tbody tr').count(), 2)
             self.assertIn('<script>alert(1)</script>', self.page.locator('table.data tbody').inner_text())
@@ -134,7 +133,6 @@ class ReviewUI(unittest.TestCase):
                 self.page.get_by_role('link', name='Download the full file').click()
             self.assertEqual(download.value.suggested_filename, file.name)
             self.assertEqual(Path(download.value.path()).read_bytes(), source)
-            self.assertIn('csv-preview-fixture=approved-fixture', downloads[-1].all_headers().get('cookie', ''))
             data = self.context.request.get(origin + raw, headers={'Accept': 'text/csv'})
             self.assertEqual(data.body(), source)
             self.assertIn('text/plain', data.headers['content-type'])
@@ -143,6 +141,51 @@ class ReviewUI(unittest.TestCase):
             ranged = self.context.request.get(origin + raw, headers={'Range': 'bytes=0-2'})
             self.assertEqual(ranged.status, 206)
             self.assertEqual(ranged.body(), source[:3])
+
+    def test_csv_embedded_download_retains_access_cookie(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        file = self.tmp / 'embedded.csv'; source = b'name,value\nA,1\n'; file.write_bytes(source)
+        self.cli('publish', str(file), '--force-project', 'test', '--slug', 'csv-embedded', '--json')
+        raw = '/f/test/csv-embedded/v1/embedded.csv'
+        preview = self.context.request.get(self.base + raw, headers={'Accept': 'text/html'})
+        html = preview.body(); policy = preview.headers['content-security-policy']; downloads = []
+        # Use a real HTTP download gate: native same-origin downloads do not
+        # consistently emit Playwright page request events. The fixture serves
+        # the exact production preview and refuses a missing access cookie.
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args): pass
+            def do_GET(self):
+                if self.path == '/parent':
+                    data = ('<iframe id="csv-embedded" style="width:100%;height:600px" src="' + raw + '"></iframe>').encode()
+                    self.send_response(200); self.send_header('Content-Type', 'text/html')
+                elif '?dl=1' in self.path:
+                    cookie = self.headers.get('Cookie', ''); downloads.append(cookie)
+                    approved = 'csv-preview-fixture=approved-fixture' in cookie
+                    data = source if approved else b'Access cookie required'
+                    self.send_response(200 if approved else 403)
+                    self.send_header('Content-Type', 'text/csv' if approved else 'text/plain')
+                    if approved: self.send_header('Content-Disposition', 'attachment; filename="embedded.csv"')
+                else:
+                    data = html
+                    self.send_response(200); self.send_header('Content-Type', 'text/html')
+                    self.send_header('Content-Security-Policy', policy)
+                self.send_header('Cache-Control', 'no-store'); self.end_headers(); self.wfile.write(data)
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        self.addCleanup(lambda: (server.shutdown(), server.server_close(), thread.join(timeout=2)))
+        self.context.close()
+        self.context = self.browser.new_context(viewport={'width': 1000, 'height': 800})
+        self.context.add_cookies([{'name': 'csv-preview-fixture', 'value': 'approved-fixture', 'url': self.base, 'sameSite': 'Lax'}])
+        self.page = self.context.new_page()
+        self.page.on('pageerror', lambda e: self.errors.append(str(e)))
+        self.page.goto('http://127.0.0.1:' + str(server.server_port) + '/parent')
+        embedded = self.page.frame_locator('#csv-embedded')
+        embedded.locator('table.data').wait_for()
+        with self.page.expect_download(timeout=3000) as download:
+            embedded.get_by_role('link', name='Download the full file').click()
+        self.assertEqual(Path(download.value.path()).read_bytes(), source)
+        self.assertIn('csv-preview-fixture=approved-fixture', downloads[-1])
 
     def test_native_codex_question_keeps_choice_when_not_connected(self):
         p = self.post('/api/prompts', {'tool': 'codex', 'kind': 'question', 'cwd': '/isolated/native-question',
