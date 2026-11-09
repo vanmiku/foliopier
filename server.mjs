@@ -15,7 +15,7 @@ import { vapidKeys, subscriptions, addSubscription, removeSubscription, sendWebP
 import { t, htmlLang, lang, clientDict, withLang, defaultLang } from './lib/i18n.mjs';
 import { kindOf, mimeOf, VIEWABLE } from './lib/kinds.mjs';
 import { renderFile } from './lib/render.mjs';
-import { homePage, projectPage, digestPage, itemPage, notFoundPage, loginPage, pairPage, setBuild, setNavSource, setReadSource, setNamesSource, setPinsSource, setResponsesSource, setTodosSource, settingsPage, channelRows, pushSummary, promptPage, sidebar, ACTIVE_RE } from './lib/views.mjs';
+import { homePage, projectPage, digestPage, itemPage, tableFilePage, notFoundPage, loginPage, pairPage, setBuild, setNavSource, setReadSource, setNamesSource, setPinsSource, setResponsesSource, setTodosSource, settingsPage, channelRows, pushSummary, promptPage, sidebar, ACTIVE_RE } from './lib/views.mjs';
 import { setMuted, setArchived, autoArchiveDays } from './lib/quiet.mjs';
 import { readResponses, addApproval, addComment, deleteComment, latestApproval, setTodo, addAsk, linkCommentSession, ASK_MAX } from './lib/responses.mjs';
 import { versionTodos, todoProgress, checksAllowed } from './lib/todo.mjs';
@@ -845,7 +845,7 @@ async function handlePost(req, res) {
 // 原始文件：/f/<project>/<slug>/v<N>/<path...>
 // 工作台端口上，会运行脚本的文件（网页、SVG）加 CSP sandbox：直接打开也拿不到工作台的同源权限
 const SANDBOX = { 'Content-Security-Policy': 'sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads' };
-function serveRaw(req, res, url, segs, isolated) {
+async function serveRaw(req, res, url, segs, isolated) {
   if (segs.length < 5 || !/^v\d+$/.test(segs[3])) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
   const [, project, slug, vdir, ...rest] = segs;
   if ([project, slug, ...rest].some(x => x.startsWith('.'))) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
@@ -853,10 +853,31 @@ function serveRaw(req, res, url, segs, isolated) {
   const abs = safeJoin(root, rest.join('/'));
   if (!abs || !abs.startsWith(DATA_DIR + path.sep)) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
   const extra = !isolated && ACTIVE_RE.test(abs) ? SANDBOX : {};
+  if (kindOf(abs) === 'table') {
+    extra.Vary = 'Accept, Sec-Fetch-Mode, Sec-Fetch-Dest';
+    const mode = req.headers['sec-fetch-mode'], dest = req.headers['sec-fetch-dest'];
+    const navigation = mode === 'navigate' && ['document', 'iframe'].includes(dest)
+      || !mode && String(req.headers.accept || '').includes('text/html');
+    // A browser page gets a table; fetches, downloads and range reads keep the
+    // original bytes. Both listeners have already applied the same access gate.
+    if (navigation && !url.searchParams.has('dl') && !req.headers.range) {
+      const stat = await fsp.stat(abs).catch(() => null);
+      if (!stat?.isFile()) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
+      const rel = rest.join('/');
+      const rendered = await renderFile({ abs, rel, project, slug, v: Number(vdir.slice(1)) });
+      // Preserve the origin for authorized downloads from embedded previews.
+      // Scripts remain blocked by both CSP and the sandbox; the content origin
+      // stays separate from the workbench and still has no workbench API.
+      return send(res, 200, tableFilePage(path.basename(rel), rendered.html, url.pathname), 'text/html; charset=utf-8', {
+        Vary: extra.Vary,
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; sandbox allow-downloads allow-same-origin",
+      });
+    }
+  }
   return sendFile(req, res, abs, { download: url.searchParams.has('dl'), extra });
 }
 
-// 内容端口：只读，只有原始文件
+// 内容端口：只读文件；CSV/TSV 浏览器导航可显示不含脚本的表格，无工作台 API。
 async function handleContent(req, res) {
   const g = gate(req, res, CONTENT_PORT); if (!g) return;
   if (g === 'login') return send(res, 401, 'Log in on the workbench first', 'text/plain; charset=utf-8');
