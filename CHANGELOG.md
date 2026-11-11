@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0 (2026-11-11)
+
+- Share published Markdown documents and selected attachments through a dedicated Tailscale Funnel reader. Visitors need only a browser, a link and its required 8-digit access code. Links expire after 24 hours by default, support up to 30 days, and can be extended, stopped or given a new code from the share manager.
+- Keep the published document's Markdown, tables, images, diagrams and file switching in the public reader. Add real PDF downloads using Chrome, Chromium or Edge on the hosting computer. HTML attachments use isolated, script-free previews.
+- Follow published document updates or share a fixed version. Newly referenced resources require owner approval before they become public. Visitors receive a version-update notice while keeping their unfinished comment drafts.
+- Let visitors leave private, file- and version-specific comments for the owner. Comments appear in share management and `mydash feedback` as external, untrusted input; they do not send instructions to an Agent.
+- Keep Agent conversations, internal feedback, approval answers and workbench APIs outside the public reader. Sharing uses a dedicated Funnel port and preserves the private workbench. Setup and management are opt-in, with visitor preview, expiry controls and access-code reset. Cleanup remains bound to the node that owns the public route.
+- Make every file tab reachable on narrow screens with arrow controls and a draggable position bar. Long labels fit the visible strip and retain their full filenames. The workbench and public reader use the same navigation.
+- Retry transient Windows LAN authorization lock conflicts within the existing deadline, preserving other devices' authorization and lock ownership.
+
+After updating, refresh open pages. Open **Settings → Internet document sharing** (设置 → 互联网文档分享), complete Tailscale Funnel authorization, then choose **Share** on an article. The host must remain online for visitors to read shared content. Updating preserves existing data, network settings and Agent sending permissions. See the [setup guide](docs/sharing.md) / [中文说明](docs/sharing.zh-CN.md).
+
 ## 0.2.9 (2026-11-09)
 
 - Opening a CSV or TSV raw link in a browser now shows a scrollable table, including on the isolated content port. Downloads, programmatic reads and byte-range requests retain the original file. The table-only preview has no scripts or workbench API access; existing access gates still apply.
