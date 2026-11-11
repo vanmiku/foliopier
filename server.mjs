@@ -97,7 +97,7 @@ const hostOk = h => ALLOWED_HOSTS.has(h) || Boolean(TAILNET_MAIN?.test(h));
 const contentHostOk = h => CONTENT_HOSTS.has(h) || Boolean(TAILNET_CONTENT?.test(h));
 
 // 静态资源版本号（每次部署变化）
-const BUILD = crypto.createHash('sha1').update(['static/app.css', 'static/app.js', 'static/lan-auth.js', 'static/sessions.js', 'static/delivery-ui.js', 'static/article-sessions.js', 'static/pdf-view.mjs', 'static/icon.svg', 'static/favicon.ico', 'static/icon-180.png', 'lib/locales/zh.mjs'].map(f => { try { return fs.statSync(path.join(APP, f)).mtimeMs; } catch { return 0; } }).join('|') + lang()).digest('hex').slice(0, 8);
+const BUILD = crypto.createHash('sha1').update(['static/app.css', 'static/app.js', 'static/file-nav.js', 'static/lan-auth.js', 'static/sessions.js', 'static/delivery-ui.js', 'static/article-sessions.js', 'static/pdf-view.mjs', 'static/icon.svg', 'static/favicon.ico', 'static/icon-180.png', 'lib/locales/zh.mjs'].map(f => { try { return fs.statSync(path.join(APP, f)).mtimeMs; } catch { return 0; } }).join('|') + lang()).digest('hex').slice(0, 8);
 setBuild(BUILD);
 // 浏览器端用到的译文：只挑 app.js / pdf-view.mjs 里 T('...') 用到的
 // 浏览器端的译文，按语言各算一份（页面语言可以按设备选，见 withLang）
