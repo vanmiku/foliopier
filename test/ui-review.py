@@ -391,6 +391,18 @@ class ReviewUI(unittest.TestCase):
         self.go('/p/test/file-navigation-single')
         self.assertEqual(self.page.locator('[data-file-nav]').count(), 0)
 
+    def test_long_file_tab_fits_the_visible_navigation_strip(self):
+        folder = self.tmp / 'long-file-tab'; folder.mkdir()
+        name = 'very-long-file-name-' * 8 + '.md'
+        (folder / 'main.md').write_text('# Main')
+        (folder / name).write_text('# Long filename')
+        self.cli('publish', str(folder), '--main', 'main.md', '--force-project', 'test', '--slug', 'long-file-tab', '--json')
+        self.page.set_viewport_size({'width': 320, 'height': 900})
+        self.go('/p/test/long-file-tab')
+        self.page.locator('.tabs a').last.click()
+        self.page.wait_for_function('() => { const e=document.querySelector(".tabs"), a=e.querySelector(".on").getBoundingClientRect(), b=e.getBoundingClientRect(); return a.left>=b.left-1 && a.right<=b.right+1; }', timeout=3000)
+        self.assertIn(name, self.page.locator('.tabs a.on').inner_text())
+
     def test_header_controls_stay_in_place_when_expanded(self):
         self.header_fixture('header-stable')
         for lang in ['en', 'zh']:

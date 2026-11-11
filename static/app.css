@@ -386,6 +386,9 @@ main { flex: 1; width: 100%; max-width: 1160px; margin: 0 auto; padding: 4px 32p
 .tab { display: inline-flex; align-items: center; gap: 7px; flex: none; height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); font: 500 12.5px/1 var(--mono); text-decoration: none; }
 .tab:hover { border-color: var(--border-2); color: var(--text); }
 .tab-kind { font: 600 10.5px/1 var(--sans); color: var(--text-3); }
+.file-nav .tab { max-width: 100%; min-width: 0; }
+.file-nav .tab-kind { flex: none; }
+.tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .tab.on .tab-kind { color: var(--accent); }
 .files li, .sources li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 8px; font: 12.5px/1.5 var(--mono); }

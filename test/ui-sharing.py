@@ -121,4 +121,16 @@ class SharingUI(unittest.TestCase):
         self.page.locator('#internet-sharing').wait_for();back=self.page.locator('[data-sharing-return]');back.click()
         self.page.locator('#share-owner-dialog').wait_for();self.assertEqual(self.page.locator('#share-create-form [name=title]').input_value(),'Keep this draft');self.assertTrue(self.page.locator('#share-create-form [name=files][value="result.csv"]').is_checked())
 
+    def test_long_public_file_tab_fits_the_visible_strip(self):
+        folder=self.f.tmp/'public-long-file';folder.mkdir()
+        name='very-long-file-name-'*5+'.md'
+        (folder/'main.md').write_text('# Main');(folder/name).write_text('# Long file')
+        self.f.cli('publish',str(folder),'--main','main.md','--force-project','test','--slug','public-long-file','--json')
+        made=self.f.post('/api/shares',{'project':'test','slug':'public-long-file','main':'main.md','files':['main.md',name],'title':'Long files'})
+        self.page.set_viewport_size({'width':320,'height':900})
+        self.page.goto(made['url']);self.page.locator('#share-code').fill(made['code']);self.page.locator('[data-share-unlock] button').click()
+        self.page.locator('.tabs a').last.click()
+        self.page.wait_for_function('() => { const e=document.querySelector(".tabs"), a=e.querySelector(".on").getBoundingClientRect(), b=e.getBoundingClientRect(); return a.left>=b.left-1 && a.right<=b.right+1; }',timeout=3000)
+        self.assertEqual(self.page.locator('.tabs a.on').get_attribute('title'),name)
+
 if __name__=='__main__':unittest.main(verbosity=2)
