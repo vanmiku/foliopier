@@ -18,8 +18,12 @@ class SharingUI(unittest.TestCase):
     def setUpClass(cls):
         f=base_ui.ReviewUI;f.setUpClass();cls.f=f;cls.addClassCleanup(f.doClassCleanups)
         f.server.terminate();f.server.wait(timeout=10)
-        # The browser job installs this exact Chromium; do not rely on a host Chrome.
-        f.env['MYDASH_PDF_BROWSER']=f.pw.chromium.executable_path
+        # Prefer the same installed browser as production. Ubuntu's packaged Chrome
+        # has an AppArmor profile; downloaded Chromium may not be allowed a sandbox.
+        found=subprocess.check_output(['node','--input-type=module','-e',
+            'import {findPdfBrowser} from "./lib/share-pdf.mjs";process.stdout.write(findPdfBrowser()||"")'],cwd=base_ui.ROOT,env=f.env,text=True)
+        f.env['MYDASH_PDF_BROWSER']=found or f.pw.chromium.executable_path
+        print('Sandboxed PDF browser: '+f.env['MYDASH_PDF_BROWSER'],flush=True)
         sock=socket.socket();sock.bind(('127.0.0.1',0));port=sock.getsockname()[1];sock.close()
         cls.public=f'http://127.0.0.1:{port}'
         cfg=json.loads((f.home/'config.json').read_text());cfg['sharing']={'enabled':True,'localPort':port,'publicUrl':cls.public}
@@ -83,7 +87,9 @@ class SharingUI(unittest.TestCase):
         p.locator('[data-share-comment] textarea').fill('CSV: please check row B.');p.locator('[data-share-comment] button').click();p.locator('[data-share-status]').filter(has_text='Your comment was sent.').wait_for()
         p.locator('.tabs a').filter(has_text='preview.html').click();frame=p.frame_locator('.share-web-preview');frame.locator('h1').filter(has_text='Read-only HTML preview').wait_for();self.assertNotIn('SHOULD NOT RUN',frame.locator('body').inner_text())
         p.locator('.tabs a').filter(has_text='main.md').click()
-        with p.expect_download(timeout=30000) as download:p.locator('[data-share-pdf]').click()
+        with p.expect_download(timeout=30000) as download:
+            with p.expect_response(lambda r:'/pdf?' in r.url) as pdf_response:p.locator('[data-share-pdf]').click()
+            self.assertEqual(pdf_response.value.status,200,pdf_response.value.text()[:1000] if not pdf_response.value.ok else '')
         self.assertTrue(Path(download.value.path()).read_bytes().startswith(b'%PDF-'))
         pdf_bytes=Path(download.value.path()).read_bytes()
         (self.source/'native.pdf').write_bytes(pdf_bytes)

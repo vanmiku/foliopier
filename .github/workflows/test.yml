@@ -76,6 +76,12 @@ jobs:
       - run: npm ci --omit=dev
       - run: python -m pip install -r test/requirements-ui.txt
       - run: python -m playwright install --with-deps chromium
+      - name: Verify installed PDF browser with sandbox enabled
+        env:
+          MYDASH_HOME: ${{ runner.temp }}/mydash-pdf-preflight
+        run: |
+          node --input-type=module -e "import assert from 'node:assert/strict'; import {findPdfBrowser} from './lib/share-pdf.mjs'; const browser=findPdfBrowser(); assert(browser, 'The browser runner must provide Chrome or Chromium for PDF tests'); console.log(browser);"
+          node --test test/share-pdf.mjs
       - run: python test/ui-review.py
       - run: python test/share-owner-ui.py
       - run: python test/ui-sharing.py
