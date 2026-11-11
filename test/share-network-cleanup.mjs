@@ -38,3 +38,25 @@ test('external verification is not presented when the public route is missing',{
  fs.writeFileSync(configFile,'{}');const status=await shareNetworkStatus({refresh:true});
  assert.equal(status.externalVerified,false);assert.equal(status.externalVerifiedAt,null);
 });
+
+test('missing dedicated node never cleans a different system node',{skip:process.platform==='win32'},async()=>{
+ seed();route();updateConfig(c=>({...c,sharing:{...c.sharing,target:'tailscale-node'}}));
+ const before=fs.existsSync(calls)?fs.readFileSync(calls,'utf8'):'';
+ await assert.rejects(configureSharing('disable'),{code:'FUNNEL_CLEANUP_FAILED'});
+ const s=readConfig().sharing;
+ assert.equal(s.enabled,false);assert.equal(s.cleanupPending,true);assert.equal(s.routeOwner,INSTALL_ID);
+ assert.equal(fs.existsSync(calls)?fs.readFileSync(calls,'utf8'):'',before);
+ assert.notDeepEqual(JSON.parse(fs.readFileSync(configFile,'utf8')),{});
+});
+
+test('unavailable dedicated daemon keeps cleanup pinned to its socket',{skip:process.platform==='win32'},async()=>{
+ seed();route();updateConfig(c=>({...c,sharing:{...c.sharing,target:'tailscale-node'}}));
+ const {nodeTarget}=await import('../lib/tailscale.mjs');const tg=nodeTarget();
+ fs.mkdirSync(path.dirname(tg.cli),{recursive:true});
+ fs.writeFileSync(tg.cli,`#!${process.execPath}\nrequire('fs').appendFileSync(${JSON.stringify(calls)},JSON.stringify(process.argv.slice(2))+'\\n');process.stderr.write('daemon socket unavailable');process.exitCode=1;\n`);fs.chmodSync(tg.cli,0o755);
+ const before=fs.readFileSync(calls,'utf8');
+ await assert.rejects(configureSharing('disable'),{code:'TAILSCALE_COMMAND_FAILED'});
+ assert.equal(readConfig().sharing.cleanupPending,true);assert.equal(readConfig().sharing.routeOwner,INSTALL_ID);
+ const added=fs.readFileSync(calls,'utf8').slice(before.length).trim().split('\n').map(JSON.parse);
+ assert.equal(added.length,1);assert.equal(added[0][0],`--socket=${tg.socket}`);
+});

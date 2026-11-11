@@ -47,7 +47,7 @@ test('creation requires sharing enabled and persists only a salted code hash', a
   const raw = fs.readFileSync(stateFile, 'utf8');
   assert.equal(raw.includes(result.code), false);
   assert.equal(JSON.stringify(result.share).includes('codeHash'), false);
-  assert.equal(fs.statSync(stateFile).mode & 0o077, 0);
+  if(process.platform!=='win32')assert.equal(fs.statSync(stateFile).mode & 0o077, 0);
 });
 
 test('invalid expiration, file selections and ambiguous update modes are rejected', async () => {
