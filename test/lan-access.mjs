@@ -100,6 +100,67 @@ test('concurrent CLI/server changes preserve every request without storing raw t
   for (const r of results) assert.equal(raw.includes(r.stdout.trim()), false);
 });
 
+test('Windows lock creation retries transient sharing violations without losing authorizations', t => {
+  lan.resetAccess(); const code = lan.accessCode();
+  const existing = lan.requestDevice({ code, name: 'Existing device' });
+  assert.equal(lan.approveDevice(existing.id), true);
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+  const write = fs.writeFileSync; let attempts = 0;
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  t.mock.method(fs, 'writeFileSync', (file, data, options) => {
+    if (file === path.join(home, 'state/lan.json.lock') && options?.flag === 'wx') {
+      const code = ['EPERM', 'EACCES', 'EBUSY'][attempts++];
+      if (code) throw Object.assign(new Error('Windows sharing violation'), { code });
+    }
+    return write(file, data, options);
+  });
+  try {
+    const added = lan.requestDevice({ code, name: 'New device' });
+    assert(added.token); assert.equal(attempts, 4);
+    assert.equal(lan.accessDevices().pending.length, 1);
+    assert.equal(lan.validSession(lan.sessionCookie(existing.token)), true);
+  } finally { Object.defineProperty(process, 'platform', descriptor); }
+});
+
+test('persistent Windows lock errors stay bounded and preserve existing state', t => {
+  lan.resetAccess(); const code = lan.accessCode(), file = path.join(home, 'state/lan.json');
+  const before = fs.readFileSync(file, 'utf8'), write = fs.writeFileSync;
+  const lock = file + '.lock', owner = `${process.pid}:another-owner`;
+  fs.writeFileSync(lock, owner);
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+  let clock = Date.now(), attempts = 0;
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  t.mock.method(Date, 'now', () => (clock += 1000));
+  t.mock.method(fs, 'writeFileSync', (file, data, options) => {
+    if (file === path.join(home, 'state/lan.json.lock') && options?.flag === 'wx') {
+      attempts++; throw Object.assign(new Error('Lock access denied'), { code: 'EACCES' });
+    }
+    return write(file, data, options);
+  });
+  try {
+    assert.throws(() => lan.requestDevice({ code }), { code: 'EACCES' });
+    assert.equal(attempts, 4);
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+    assert.equal(fs.readFileSync(lock, 'utf8'), owner);
+  } finally { Object.defineProperty(process, 'platform', descriptor); fs.rmSync(lock, { force: true }); }
+});
+
+test('unrelated Windows lock I/O errors are not retried', t => {
+  lan.resetAccess(); const code = lan.accessCode(), write = fs.writeFileSync;
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform'); let attempts = 0;
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  t.mock.method(fs, 'writeFileSync', (file, data, options) => {
+    if (file === path.join(home, 'state/lan.json.lock') && options?.flag === 'wx') {
+      attempts++; throw Object.assign(new Error('Disk I/O failure'), { code: 'EIO' });
+    }
+    return write(file, data, options);
+  });
+  try {
+    assert.throws(() => lan.requestDevice({ code }), { code: 'EIO' });
+    assert.equal(attempts, 1);
+  } finally { Object.defineProperty(process, 'platform', descriptor); }
+});
+
 test('live LAN switch, owner approval, revocation and logout protect both ports', { timeout: 35_000 }, async t => {
   const ip = lan.lanAddresses()[0];
   if (!ip) return t.skip('No private LAN interface on this runner');

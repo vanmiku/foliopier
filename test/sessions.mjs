@@ -184,9 +184,15 @@ test('a private tmux fixture receives literal bracketed paste once and never exe
     '100',
     '-y',
     '30',
-    exe + ' ' + received,
+    'sleep 0.5; exec ' + exe + ' ' + received,
   ]);
   t.after(() => run(tmux, ['-S', socket, 'kill-server']).catch(() => {}));
+  // tmux can return before its shell execs Claude. Wait for the C fixture to
+  // enable bracketed paste and open its output, then register that live process.
+  const readyBy = Date.now() + 5000;
+  while (!fs.existsSync(received) && Date.now() < readyBy)
+    await new Promise(resolve => setTimeout(resolve, 10));
+  assert(fs.existsSync(received), 'Claude fixture did not finish starting');
   const { stdout } = await run(tmux, [
     '-S',
     socket,

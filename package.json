@@ -29,7 +29,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test test/review-regressions.mjs test/https-access.mjs test/update-release.mjs test/boot-setup.mjs test/lan-access.mjs test/sessions.mjs test/codex-app.mjs test/codex-questions.mjs test/codex-native-prompts.mjs test/codex-question-lifecycle.mjs test/codex-daemon.mjs test/codex-connection.mjs test/codex-wake.mjs test/session-images.mjs test/session-discovery.mjs test/terminal-delivery.mjs test/claude-remote.mjs test/claude-auth.mjs && bash test/smoke-parallel.sh && node test/i18n-check.mjs --missing-only"
+    "test": "node --test test/review-regressions.mjs test/https-access.mjs test/update-release.mjs test/boot-setup.mjs test/lan-access.mjs test/sessions.mjs test/codex-app.mjs test/codex-questions.mjs test/codex-native-prompts.mjs test/codex-question-lifecycle.mjs test/codex-daemon.mjs test/codex-connection.mjs test/codex-wake.mjs test/session-images.mjs test/session-discovery.mjs test/terminal-delivery.mjs test/claude-remote.mjs test/claude-auth.mjs test/shares.mjs test/share-resources.mjs test/share-rendering.mjs test/share-pdf.mjs test/share-pdf-failure.mjs test/share-network.mjs test/share-network-cleanup.mjs test/share-server.mjs test/share-workbench.mjs test/share-owner-views.mjs && bash test/smoke-parallel.sh && node test/i18n-check.mjs --missing-only"
   },
   "engines": {
     "node": ">=20"
@@ -41,6 +41,7 @@
     "mermaid": "^12.2.0",
     "pdfjs-dist": "^4.10.38",
     "qrcode-generator": "^2.0.4",
+    "sanitize-html": "2.18.1",
     "ws": "8.22.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }

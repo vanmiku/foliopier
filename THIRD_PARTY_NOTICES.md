@@ -6,6 +6,7 @@ mydash itself is MIT licensed (see LICENSE). It depends on, or downloads at inst
 
 | Package | Version | License | Used for |
 |---|---|---|---|
+| [sanitize-html](https://github.com/apostrophecms/sanitize-html) | 2.18.1 | MIT | allowlist filtering for public document sharing |
 | [marked](https://github.com/markedjs/marked) | 18.x | MIT | Markdown rendering |
 | [highlight.js](https://github.com/highlightjs/highlight.js) | 11.x | BSD-3-Clause | code highlighting |
 | [mermaid](https://github.com/mermaid-js/mermaid) | 12.x | MIT | diagrams in Markdown |

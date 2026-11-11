@@ -78,6 +78,10 @@ Enable conversation viewing and messaging separately in Settings. Each article o
 
 Read the [connection guide and capability matrix](docs/sessions.md) before enabling. Approved ordinary LAN browsers can view conversations but cannot send. On the hosting computer, bookmark `http://127.0.0.1:4870/` or use `mydash url --local`; this entrance does not require Tailscale.
 
+## Temporary document sharing
+
+Enable **Settings → Internet document sharing**, then use **Share** on an article. Visitors use a link and an 8-digit access code without joining your tailnet. Choose the files, expiry, version behavior, PDF downloads and private comments. Your computer must stay online. The workbench and Agent conversations stay private; HTML attachments use static, script-free previews. [Setup and sharing guide](docs/sharing.md).
+
 ## What you get
 
 <img src="docs/readme/en-phones.png" width="100%" alt="Four phone screens: the home page with an approval waiting, a Word report shown as laid out, an HTML pricing prototype running as is, and an approval form with choices.">
@@ -113,7 +117,7 @@ Read the [connection guide and capability matrix](docs/sessions.md) before enabl
 
 ## Why not Claude Code Artifacts?
 
-Claude Code can [publish pages to claude.ai](https://code.claude.com/docs/en/artifacts) on its own. That is the better choice for a page you want to share. mydash is for output that is meant for you and should stay on your machine.
+Claude Code can [publish pages to claude.ai](https://code.claude.com/docs/en/artifacts) on its own. mydash keeps output on your machine and can temporarily share selected documents through a separate, access-code-protected Funnel reader.
 
 | | mydash | Claude Code Artifacts |
 |---|---|---|
@@ -124,7 +128,7 @@ Claude Code can [publish pages to claude.ai](https://code.claude.com/docs/en/art
 
 ## Security
 
-- The server listens on `127.0.0.1`. Other devices reach it through `tailscale serve` inside your tailnet, or, after enabling the switch in **Open on another device**, on this computer's LAN addresses. New LAN browsers need an access code and approval from this computer or a trusted Tailscale connection; compare the pairing code before allowing a device. Approval covers all projects and workbench actions, not a single shared item. Each installation keeps independent content and authorization state; sharing Wi-Fi does not merge it. Revoke individual devices in the same panel; turning the switch off or changing the code disconnects all LAN devices. Temporary access lasts at most 12 hours, or 30 days with **Remember this device**; borrowed computers should log out when finished. LAN HTTP traffic is unencrypted: use Tailscale on company/shared networks and restrict its access rules to trusted devices. Requests from public addresses are refused. Do not expose it to the internet.
+- The server listens on `127.0.0.1`. Other devices reach it through `tailscale serve` inside your tailnet, or, after enabling the switch in **Open on another device**, on this computer's LAN addresses. New LAN browsers need an access code and approval from this computer or a trusted Tailscale connection; compare the pairing code before allowing a device. Approval covers all projects and workbench actions, not a single shared item. Each installation keeps independent content and authorization state; sharing Wi-Fi does not merge it. Revoke individual devices in the same panel; turning the switch off or changing the code disconnects all LAN devices. Temporary access lasts at most 12 hours, or 30 days with **Remember this device**; borrowed computers should log out when finished. LAN HTTP traffic is unencrypted: use Tailscale on company/shared networks and restrict its access rules to trusted devices. Requests from public addresses are refused. Do not expose the workbench to the internet. The optional document-sharing service uses a separate listener and a dedicated Funnel port.
 - Published HTML and SVG run from a separate port (a different origin), so a page's scripts cannot call the workbench. Workbench pages carry a Content Security Policy that allows only mydash's own scripts, so script inside a Markdown or Word document never runs there. The `Host` header is checked against DNS rebinding, and write requests need a custom header, JSON and a same-origin `Origin`.
 - `mydash publish` refuses `.env` files, private keys and files that contain API tokens, unless you pass `--allow-secret`.
 - A to-do item can tick itself by running a command; that only happens in lists the agent explicitly published as to-dos, the command is shown on the page, and it is never run for items published from another machine.

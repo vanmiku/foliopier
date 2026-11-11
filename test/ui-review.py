@@ -336,6 +336,73 @@ class ReviewUI(unittest.TestCase):
         self.go('/')
         self.assertEqual(self.page.locator('dialog[data-session-intro]').count(),0)
 
+    def file_navigation_fixture(self, slug):
+        folder = self.tmp / slug; folder.mkdir(exist_ok=True)
+        for i in range(18):
+            (folder / f'navigation-{i:02d}-long-name.md').write_text(f'# Document {i}\n\nBody {i}.')
+        self.cli('publish', str(folder), '--main', 'navigation-00-long-name.md',
+                 '--force-project', 'test', '--slug', slug, '--json')
+
+    def test_file_navigation_includes_files_after_fourteen(self):
+        self.file_navigation_fixture('file-navigation-all')
+        self.go('/p/test/file-navigation-all')
+        self.assertEqual(self.page.locator('.tabs a').count(), 18)
+        self.page.locator('.tabs a').last.click()
+        self.assertIn('navigation-17-long-name.md', self.page.locator('.tabs a.on').inner_text())
+        self.assertIn('Body 17.', self.page.locator('.sheet').inner_text())
+
+    def test_file_navigation_scroll_controls_and_current_file(self):
+        self.file_navigation_fixture('file-navigation-scroll')
+        for width in [390, 1366]:
+            with self.subTest(width=width):
+                self.page.set_viewport_size({'width': width, 'height': 900})
+                self.go('/p/test/file-navigation-scroll')
+                position = self.page.get_by_role('slider', name='File navigation position', exact=True)
+                self.assertEqual(position.count(), 1)
+                self.assertTrue(position.is_visible())
+                previous = self.page.get_by_role('button', name='Previous files', exact=True)
+                following = self.page.get_by_role('button', name='Next files', exact=True)
+                self.assertEqual(following.count(), 1)
+                self.assertTrue(previous.is_disabled())
+                following.click()
+                self.page.wait_for_function('document.querySelector(".tabs").scrollLeft > 100')
+                previous.click()
+                self.page.wait_for_function('document.querySelector(".tabs").scrollLeft < 2')
+                position.fill('500')
+                self.page.wait_for_function('() => { const e=document.querySelector(".tabs"); return Math.abs(e.scrollLeft/(e.scrollWidth-e.clientWidth)-.5) < .02; }')
+                self.page.locator('.tabs').focus()
+                self.page.keyboard.press('End')
+                self.page.wait_for_function('() => { const e=document.querySelector(".tabs"); return e.scrollLeft+e.clientWidth >= e.scrollWidth-2; }')
+                self.assertTrue(following.is_disabled())
+                self.page.locator('.tabs a').last.click()
+                self.page.wait_for_function('() => { const e=document.querySelector(".tabs"), a=e.querySelector(".on").getBoundingClientRect(), b=e.getBoundingClientRect(); return a.left>=b.left-1 && a.right<=b.right+1; }')
+                self.assertEqual(self.page.locator('.tabs a.on').get_attribute('aria-current'), 'page')
+                self.page.set_viewport_size({'width': 390, 'height': 900})
+                self.page.wait_for_function('() => { const e=document.querySelector(".tabs"), a=e.querySelector(".on").getBoundingClientRect(), b=e.getBoundingClientRect(); return a.left>=b.left-1 && a.right<=b.right+1; }')
+                self.assertLessEqual(self.page.evaluate('document.documentElement.scrollWidth'), width)
+                self.shot('file-navigation-' + str(width))
+        folder = self.tmp / 'file-navigation-short'; folder.mkdir()
+        for name in ['a.md', 'b.md']: (folder / name).write_text('# Short')
+        self.cli('publish', str(folder), '--force-project', 'test', '--slug', 'file-navigation-short', '--json')
+        self.go('/p/test/file-navigation-short')
+        self.assertFalse(self.page.get_by_role('slider', name='File navigation position', include_hidden=True).is_visible())
+        self.assertFalse(self.page.get_by_role('button', name='Next files', include_hidden=True).is_visible())
+        self.publish('file-navigation-single', '# Single file')
+        self.go('/p/test/file-navigation-single')
+        self.assertEqual(self.page.locator('[data-file-nav]').count(), 0)
+
+    def test_long_file_tab_fits_the_visible_navigation_strip(self):
+        folder = self.tmp / 'long-file-tab'; folder.mkdir()
+        name = 'very-long-file-name-' * 8 + '.md'
+        (folder / 'main.md').write_text('# Main')
+        (folder / name).write_text('# Long filename')
+        self.cli('publish', str(folder), '--main', 'main.md', '--force-project', 'test', '--slug', 'long-file-tab', '--json')
+        self.page.set_viewport_size({'width': 320, 'height': 900})
+        self.go('/p/test/long-file-tab')
+        self.page.locator('.tabs a').last.click()
+        self.page.wait_for_function('() => { const e=document.querySelector(".tabs"), a=e.querySelector(".on").getBoundingClientRect(), b=e.getBoundingClientRect(); return a.left>=b.left-1 && a.right<=b.right+1; }', timeout=3000)
+        self.assertIn(name, self.page.locator('.tabs a.on').inner_text())
+
     def test_header_controls_stay_in_place_when_expanded(self):
         self.header_fixture('header-stable')
         for lang in ['en', 'zh']:
@@ -473,7 +540,7 @@ class ReviewUI(unittest.TestCase):
         self.assertEqual(self.page.locator('body').get_attribute('data-version'), '1')
         self.assertTrue(self.page.locator('.version-update').is_visible())
         self.page.locator('dialog .ap-confirm').click()
-        self.page.wait_for_function('() => !document.querySelector("dialog")')
+        self.page.wait_for_function('() => !document.querySelector("dialog .cm-text")')
         r = json.loads((self.home / 'data/test/draft/responses.json').read_text())
         self.assertEqual(r['comments'][-1]['v'], 1)
         self.assertEqual(r['comments'][-1]['text'], 'A draft about v1')

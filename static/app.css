@@ -364,11 +364,31 @@ main { flex: 1; width: 100%; max-width: 1160px; margin: 0 auto; padding: 4px 32p
 .seen-banner ul { list-style: none; margin: 8px 0 0; padding: 8px 0 0; border-top: 1px solid var(--border); }
 .seen-banner li { display: flex; gap: 10px; padding: 2px 0; font-size: 13px; }
 .seen-banner li b { flex: none; font-size: 12px; color: var(--unread); }
-.tabs { display: flex; gap: 6px; margin-top: 12px; overflow-x: auto; scrollbar-width: none; }
-.tabs::-webkit-scrollbar { display: none; }
+.file-nav { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 6px; min-width: 0; margin-top: 12px; }
+.file-nav[data-overflow] { grid-template-columns: 34px minmax(0, 1fr) 34px; }
+.file-nav-step { display: none; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text-2); font: 24px/1 var(--sans); cursor: pointer; }
+.file-nav[data-overflow] .file-nav-step { display: inline-flex; }
+.file-nav-step:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.file-nav-step:disabled { opacity: .35; cursor: default; }
+.file-nav-scroll { display: none; grid-column: 2; width: 100%; min-width: 0; height: 16px; margin: 0; padding: 0; appearance: none; background: transparent; cursor: grab; }
+.file-nav[data-overflow] .file-nav-scroll { display: block; }
+.file-nav-scroll:active { cursor: grabbing; }
+.file-nav-scroll::-webkit-slider-runnable-track { height: 7px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--border); }
+.file-nav-scroll::-webkit-slider-thumb { appearance: none; width: var(--file-thumb-size, 36px); height: 9px; margin-top: -2px; border: 1px solid var(--text-3); border-radius: 5px; background: var(--text-3); }
+.file-nav-scroll::-moz-range-track { height: 5px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-2); }
+.file-nav-scroll::-moz-range-thumb { width: var(--file-thumb-size, 36px); height: 7px; border: 1px solid var(--text-3); border-radius: 5px; background: var(--text-3); }
+.tabs { display: flex; gap: 6px; min-width: 0; overflow-x: auto; padding-bottom: 8px; scrollbar-width: thin; scrollbar-color: var(--border-2) var(--surface-2); }
+.tabs::-webkit-scrollbar { height: 8px; }
+.tabs::-webkit-scrollbar-track { background: var(--surface-2); border-radius: 5px; }
+.tabs::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 5px; }
+.file-nav[data-file-ready] .tabs { padding-bottom: 0; scrollbar-width: none; }
+.file-nav[data-file-ready] .tabs::-webkit-scrollbar { display: none; }
 .tab { display: inline-flex; align-items: center; gap: 7px; flex: none; height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); font: 500 12.5px/1 var(--mono); text-decoration: none; }
 .tab:hover { border-color: var(--border-2); color: var(--text); }
 .tab-kind { font: 600 10.5px/1 var(--sans); color: var(--text-3); }
+.file-nav .tab { max-width: 100%; min-width: 0; }
+.file-nav .tab-kind { flex: none; }
+.tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .tab.on .tab-kind { color: var(--accent); }
 .files li, .sources li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 8px; font: 12.5px/1.5 var(--mono); }
@@ -684,7 +704,7 @@ pre.mermaid.failed { color: var(--text-2); text-align: left; white-space: pre-wr
   }
   @page { margin: 16mm 14mm; }
   html, body { background: #fff !important; }
-  .side, .side-mask, .topbar, .foot, .tabbar, .toast, .doc-actions, .doc-inspector, .tabs, .toc, .toc-m, .banner, .doc-rest .doc-note + *, .cm-panel, .ft-results, .arch-note, body::after { display: none !important; }
+  .side, .side-mask, .topbar, .foot, .tabbar, .toast, .doc-actions, .doc-inspector, .file-nav, .tabs, .toc, .toc-m, .banner, .doc-rest .doc-note + *, .cm-panel, .ft-results, .arch-note, body::after { display: none !important; }
   .app, .col, main, .doc-page, .doc-main { display: block !important; width: auto !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }
   .doc-head { padding: 0 0 8px !important; }
   .doc-title { font-size: 20pt !important; }
