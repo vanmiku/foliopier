@@ -103,8 +103,16 @@ class SharingUI(unittest.TestCase):
         if os.environ.get('MYDASH_UI_SHOTS'):p.screenshot(path=str(Path(os.environ['MYDASH_UI_SHOTS'])/'public-reader-mobile.png'),full_page=True)
         self.page.locator('[data-share-open]').click();self.page.locator('[data-share-tab=manage]').click();card=self.page.locator('[data-share-id="'+share_id+'"]')
         card.get_by_text('CSV: please check row B.',exact=True).wait_for(state='attached');self.assertIn('result.csv',card.inner_text())
-        card.locator('[data-share-action=revoke]').click();self.page.locator('[data-share-confirm-accept]').click()
-        p.reload();p.get_by_role('heading',name='This share is no longer available.').wait_for()
+        # A slower control request must finish before testing the visitor's next read.
+        self.page.evaluate('''id => { const fetch=window.fetch; window.fetch=(url,options) => String(url).endsWith('/api/shares/'+id) && options?.body && JSON.parse(options.body).action==='revoke' ? new Promise(resolve => setTimeout(resolve,500)).then(() => fetch(url,options)) : fetch(url,options); }''',share_id)
+        card.locator('[data-share-action=revoke]').click()
+        with self.page.expect_response(lambda r:r.url.endswith('/api/shares/'+share_id) and r.request.method=='POST') as stopped:
+            self.page.locator('[data-share-confirm-accept]').click()
+        self.assertEqual(stopped.value.status,200)
+        self.assertEqual(stopped.value.json()['share']['status'],'revoked')
+        card.locator('.share-owner-badge').filter(has_text='Stopped share').wait_for()
+        self.assertEqual(p.reload().status,410)
+        p.get_by_role('heading',name='This share is no longer available.').wait_for()
 
     def test_extending_expiry_keeps_an_open_visitor_and_renews_its_session(self):
         original=(datetime.now(timezone.utc)+timedelta(seconds=13)).isoformat()
