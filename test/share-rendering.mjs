@@ -11,6 +11,11 @@ test('static HTML preview resolves stylesheet images against the stylesheet dire
  const result=await renderSharedFile({id:'a'.repeat(32),project:'p',slug:'s',snapshot},'page.html');
  assert(result.html.includes('data:image/svg+xml;base64,'));assert(!result.html.includes('background-image:url(&quot;&quot;)'));
 });
+test('Markdown heading anchors keep the workbench styling and accessibility attributes',async()=>{
+ const snapshot=buildShareSnapshot({project:'p',slug:'s',version:1,main:'main.md',files:['main.md']});
+ const result=await renderSharedFile({id:'c'.repeat(32),project:'p',slug:'s',snapshot},'main.md');
+ assert.match(result.html,/<a[^>]*class="anchor"[^>]*aria-hidden="true"/);assert(result.html.includes('tabindex="-1"'));
+});
 test('cached public rendering never bypasses a missing or changed source',async()=>{
  const snapshot=buildShareSnapshot({project:'p',slug:'s',version:1,main:'main.md',files:['main.md']});
  const r={id:'b'.repeat(32),project:'p',slug:'s',snapshot};await renderSharedFile(r,'main.md');
