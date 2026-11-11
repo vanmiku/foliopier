@@ -9,7 +9,7 @@ else if(a.includes('status'))console.log(fs.existsSync(p)?fs.readFileSync(p,'utf
 else if(a.includes('off'))fs.writeFileSync(p,'{}');
 else if(a[0]==='funnel'){const port=Number(a.find(x=>x.startsWith('--https=')).split('=')[1]),proxy=a.find(x=>x.startsWith('http://'));fs.writeFileSync(p,JSON.stringify({Web:{['unit.tail.ts.net:'+port]:{Handlers:{'/':{Proxy:proxy}}}},AllowFunnel:{['unit.tail.ts.net:'+port]:true}}));if(process.env.MYDASH_TEST_FUNNEL_FAIL==='1'){process.stderr.write('command failed after configuring');process.exitCode=1;}}
 `);fs.chmodSync(path.join(bin,'tailscale'),0o755);process.env.PATH=bin+path.delimiter+process.env.PATH;
-const {updateConfig,readConfig,INSTALL_ID}=await import('../lib/store.mjs');const {configureSharing}=await import('../lib/share-network.mjs');
+const {updateConfig,readConfig,INSTALL_ID}=await import('../lib/store.mjs');const {configureSharing,shareNetworkStatus}=await import('../lib/share-network.mjs');
 const server=http.createServer((req,res)=>{res.writeHead(200,{'X-Mydash-Share-Id':INSTALL_ID});res.end('ok');});await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address().port;
 const seed=()=>updateConfig(()=>({access:'tailscale',service:'none',binDir:bin,port:4870,sharing:{enabled:true,localPort:port,publicPort:8443,publicUrl:'https://unit.tail.ts.net:8443',routeOwner:INSTALL_ID}}));
 const route=()=>fs.writeFileSync(configFile,JSON.stringify({Web:{'unit.tail.ts.net:8443':{Handlers:{'/':{Proxy:`http://127.0.0.1:${port}`}}}},AllowFunnel:{'unit.tail.ts.net:8443':true}}));
@@ -30,4 +30,11 @@ test('failed state revocation cannot resurrect old shares on the next enable',{s
  const rename=fsp.rename;fsp.rename=async(a,b)=>{if(b===path.join(home,'state','shares.json'))throw Object.assign(new Error('read-only state'),{code:'EACCES'});return rename(a,b);};
  try{await configureSharing('disable').catch(()=>{});}finally{fsp.rename=rename;}
  updateConfig(c=>({...c,sharing:{...c.sharing,enabled:true}}));assert.equal(verifyShareSession(share.id,auth.token),null);
+});
+
+test('external verification is not presented when the public route is missing',{skip:process.platform==='win32'},async()=>{
+ seed();route();updateConfig(c=>({...c,sharing:{...c.sharing,externalVerifiedAt:new Date().toISOString()}}));
+ assert.equal((await shareNetworkStatus({refresh:true})).externalVerified,true);
+ fs.writeFileSync(configFile,'{}');const status=await shareNetworkStatus({refresh:true});
+ assert.equal(status.externalVerified,false);assert.equal(status.externalVerifiedAt,null);
 });
