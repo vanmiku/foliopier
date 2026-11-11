@@ -134,9 +134,13 @@ mydash doctor
 - **更新由你决定。** mydash 大约每小时问一次这个仓库有没有新的正式版本，有的话顶栏会出现「更新」按钮。点一下、确认，就能看着进度条装好，装完点「确定」刷新页面；新版本起不来会自己退回旧版本。在设置里也可以改成夜里自动装，或者不再检查。
 - **agent 自己会用。** `mydash integrate claude` 和 `mydash integrate codex` 会写进两小段规则、一个 skill、需要的权限，以及把它们的提问带到这里的钩子。Codex 要你允许一次这些钩子：在首页点「允许」就行。所有改动都带标记，用 `--remove` 可以原样撤销；更新 mydash 时会一起更新，你的允许也会沿用。
 
+## 临时分享文档
+
+在“设置 → 互联网文档分享”中开启，再到文章右上角点击“分享”。选择文件、有效期、更新方式，以及是否允许 PDF 下载和私密留言。访客用链接和 8 位访问码阅读，无需加入你的 tailnet。主机需要保持在线；工作台与 Agent 对话仍保持私有，HTML 附件使用不运行脚本的静态预览。[设置与分享教程](docs/sharing.zh-CN.md)。
+
 ## 和 Claude Code Artifacts 有什么不同？
 
-Claude Code 自己也能[把页面发布到 claude.ai](https://code.claude.com/docs/en/artifacts)，要分享给别人看的页面用它更合适。mydash 适合只给自己看、而且应该留在自己机器上的产物。
+Claude Code 自己也能[把页面发布到 claude.ai](https://code.claude.com/docs/en/artifacts)，mydash 把产物保留在你的机器上，也可以通过独立的 Funnel 阅读器，用访问码临时分享选中的文档。
 
 | | mydash | Claude Code Artifacts |
 |---|---|---|
@@ -151,7 +155,7 @@ Claude Code 自己也能[把页面发布到 claude.ai](https://code.claude.com/d
   - 通过 `tailscale serve` 在你的 tailnet 里访问。
   - 开了 `--lan on` 后从同一 WiFi 访问：每台设备第一次要输访问码；输错次数有限制，用 `mydash lan reset` 可以作废所有设备。
 
-  公网来的请求一律拒绝。不要把它暴露到公网。
+  公网来的请求一律拒绝。不要把工作台暴露到公网。可选的文档分享服务使用独立监听端口和专用 Funnel 入口。
 - **网页产物隔离运行。** 发布的网页和 SVG 在单独的端口（不同的源）里运行，里面的脚本碰不到工作台。工作台页面带内容安全策略（CSP），只允许 mydash 自己的脚本，Markdown、Word 文档里夹带的脚本在工作台上一律不运行。
 - **防跨站攻击。** 服务会校验 `Host` 头，防 DNS 重绑定；写入请求必须带自定义头、用 JSON、来自同源的 `Origin`。
 - **防误发密钥。** `mydash publish` 会拒绝发布 `.env` 文件、私钥和含有 API token 的文件，除非加 `--allow-secret`。

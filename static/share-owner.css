@@ -1,0 +1,51 @@
+.share-action b { min-width: 17px; padding: 2px 4px; border-radius: 8px; background: var(--unread); color: #fff; font: 600 10px/1 var(--sans); }
+.share-owner-dialog { width: min(760px, calc(100vw - 28px)); max-height: calc(100dvh - 36px); padding: 22px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); overflow-y: auto; overscroll-behavior: contain; box-shadow: var(--shadow-1); }
+.share-owner-dialog::backdrop { background: #0008; }
+.share-owner-dialog h2 { margin: 0; font-size: 23px; line-height: 1.35; }
+.share-owner-dialog h3, .share-owner-settings h3 { font-size: 16px; margin: 20px 0 10px; }
+.share-owner-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.share-owner-tabs { display: flex; gap: 8px; margin: 18px 0 14px; }
+.share-owner-tabs .on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.share-owner-status { font-size: 13.5px; color: var(--text-2); overflow-wrap: anywhere; }
+.share-owner-status.error { color: var(--unread); }
+.share-owner-hint { font-size: 13.5px; color: var(--text-3); line-height: 1.6; }
+.share-owner-field { display: flex; flex-direction: column; gap: 6px; margin: 14px 0; font-size: 13.5px; color: var(--text-2); }
+.share-owner-field input, .share-owner-field select, .share-owner-copybox { min-width: 0; width: 100%; padding: 8px 10px; min-height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); }
+.share-owner-field input:focus, .share-owner-field select:focus { border-color: var(--accent); }
+.share-owner-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.share-owner-files { min-width: 0; border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px; margin: 18px 0; }
+.share-owner-files legend { padding: 0 5px; font-size: 13.5px; font-weight: 600; }
+.share-owner-files label, .share-owner-checks label { display: flex; align-items: center; gap: 8px; min-height: 34px; font-size: 13.5px; }
+.share-owner-files span { overflow-wrap: anywhere; min-width: 0; }
+.share-owner-files small { color: var(--text-3); font-size: 11.5px; margin-left: 6px; }
+.share-owner-selection-tools output { font-size: 12.5px; color: var(--text-3); }
+.share-owner-files input, .share-owner-checks input { flex: none; accent-color: var(--accent); width: 17px; height: 17px; }
+.share-owner-actions, .share-owner-checks { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; align-items: center; }
+.share-owner-actions .act, .share-owner-actions .btn, .share-owner-head .act { min-height: 34px; height: auto; padding: 7px 10px; line-height: 1.4; }
+.share-owner-danger { color: var(--unread); }
+.share-owner-network, .share-owner-result { padding: 12px 14px; border-radius: 9px; background: var(--accent-soft); margin: 14px 0; font-size: 13.5px; }
+.share-owner-result code { display: block; font-size: 24px; letter-spacing: 4px; padding: 6px 0; }
+.share-owner-result a, .share-owner-card a { overflow-wrap: anywhere; }
+.share-owner-preview iframe { display: block; width: 100%; min-height: 560px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); }
+.share-owner-preview .share-owner-head h3 { margin: 0; }
+.share-owner-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin: 14px 0; min-width: 0; }
+.share-owner-card h3 { margin: 0 0 6px; font-size: 16px; overflow-wrap: anywhere; }
+.share-owner-card p { margin: 8px 0; }
+.share-owner-badge { display: inline-block; padding: 2px 7px; border-radius: 6px; background: var(--surface-2); color: var(--text-2); font-size: 12.5px; }
+.share-owner-comment { padding: 11px 0; border-top: 1px solid var(--border); font-size: 13.5px; }
+.share-owner-comment p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.share-owner-comment small { display: block; color: var(--text-3); }
+.share-owner-edit { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 8px; }
+.share-owner-steps { padding-left: 24px; font-size: 13.5px; }
+.share-owner-steps li { margin: 11px 0; }
+.share-owner-steps span { color: var(--text-3); display: block; margin-top: 2px; }
+.share-owner-copybox { display: block; min-height: 100px; margin-top: 8px; }
+.share-owner-confirm { width: min(460px, calc(100vw - 28px)); }
+.share-owner-confirm p { white-space: pre-wrap; font-size: 14px; }
+@media (max-width: 700px) {
+  .share-owner-dialog { padding: 16px; max-height: calc(100dvh - 24px); }
+  .share-owner-grid { grid-template-columns: 1fr; gap: 0; }
+  .share-owner-field input, .share-owner-field select, .share-owner-copybox { font-size: 16px; }
+  .share-owner-preview iframe { min-height: 500px; }
+}
+@media print { .share-action, .share-owner-dialog, .share-owner-settings { display: none !important; } }

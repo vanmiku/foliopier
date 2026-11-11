@@ -626,13 +626,17 @@
   document.addEventListener('click', async e => {
     const ab = e.target.closest('.arch-btn');
     if (ab) {
+      if (ab.dataset.busy === '1') return;
+      ab.dataset.busy = '1'; const wasDisabled = ab.disabled; ab.disabled = true;
       const on = ab.dataset.archived !== '1';
       try {
+        if (on && window.mydashBeforeArchive && !await window.mydashBeforeArchive()) return;
         await post('/api/archive', { id: body.dataset.id, archived: on });
         ab.dataset.archived = on ? '1' : '0'; ab.textContent = on ? T('Unarchive') : T('Archive');
         toast(on ? T('Archived. It no longer shows in the lists.') : T('Back in the lists.'));
         refreshSide().catch(() => {});
       } catch { toast(T('That did not work. Try again in a moment.')); }
+      finally { delete ab.dataset.busy; ab.disabled = wasDisabled; }
       return;
     }
     const mb = e.target.closest('.mute-btn');

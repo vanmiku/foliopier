@@ -528,7 +528,7 @@ class ReviewUI(unittest.TestCase):
         self.assertEqual(self.page.locator('body').get_attribute('data-version'), '1')
         self.assertTrue(self.page.locator('.version-update').is_visible())
         self.page.locator('dialog .ap-confirm').click()
-        self.page.wait_for_function('() => !document.querySelector("dialog")')
+        self.page.wait_for_function('() => !document.querySelector("dialog .cm-text")')
         r = json.loads((self.home / 'data/test/draft/responses.json').read_text())
         self.assertEqual(r['comments'][-1]['v'], 1)
         self.assertEqual(r['comments'][-1]['text'], 'A draft about v1')

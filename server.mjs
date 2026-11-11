@@ -4,6 +4,13 @@ import { sessionRows, sessionSection, messageRows, sessionPage, stateLabel } fro
 // 两个端口：PORT 是工作台；CONTENT_PORT 只提供原始文件，网页类产物在这里运行，和工作台不同源，脚本碰不到工作台的接口。
 import http from 'node:http';
 import { HttpsAccess } from './lib/https-access.mjs';
+import { createShare, listShares, getShare, ownerShare, updateShare, resetShareCode, revokeShare, ownerShareComments, resolveShareComment } from './lib/shares.mjs';
+import { shareNetworkStatus, configureSharing, shareLocalPort } from './lib/share-network.mjs';
+import { createShareHandler } from './lib/share-server.mjs';
+import { buildShareSnapshot, shareResourcePath, safeAssetBytes } from './lib/share-resources.mjs';
+import { shareReaderPage } from './lib/share-public-views.mjs';
+import { findPdfBrowser } from './lib/share-pdf.mjs';
+import { externalFeedbackItems, resolveExternalFeedback } from './lib/share-feedback.mjs';
 import { CodexQuestions } from './lib/codex-questions.mjs';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -97,12 +104,12 @@ const hostOk = h => ALLOWED_HOSTS.has(h) || Boolean(TAILNET_MAIN?.test(h));
 const contentHostOk = h => CONTENT_HOSTS.has(h) || Boolean(TAILNET_CONTENT?.test(h));
 
 // 静态资源版本号（每次部署变化）
-const BUILD = crypto.createHash('sha1').update(['static/app.css', 'static/app.js', 'static/file-nav.js', 'static/lan-auth.js', 'static/sessions.js', 'static/delivery-ui.js', 'static/article-sessions.js', 'static/pdf-view.mjs', 'static/icon.svg', 'static/favicon.ico', 'static/icon-180.png', 'lib/locales/zh.mjs'].map(f => { try { return fs.statSync(path.join(APP, f)).mtimeMs; } catch { return 0; } }).join('|') + lang()).digest('hex').slice(0, 8);
+const BUILD = crypto.createHash('sha1').update(['static/app.css', 'static/app.js', 'static/file-nav.js', 'static/share-owner.js', 'static/share-owner.css', 'static/share-public.js', 'static/share-public.css', 'static/lan-auth.js', 'static/sessions.js', 'static/delivery-ui.js', 'static/article-sessions.js', 'static/pdf-view.mjs', 'static/icon.svg', 'static/favicon.ico', 'static/icon-180.png', 'lib/locales/zh.mjs'].map(f => { try { return fs.statSync(path.join(APP, f)).mtimeMs; } catch { return 0; } }).join('|') + lang()).digest('hex').slice(0, 8);
 setBuild(BUILD);
 // 浏览器端用到的译文：只挑 app.js / pdf-view.mjs 里 T('...') 用到的
 // 浏览器端的译文，按语言各算一份（页面语言可以按设备选，见 withLang）
 const I18N_JS = {};
-const i18nJs = l => (I18N_JS[l] ??= `window.__LANG=${JSON.stringify(l)};window.__T=${JSON.stringify(clientDict([path.join(APP, 'static', 'app.js'), path.join(APP, 'static', 'sessions.js'), path.join(APP, 'static', 'delivery-ui.js'), path.join(APP, 'static', 'article-sessions.js'), path.join(APP, 'static', 'pdf-view.mjs')], l))};`);
+const i18nJs = l => (I18N_JS[l] ??= `window.__LANG=${JSON.stringify(l)};window.__T=${JSON.stringify(clientDict([path.join(APP, 'static', 'app.js'), path.join(APP, 'static', 'sessions.js'), path.join(APP, 'static', 'delivery-ui.js'), path.join(APP, 'static', 'article-sessions.js'), path.join(APP, 'static', 'pdf-view.mjs'), path.join(APP, 'static', 'share-owner.js')], l))};`);
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -425,6 +432,7 @@ function accessInfo() {
 }
 
 let clientErrWindow = [];
+const sharePreviews = new Map();
 async function handlePost(req, res) {
   const json = (status, obj) => send(res, status, JSON.stringify(obj), 'application/json; charset=utf-8');
   if (req.headers['x-mydash'] !== '1') return json(403, { error: 'missing X-Mydash header' });
@@ -435,6 +443,41 @@ async function handlePost(req, res) {
   const url = new URL(req.url, 'http://local');
   const bodyLimit = url.pathname === '/api/sessions/images' ? 7 * 1024 * 1024 : 1024 * 1024;
   let body; try { body = JSON.parse(await readBody(req, bodyLimit) || '{}'); } catch (e) { return json(e.message === 'too large' ? 413 : 400, { error: e.message === 'too large' ? (url.pathname === '/api/sessions/images' ? t('Choose PNG, JPEG, WebP or GIF images, up to 5 MB each (4 images max).') : 'body too large (1 MB max)') : 'body is not JSON' }); }
+  if (url.pathname.startsWith('/api/shar')) {
+    if (req.mydashWhere === 'lan') return json(403, { error: t('Only the owner can manage internet sharing.') });
+    try {
+      if (url.pathname === '/api/sharing/setup') {
+        const status = await configureSharing(body.action, { ensureListener: syncPublicSharing });
+        return json(200, status);
+      }
+      if (url.pathname === '/api/shares/preview') {
+        const m=readMeta(body.project,body.slug),ver=m&&(body.version===undefined?latest(m):m.versions.find(v=>v.v===Number(body.version)));
+        if(!ver)return json(404,{error:t('Document not found.')});
+        const snapshot=buildShareSnapshot({project:body.project,slug:body.slug,files:body.files,main:body.main,version:ver.v});
+        const id=crypto.randomBytes(16).toString('hex');
+        for(const [key,p] of sharePreviews)if(p.until<Date.now())sharePreviews.delete(key);
+        if(sharePreviews.size>=30)sharePreviews.delete(sharePreviews.keys().next().value);
+        sharePreviews.set(id,{until:Date.now()+5*60_000,record:{id,project:body.project,slug:body.slug,main:body.main,title:String(body.title||ver.title).slice(0,200),publisher:String(body.publisher||'').slice(0,80),snapshot,allowComments:false,allowPdf:false,expiresAt:new Date(Date.now()+5*60_000).toISOString()}});
+        return json(200,{url:`/share-preview/${id}`});
+      }
+      if (url.pathname === '/api/shares') {
+        const result=await createShare(body);
+        return json(200,{...result,url:`${readConfig().sharing?.publicUrl||''}/s/${result.share.id}`});
+      }
+      const match=/^\/api\/shares\/([a-f0-9]{32})(?:\/comments\/([a-f0-9]{32}))?$/.exec(url.pathname);
+      if(match){
+        const [,id,cid]=match;let result;
+        if(cid&&body.action==='resolve')result={comment:await resolveShareComment(id,cid)};
+        else if(!cid&&body.action==='revoke')result={share:await revokeShare(id)};
+        else if(!cid&&body.action==='reset-code')result=await resetShareCode(id);
+        else if(!cid&&body.action==='approve-version')result={share:await updateShare(id,{approveVersion:true})};
+        else if(!cid&&body.action==='update')result={share:await updateShare(id,body)};
+        else return json(400,{error:t('Invalid sharing action.')});
+        return json(200,{...result,url:`${readConfig().sharing?.publicUrl||''}/s/${id}`});
+      }
+      return json(404,{error:t('Page not found.')});
+    }catch(e){return json(e.status||400,{error:t('Sharing could not be updated. Check the setup status and try again.'),code:e.code||'SHARING_ERROR',...(url.pathname==='/api/sharing/setup'?{status:await shareNetworkStatus({refresh:true})}:{})});}
+  }
   if (url.pathname === '/api/access') {
     if (req.mydashWhere === 'lan') return json(403, { error: 'only on this computer or the tailnet' });
     if (body.action === 'set') {
@@ -911,12 +954,14 @@ async function handleRemote(req, res, url) {
       if (!all && (m.project !== proj || (sl && m.slug !== sl))) continue;
       for (const c of openCm(readResp(m.project, m.slug))) out.push({ id: c.id, item: `${m.project}/${m.slug}`, title: m.title, url: baseUrl() + `/p/${encodeURIComponent(m.project)}/${encodeURIComponent(m.slug)}`, v: c.v, latest: latest(m).v, file: c.file, heading: c.heading, quote: c.quote, text: c.text, createdAt: c.createdAt });
     }
+    out.push(...externalFeedbackItems(all?{}:{project:proj,slug:sl||undefined}));
     return json(200, { ok: true, open: out });
   }
   if (url.pathname === '/api/remote/feedback/done' && req.method === 'POST') {
     let body; try { body = JSON.parse(await readBody(req, 64 * 1024) || '{}'); } catch { return json(400, { error: 'body is not JSON' }); }
     const ids = (Array.isArray(body.ids) ? body.ids : []).map(String); let n = 0;
     for (const m of index()) if (readResp(m.project, m.slug).comments.some(c => ids.includes(c.id) && c.status === 'open')) n += await resolveCm(m.project, m.slug, ids, { note: String(body.note || '') });
+    n += await resolveExternalFeedback(ids);
     if (n) broadcast('response', {});
     return json(200, { ok: true, resolved: n });
   }
@@ -1008,6 +1053,21 @@ async function handle(req, res) {
   }
   if (req.method === 'POST') return handlePost(req, res);
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method Not Allowed', 'text/plain; charset=utf-8');
+  if(url.pathname==='/api/sharing/status'||url.pathname==='/api/shares'){
+    if(req.mydashWhere==='lan')return send(res,403,JSON.stringify({error:t('Only the owner can manage internet sharing.')}),'application/json');
+    if(url.pathname==='/api/sharing/status')return send(res,200,JSON.stringify({...await shareNetworkStatus(),activeShares:listShares().filter(s=>s.status==='active').length}),'application/json; charset=utf-8',{'Cache-Control':'no-store'});
+    const filter={project:url.searchParams.get('project')||undefined,slug:url.searchParams.get('slug')||undefined};
+    return send(res,200,JSON.stringify({shares:listShares(filter),comments:url.searchParams.get('details')==='0'?[]:ownerShareComments(filter),publicUrl:readConfig().sharing?.publicUrl||''}),'application/json; charset=utf-8',{'Cache-Control':'no-store'});
+  }
+  if(url.pathname.startsWith('/share-preview/')){
+    if(req.mydashWhere==='lan')return send(res,403,'Forbidden');
+    const p=sharePreviews.get(url.pathname.split('/')[2]);if(!p||p.until<Date.now())return send(res,404,notFoundPage());
+    if(url.pathname.endsWith('/asset')){const rel=url.searchParams.get('file')||'',abs=shareResourcePath(p.record.snapshot,rel),type=mimeOf(rel);if(!abs||(!/^image\//.test(type)&&type!=='application/pdf'&&!/^font\//.test(type)))return send(res,404,notFoundPage());return send(res,200,safeAssetBytes(abs,rel),type,{'Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'; sandbox"});}
+    const nonce=crypto.randomBytes(18).toString('base64');
+    let html=await shareReaderPage({share:p.record,file:url.searchParams.get('f')||p.record.main,nonce,csrf:'',pdfReady:Boolean(findPdfBrowser()),preview:true});
+    html=html.replaceAll('/_share/static/','/static/').replaceAll('/_share/vendor/','/vendor/').replace('window.__SHARE=','window.__SHARE_PREVIEW=true;window.__SHARE=');
+    return send(res,200,html,'text/html; charset=utf-8',{'Cache-Control':'no-store','Content-Security-Policy':`default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; frame-src 'self' about:; connect-src 'self'; object-src 'none'; base-uri 'none'`});
+  }
   const segs = decodeSegs(url.pathname);
   if (!segs) return send(res, 400, 'Bad path encoding', 'text/plain; charset=utf-8');
 
@@ -1263,6 +1323,31 @@ function syncLan() {
 }
 open(handle, HOST, PORT, true);
 if (hasContent) open(handleContent, HOST, CONTENT_PORT, true);
+let publicShareServer=null,publicSharePort=null;
+const shareNotified=new Set();
+let publicSharingSync=Promise.resolve();
+function syncPublicSharing(){
+  const next=publicSharingSync.then(syncPublicSharingNow);
+  publicSharingSync=next.catch(()=>{});
+  return next;
+}
+async function syncPublicSharingNow(){
+  const sharing=readConfig().sharing||{},enabled=sharing.enabled===true||sharing.cleanupPending===true,port=shareLocalPort();
+  if(publicShareServer&&(!enabled||port!==publicSharePort)){
+    const srv=publicShareServer;publicShareServer=null;publicSharePort=null;
+    srv.closeAllConnections();await new Promise(r=>srv.close(r));
+  }
+  if(!enabled||publicShareServer)return;
+  const srv=http.createServer(createShareHandler({onComment:async(r,c)=>{
+    if(shareNotified.has(c.id))return;shareNotified.add(c.id);if(shareNotified.size>1000)shareNotified.delete(shareNotified.values().next().value);
+    broadcast('share-feedback',{project:r.project,slug:r.slug});
+    await sendPush({title:t('New external comment'),body:t('A visitor left feedback on a shared document.'),url:baseUrl()+`/p/${encodeURIComponent(r.project)}/${encodeURIComponent(r.slug)}`}).catch(()=>{});
+  }}));
+  srv.keepAliveTimeout=5000;srv.headersTimeout=10000;srv.requestTimeout=15000;
+  await new Promise((resolve,reject)=>{srv.once('error',reject);srv.listen(port,'127.0.0.1',resolve);});
+  publicShareServer=srv;publicSharePort=port;
+}
+syncPublicSharing().catch(e=>console.error(new Date().toISOString(),'share listener unavailable',e.code||'ERROR'));
 syncLan();
 setInterval(syncLan, 30_000).unref();
 setInterval(() => {
