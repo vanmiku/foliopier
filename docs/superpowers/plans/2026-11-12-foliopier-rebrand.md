@@ -31,36 +31,36 @@
 **Files:** `lib/brand.mjs`, `static/icon.svg`, raster icons/favicon, `lib/views.mjs`, `server.mjs`, `static/app.css`, `static/sw.js`, public share views/locales and other visible copy.
 **Interfaces:** Brand constants and SVG markup are trusted local values, with no new request trust or data-storage behavior.
 
-- [ ] Create the selected vector mark, companion artwork and practical raster/icon sizes.
-- [ ] Update visible English/Chinese text, document/PWA titles, notifications, share header/footer and PDF credits; preserve protocol keys and user-supplied variables.
-- [ ] Verify rendered English/Chinese home, article, settings and public reader, with desktop/mobile and light/dark checks.
-- [ ] Run i18n checks and affected page/share regressions.
+- [x] Create the selected vector mark, companion artwork and practical raster/icon sizes.
+- [x] Update visible English/Chinese text, document/PWA titles, notifications, share header/footer and PDF credits; preserve protocol keys and user-supplied variables.
+- [x] Verify rendered English/Chinese home, article, settings and public reader, with desktop/mobile and light/dark checks.
+- [x] Run i18n checks and affected page/share regressions.
 
 ### Task 2: CLI and installation compatibility
 
 **Files:** `package.json`, `package-lock.json`, CLI entry/wrappers, `lib/setup.mjs`, install/integration/checks output, affected install/upgrade tests.
 **Interfaces:** Both installed command names reach the same existing entry point and HOME/configuration. Legacy Agent hooks remain usable.
 
-- [ ] Add the foliopier command/shims on supported systems, retaining mydash aliases and safe cleanup.
-- [ ] Update user/Agent instructions and primary command examples without changing stored data or authorization.
-- [ ] Verify install → both commands → publish → reinstall/upgrade → uninstall in an isolated home; include Windows-mode coverage in CI.
+- [x] Add the foliopier command/shims on supported systems, retaining mydash aliases and safe cleanup.
+- [x] Update user/Agent instructions and primary command examples without changing stored data or authorization.
+- [x] Verify install → both commands → publish → reinstall/upgrade → uninstall in an isolated home; include Windows-mode coverage in CI.
 
 ### Task 3: Public documentation and release preparation
 
 **Files:** English/Chinese README, INSTALL/SECURITY/guides/welcome content, synthetic README screenshots, brand assets, CHANGELOG.md and version metadata.
 **Interfaces:** Installation points to the same renamed repository and stable release workflow; product capabilities retain documented limitations.
 
-- [ ] Rewrite README around read/review/share workflow, replace old visual branding and add compact installation/support links.
-- [ ] Audit other current public docs, brand links and visible copy; preserve historical release facts and compatibility identifiers where necessary.
-- [ ] Set 0.3.1 consistently and add release notes explaining the primary/legacy commands and preserved installation.
-- [ ] Run text hygiene, complete local tests, installation test and browser regressions; inspect image assets and links.
+- [x] Rewrite README around read/review/share workflow, replace old visual branding and add compact installation/support links.
+- [x] Audit other current public docs, brand links and visible copy; preserve historical release facts and compatibility identifiers where necessary.
+- [x] Set 0.3.1 consistently and add release notes explaining the primary/legacy commands and preserved installation.
+- [x] Run text hygiene, complete local tests, installation test and browser regressions; inspect image assets and links.
 
 ### Task 4: Independent review and GitHub landing
 
 **Files:** Final branch and GitHub repository settings.
 **Interfaces:** Existing repository identity, PR/issue history and old URL redirects are retained.
 
-- [ ] Have a fresh reviewer examine the whole branch for compatibility, privacy, branding omissions and documentation accuracy; fix findings locally.
+- [x] Have a fresh reviewer examine the whole branch for compatibility, privacy, branding omissions and documentation accuracy; fix findings locally.
 - [ ] Push one reviewable branch/PR and require all five CI groups to succeed at the exact head.
 - [ ] Rename the existing repository to vanmiku/foliopier, update About/topics and local remote, verify old Git URL redirects.
 - [ ] Merge with match-head-commit; follow main CI and automatic v0.3.1 release.

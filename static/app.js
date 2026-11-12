@@ -392,13 +392,13 @@
     const notice = $('.connection-notice'); if (!notice) return;
     notice.hidden = !show;
     if (!show || notice.childElementCount) return;
-    const title = document.createElement('strong'); title.textContent = T('Cannot connect to mydash. Reconnecting…');
+    const title = document.createElement('strong'); title.textContent = T('Cannot connect to FolioPier AI. Reconnecting…');
     const hint = document.createElement('span');
     const local = $('meta[name="mydash-local-url"]');
     const onHost = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
     hint.textContent = !onHost && local?.dataset.tailnet === '1'
-      ? T('If you are on the computer running mydash, use its local address. On other devices, check Tailscale on both computers.')
-      : T('Check that the computer running mydash is awake and its service is running.');
+      ? T('If you are on the computer running FolioPier AI, use its local address. On other devices, check Tailscale on both computers.')
+      : T('Check that the computer running FolioPier AI is awake and its service is running.');
     notice.append(title, hint);
     if (local && !onHost) {
       const link = document.createElement('a'); link.className = 'connection-local';
@@ -553,7 +553,7 @@
     if (!e.target.closest('.reach-btn')) return;
     let info;
     const get = async () => { const r = await fetch('/api/access', { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return r.json(); };
-    try { info = await get(); } catch { toast(T('Only the computer running mydash, or your tailnet, can show this.')); return; }
+    try { info = await get(); } catch { toast(T('Only the computer running FolioPier AI, or your tailnet, can show this.')); return; }
     const dlg = modal(`<h3 id="access-title">${T('Open on another device')}</h3><p class="access-computer"></p>
       <section class="access-local" hidden></section>
       <section class="access-tailnet" hidden></section>
@@ -571,7 +571,7 @@
       const local = $('.access-local', dlg);
       if (x.local) {
         local.hidden = false;
-        local.innerHTML = `<h4>${T('On the computer running mydash:')}</h4><a class="ad-url" href="${escH(x.local)}">${escH(x.local)}</a><p>${T('Save this local address as a bookmark on that computer. It works even when Tailscale is off. It does not open mydash on other devices.')}</p>`;
+        local.innerHTML = `<h4>${T('On the computer running FolioPier AI:')}</h4><a class="ad-url" href="${escH(x.local)}">${escH(x.local)}</a><p>${T('Save this local address as a bookmark on that computer. It works even when Tailscale is off. It does not open FolioPier AI on other devices.')}</p>`;
       }
       const tail = $('.access-tailnet', dlg);
       if (x.tailnet) { tail.hidden = false; tail.innerHTML = `<h4>${T('Over Tailscale')}</h4><a class="ad-url" href="${escH(x.tailnet)}">${escH(x.tailnet)}</a><p>${T('Devices permitted to reach this node by your Tailscale access rules can open it remotely.')}</p><p>${T('This address needs Tailscale. If you turn it off on the hosting computer, use the local address there instead.')}</p>`; }
@@ -668,7 +668,7 @@
   function showSessionIntro(force = false) {
     if (document.hidden || $('dialog[open]')) return;
     if (!force && (body.dataset.sessionFeature !== 'available' || store.get(sessionIntroKey) || dirty.size || document.activeElement?.matches('input, textarea, [contenteditable="true"]'))) return;
-    const dlg = modal(`<div class="session-feature-intro"><p class="feature-kicker">${escH(T('New in mydash'))}</p><h3 id="session-intro-title">${escH(T('New: continue the conversation beside your document'))}</h3>
+    const dlg = modal(`<div class="session-feature-intro"><p class="feature-kicker">${escH(T('New in FolioPier AI'))}</p><h3 id="session-intro-title">${escH(T('New: continue the conversation beside your document'))}</h3>
       <div class="feature-tabs"><span>${escH(T('Contents'))}</span><strong>Codex</strong><span>Claude Code</span></div>
       <p>${escH(T('Read a document, check your project’s recent conversation, and message a connected agent without leaving the page.'))}</p>
       <p class="set-hint">${escH(T('Viewing and sending are separate switches. When viewing is on, devices with workbench access can read the original conversation.'))}</p>
@@ -727,7 +727,7 @@
     function showState(kind) {
       const sub = data.submission;
       if (kind === 'submitted' && sub) {
-        stateBox.innerHTML = `<p class="ap-ok">${sub.status === 'done' ? T('Your agent has handled this.') : T('Submitted {time}. It is saved in mydash.', { time: when(sub.submittedAt) })}</p>
+        stateBox.innerHTML = `<p class="ap-ok">${sub.status === 'done' ? T('Your agent has handled this.') : T('Submitted {time}. It is saved in FolioPier AI.', { time: when(sub.submittedAt) })}</p>
           <div class="ap-btns"><button type="button" class="ap-edit">${T('Change my answers')}</button><button type="button" class="ap-copy">${T('Copy answers for the agent')}</button></div>`;
         $('.ap-edit', stateBox).addEventListener('click', () => { lock(false); showState('editing'); });
         $('.ap-copy', stateBox).addEventListener('click', async () => {
@@ -940,7 +940,7 @@
   // 更新进程把走到哪一步记在 running.stage；服务重启那一会儿问不通，算「正在重启」
   const UPD_STAGES = {
     queued: [3, 10, T('Starting…')], fetch: [10, 24, T('Downloading the new version…')], switch: [24, 38, T('Switching to the new version…')],
-    deps: [38, 62, T('Installing dependencies…')], install: [62, 80, T('Installing and restarting mydash…')], restart: [80, 90, T('mydash is restarting…')],
+    deps: [38, 62, T('Installing dependencies…')], install: [62, 80, T('Installing and restarting FolioPier AI…')], restart: [80, 90, T('FolioPier AI is restarting…')],
     check: [90, 97, T('Checking that it works…')], rollback: [70, 95, T('That did not work. Going back to the old version…')],
   };
   const updApi = async (action) => {
@@ -974,7 +974,7 @@
   function updResult(last) {
     const ok = Boolean(last?.ok);
     const notes = ok ? last.human || [] : [last?.error || T('The update stopped without a result. See ~/.mydash/logs/update.log.')];
-    const dlg = updDialog(`<div class="upd-dlg ${ok ? 'upd-ok' : 'upd-bad'}" role="status"><h3>${escH(ok ? T('mydash was updated to {v}.', { v: last.to }) : T('mydash could not update to {v}.', { v: last?.to || updTo || '?' }))}</h3>
+    const dlg = updDialog(`<div class="upd-dlg ${ok ? 'upd-ok' : 'upd-bad'}" role="status"><h3>${escH(ok ? T('FolioPier AI was updated to {v}.', { v: last.to }) : T('FolioPier AI could not update to {v}.', { v: last?.to || updTo || '?' }))}</h3>
       ${ok ? '<div class="upd-prog done" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><i style="width:100%"></i></div>' : ''}
       ${notes.length ? `<ul class="upd-notes">${notes.map(n => `<li>${escH(n)}</li>`).join('')}</ul>` : ''}
       ${ok && last.url ? `<a class="upd-link" href="${escH(last.url)}" target="_blank" rel="noopener">${escH(T('What’s new'))}</a>` : ''}
@@ -1009,14 +1009,14 @@
     let s; try { s = await updApi(); } catch { toast(T('That did not work. Try again in a moment.')); return; }
     if (s.latest?.version) updTo = s.latest.version;
     if (s.running) { if (!updTracking) updSince = s.last?.at || ''; updProgress(); updTrack(); return; }
-    if (!s.available) { toast(T('mydash is up to date ({v}).', { v: s.current })); updTop(false); return; }
+    if (!s.available) { toast(T('FolioPier AI is up to date ({v}).', { v: s.current })); updTop(false); return; }
     const news = s.latest.url ? `<a class="upd-link" href="${escH(s.latest.url)}" target="_blank" rel="noopener">${escH(T('What’s new in {v}', { v: s.latest.version }))}</a>` : '';
     const body = s.canUpdate
-      ? `<p>${escH(T('You have {cur}. Updating takes a minute or two and mydash restarts by itself. If the new version does not start, it goes back to {cur}.', { cur: s.current }))}</p>${news}
+      ? `<p>${escH(T('You have {cur}. Updating takes a minute or two and FolioPier AI restarts by itself. If the new version does not start, it goes back to {cur}.', { cur: s.current }))}</p>${news}
         <div class="upd-dlg-acts"><button type="button" class="upd-btn quiet" data-close>${escH(T('Not now'))}</button><button type="button" class="upd-btn" data-upd-go>${escH(T('Update'))}</button></div>`
-      : `<p>${escH(T('This copy cannot update itself from the page. On the computer running mydash, run:'))}</p><pre class="upd-cmd"><code>mydash update</code></pre>${news}
+      : `<p>${escH(T('This copy cannot update itself from the page. On the computer running FolioPier AI, run:'))}</p><pre class="upd-cmd"><code>foliopier update</code></pre>${news}
         <div class="upd-dlg-acts"><button type="button" class="upd-btn quiet" data-close>${escH(T('Close'))}</button></div>`;
-    const dlg = updDialog(`<div class="upd-dlg"><h3>${escH(T('Update mydash to {v}?', { v: s.latest.version }))}</h3>${body}</div>`);
+    const dlg = updDialog(`<div class="upd-dlg"><h3>${escH(T('Update FolioPier AI to {v}?', { v: s.latest.version }))}</h3>${body}</div>`);
     $('[data-upd-go]', dlg)?.addEventListener('click', async e => {
       const go = e.currentTarget; go.disabled = true;
       updSince = s.last?.at || '';
@@ -1050,7 +1050,7 @@
   function bootResult(dlg, boot) {
     const last = boot.last; const ok = !boot.pending;
     const unavailable = last?.code === 'interaction-unavailable' || /-60007\b/.test(last?.error || '');
-    const msg = ok ? T('mydash now starts at boot, before anyone logs in.') : last?.canceled ? T('Cancelled. Nothing was changed.')
+    const msg = ok ? T('FolioPier AI now starts at boot, before anyone logs in.') : last?.canceled ? T('Cancelled. Nothing was changed.')
       : unavailable ? T('macOS could not open its authorization prompt. Sign in or unlock this Mac, or run the local command below.')
       : last?.code === 'timeout' ? T('The authorization request timed out. Try again on this Mac.')
       : T('That did not work: {err}', { err: last?.error || '?' });
@@ -1074,8 +1074,8 @@
     const b = e.target.closest('[data-setup]'); if (!b || b.disabled) return;
     const act = b.dataset.setup;
     const dlg = act === 'codex-trust'
-      ? setupDialog(T('Allow the mydash hooks in Codex?'), [T('They let Codex send its choice questions and command approvals to mydash as well, and note when it is busy. New Codex sessions use them; when mydash updates them later, your permission carries over.')], T('Allow'))
-      : setupDialog(T('Start mydash at boot?'), [T('This needs an administrator. When you continue, macOS shows its password prompt on this Mac’s screen; type your login password there. mydash never sees it.'), T('Not at the Mac? Use Screen Sharing, or tap this again when you are back.')], T('Continue'));
+      ? setupDialog(T('Allow the FolioPier AI hooks in Codex?'), [T('They let Codex send its choice questions and command approvals to FolioPier AI as well, and note when it is busy. New Codex sessions use them; when FolioPier AI updates them later, your permission carries over.')], T('Allow'))
+      : setupDialog(T('Start FolioPier AI at boot?'), [T('This needs an administrator. When you continue, macOS shows its password prompt on this Mac’s screen; type your login password there. FolioPier AI never sees it.'), T('Not at the Mac? Use Screen Sharing, or tap this again when you are back.')], T('Continue'));
     $('[data-setup-go]', dlg).addEventListener('click', async ev => {
       const go = ev.currentTarget; go.disabled = true;
       try { await setupApi(act); }
@@ -1087,8 +1087,8 @@
         } else { go.disabled = false; toast(T('That did not work. Try again in a moment.')); }
         return;
       }
-      if (act === 'codex-trust') { dlg.close(); toast(T('Allowed. New Codex sessions use mydash.')); refreshList().catch(() => {}); return; }
-      $('.ad-body', dlg).innerHTML = `<div class="upd-dlg"><h3>${escH(T('Type your password on the Mac'))}</h3><div class="upd-prog" role="progressbar" aria-label="${escH(T('Waiting'))}"><i style="width:100%"></i></div><p>${escH(T('A macOS password prompt is open on this Mac’s screen. mydash restarts once it is done.'))}</p></div>`;
+      if (act === 'codex-trust') { dlg.close(); toast(T('Allowed. New Codex sessions use FolioPier AI.')); refreshList().catch(() => {}); return; }
+      $('.ad-body', dlg).innerHTML = `<div class="upd-dlg"><h3>${escH(T('Type your password on the Mac'))}</h3><div class="upd-prog" role="progressbar" aria-label="${escH(T('Waiting'))}"><i style="width:100%"></i></div><p>${escH(T('A macOS password prompt is open on this Mac’s screen. FolioPier AI restarts once it is done.'))}</p></div>`;
       dlg.setAttribute('aria-busy', 'true');
       bootWait(dlg).finally(() => dlg.removeAttribute('aria-busy'));
     });
@@ -1272,7 +1272,7 @@
       }
       if (e.target.closest('.set-gen')) {
         const a = new Uint8Array(10); crypto.getRandomValues(a);
-        ed.querySelector('[name="url"]').value = 'https://ntfy.sh/mydash-' + [...a].map(x => 'abcdefghijkmnpqrstuvwxyz23456789'[x % 32]).join('');
+        ed.querySelector('[name="url"]').value = 'https://ntfy.sh/foliopier-' + [...a].map(x => 'abcdefghijkmnpqrstuvwxyz23456789'[x % 32]).join('');
         editorChanged();
       }
       const tg = e.target.closest('.set-tg'); if (!tg) return;
@@ -1310,8 +1310,8 @@
       const key = s => { const r = atob((s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(r, c => c.charCodeAt(0)); };
       async function refresh() {
         if (!wp.dataset.https) return;
-        if (!window.isSecureContext) { state.innerHTML = `${escH(T('Open mydash over HTTPS to turn this on here:'))} <a href="${escH(wp.dataset.https)}/settings">${escH(wp.dataset.https)}</a>`; return; }
-        if (!('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window)) { state.textContent = T('This browser cannot receive web push. On iPhone, add mydash to the home screen and open it from there.'); return; }
+        if (!window.isSecureContext) { state.innerHTML = `${escH(T('Open FolioPier AI over HTTPS to turn this on here:'))} <a href="${escH(wp.dataset.https)}/settings">${escH(wp.dataset.https)}</a>`; return; }
+        if (!('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window)) { state.textContent = T('This browser cannot receive web push. On iPhone, add FolioPier AI to the home screen and open it from there.'); return; }
         const reg = await navigator.serviceWorker.register('/sw.js');
         const sub = await reg.pushManager.getSubscription();
         on.hidden = Boolean(sub); off.hidden = !sub;

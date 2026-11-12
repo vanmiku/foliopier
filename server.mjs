@@ -1,3 +1,4 @@
+import { BRAND_NAME, BRAND_SHORT, BRAND_COLOR } from './lib/brand.mjs';
 import { projectConversationContext, listSessions, readSession, refreshSession, connectSession, cancelAppDelivery, uploadSessionImage, readSessionImage, sessionImageStorage, cleanSessionImages, discardSessionImage, sendSession, sessionMatches, replyAfter } from './lib/sessions.mjs';
 import { sessionRows, sessionSection, messageRows, sessionPage, stateLabel } from './lib/sessionviews.mjs';
 // mydash 网页服务：只监听 127.0.0.1。访问方式由安装时选：只本机，或由 tailscale serve 转发到 tailnet。
@@ -208,7 +209,7 @@ function schedulePromptPush(p) {
   setTimeout(() => {
     const cur = getPrompt(p.id); if (cur?.status !== 'pending') return;
     const c = readConfig(); const base = shareUrl().replace(/\/+$/, '');
-    const who = agentInfo(p.tool)?.name || 'mydash';
+    const who = agentInfo(p.tool)?.name || BRAND_NAME;
     sendPush({ title: t('{tool} is waiting for you · {project}', { tool: who, project: projectNames()[p.project]?.name || p.project }), body: promptTitle(p).slice(0, 200), link: `${base}/prompts/${p.id}` })
       .then(r => { if (!r.ok && r.error !== 'not configured') console.error(new Date().toISOString(), `prompt push failed: ${r.error}`); });
   }, Math.max(0, delay)).unref();
@@ -240,7 +241,7 @@ setInterval(() => notifier.tick(() => {
   const todo = items.reduce((a, m) => a + (todoState(m)?.left || 0), 0);
   if (!n && !pend && !todo) return null;
   const body = [pend ? t('{n} awaiting your approval', { n: pend }) : '', todo ? t('{n} to-do left|{n} to-dos left', { n: todo }) : ''].filter(Boolean).join(' · ');
-  return { title: t('mydash today: {n} new|mydash today: {n} new', { n }), body: body || t('Tap to see today’s summary') };
+  return { title: t('FolioPier AI today: {n} new|FolioPier AI today: {n} new', { n }), body: body || t('Tap to see today’s summary') };
 }, cfg.timezone || undefined), 30_000).unref();
 // 设置页传来的渠道字段：字符串当作网址；密码类留空就沿用已保存的；主字段为空就是关掉（返回 null）
 // 设置页填的值和存着的合起来：密码类、带密钥的网址留空就用存着的
@@ -266,14 +267,14 @@ async function updateTick() {
   const last = readUpdate().last;
   if (last?.auto && !last.pushed) {
     writeUpdate(x => ({ ...x, last: { ...x.last, pushed: true } }));
-    await sendPush({ title: last.ok ? t('mydash updated to {v}', { v: last.to }) : t('mydash could not update to {v}', { v: last.to }), body: (last.ok ? last.human?.[0] || '' : last.error || '').slice(0, 300), link }).catch(() => {});
+    await sendPush({ title: last.ok ? t('FolioPier AI updated to {v}', { v: last.to }) : t('FolioPier AI could not update to {v}', { v: last.to }), body: (last.ok ? last.human?.[0] || '' : last.error || '').slice(0, 300), link }).catch(() => {});
   }
   const s = await checkForUpdate();
   if (s.mode === 'off' || !s.available || s.running) return;
   const v = s.latest.version;
   if (readUpdate().notified !== v) {
     writeUpdate(x => ({ ...x, notified: v }));
-    await sendPush({ title: t('mydash {v} is available', { v }), body: s.mode === 'auto' ? t('It installs itself tonight.') : t('Open Settings in mydash to update.'), link }).catch(() => {});
+    await sendPush({ title: t('FolioPier AI {v} is available', { v }), body: s.mode === 'auto' ? t('It installs itself tonight.') : t('Open Settings in FolioPier AI to update.'), link }).catch(() => {});
   }
   if (s.mode !== 'auto' || !s.canUpdate || readUpdate().autoTried === v) return;
   const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: c.timezone || undefined, hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
@@ -339,8 +340,8 @@ const VENDOR_FILES = {
 const PDFJS = path.join(NM, 'pdfjs-dist');
 
 const MANIFEST = JSON.stringify({
-  name: 'mydash', short_name: 'mydash', start_url: '/', scope: '/', display: 'standalone',
-  background_color: '#f6f6f7', theme_color: '#3355ff', lang: htmlLang(),
+  name: BRAND_NAME, short_name: BRAND_SHORT, start_url: '/', scope: '/', display: 'standalone',
+  background_color: '#f6f6f7', theme_color: BRAND_COLOR, lang: htmlLang(),
   icons: [{ src: `/static/icon.svg?b=${BUILD}`, sizes: 'any', type: 'image/svg+xml' }, { src: `/static/icon-192.png?b=${BUILD}`, sizes: '192x192', type: 'image/png' }, { src: `/static/icon-512.png?b=${BUILD}`, sizes: '512x512', type: 'image/png' }, { src: `/static/icon-180.png?b=${BUILD}`, sizes: '180x180', type: 'image/png' }],
 });
 
@@ -840,7 +841,7 @@ async function handlePost(req, res) {
   if (url.pathname === '/api/notify-test') {
     const type = String(body.type || '');
     if (type === 'webpush' && !subscriptions().length) return json(200, { ok: false, error: t('No device has turned on web push yet.') });
-    if (type === 'webpush') { const https = verifiedHttps(); return json(200, await sendWebPush({ title: 'mydash', body: t('Test notification'), link: https || baseUrl() }, { subject: https || baseUrl() })); }
+    if (type === 'webpush') { const https = verifiedHttps(); return json(200, await sendWebPush({ title: BRAND_NAME, body: t('Test notification'), link: https || baseUrl() }, { subject: https || baseUrl() })); }
     // 试已经存好的那一个（id），或者正在填的表单（type + fields；改的时候带上 id，留空的密钥用存着的）
     const saved = body.id ? notifySettings().channels.find(c => c.id === body.id) : null;
     if (body.id && !saved) return json(404, { error: 'no such channel' });
@@ -849,7 +850,7 @@ async function handlePost(req, res) {
     const ch = body.fields ? mergeChannel(kind, body.fields, saved, body.clear) : saved;
     const bad = ch ? badField(ch) : CHANNELS[kind].main;
     if (bad) return json(400, { error: `${bad} is missing or invalid`, field: bad });
-    return json(200, await sendTo(ch, { title: 'mydash', body: t('Test notification'), link: baseUrl() }));
+    return json(200, await sendTo(ch, { title: BRAND_NAME, body: t('Test notification'), link: baseUrl() }));
   }
   // 网页推送：这台设备的浏览器订阅 / 取消
   if (url.pathname === '/api/webpush/subscribe') {
@@ -1354,7 +1355,7 @@ setInterval(() => {
   const active = new Set(accessDevices().authorized.map(x => x.id));
   for (const id of lanResponses.keys()) if (!active.has(id)) closeLanResponses(id);
 }, 10_000).unref();
-console.log(`${new Date().toISOString()} mydash started http://${HOST}:${PORT}  content :${CONTENT_PORT}  data ${DATA_DIR}  url ${baseUrl()}${LAN ? '  lan ' + lanUrls(PORT).join(' ') : ''}`);
+console.log(`${new Date().toISOString()} ${BRAND_NAME} started http://${HOST}:${PORT}  content :${CONTENT_PORT}  data ${DATA_DIR}  url ${baseUrl()}${LAN ? '  lan ' + lanUrls(PORT).join(' ') : ''}`);
 // 独立 Tailscale 节点：登录批准后自动配好转发
 if (cfg.access === 'tailscale-node') watchNode({
   tcp: () => (Array.isArray(readConfig().nodeTcp) ? readConfig().nodeTcp : []), // mydash forward 22 5900

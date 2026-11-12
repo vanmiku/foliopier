@@ -164,16 +164,16 @@
       contextReason ||
       (waking()
         ? T(
-            'Opening this conversation on the computer hosting mydash. You can keep reading or queue a message.'
+            'Opening this conversation on the computer hosting FolioPier AI. You can keep reading or queue a message.'
           )
         : sendReason === 'app_login_required'
-          ? T('Sign in to the Mac hosting mydash to wake Codex App. Your queued message is kept.')
+          ? T('Sign in to the Mac hosting FolioPier AI to wake Codex App. Your queued message is kept.')
           : ['app_wake_timeout', 'app_wake_failed', 'app_wake_busy'].includes(sendReason)
             ? T(
                 'Automatic connection did not finish. Retry connection; your draft and queued messages are kept.'
               )
             : canConnect
-              ? T('mydash can open this original conversation on the hosting Mac without sending a message.')
+              ? T('FolioPier AI can open this original conversation on the hosting Mac without sending a message.')
               : !id
                 ? agent === 'codex'
                   ? T(
@@ -195,7 +195,7 @@
                             )
                           : sendReason === 'claude_login'
                             ? T(
-                                'Sign in to Claude Code on this computer, then try again. mydash uses your existing account.'
+                                'Sign in to Claude Code on this computer, then try again. FolioPier AI uses your existing account.'
                               )
                             : sendReason === 'claude_forbidden'
                               ? T(
@@ -203,7 +203,7 @@
                                 )
                               : sendReason === 'claude_trusted'
                                 ? T(
-                                    'Claude requires trusted-device verification for this conversation. Continue in Claude App; mydash cannot send to protected sessions yet.'
+                                    'Claude requires trusted-device verification for this conversation. Continue in Claude App; FolioPier AI cannot send to protected sessions yet.'
                                   )
                                 : sendReason === 'claude_offline'
                                   ? T(
@@ -222,11 +222,11 @@
                             )
                           : sendReason === 'daemon_readonly'
                             ? T(
-                                'Codex does not allow direct input to this session. Continue in the original client; mydash will not change its permissions.'
+                                'Codex does not allow direct input to this session. Continue in the original client; FolioPier AI will not change its permissions.'
                               )
                             : sendReason === 'app_not_open'
                               ? T(
-                                  'Codex App is running, but this conversation is not connected. Open this exact conversation on the computer hosting mydash, then retry.'
+                                  'Codex App is running, but this conversation is not connected. Open this exact conversation on the computer hosting FolioPier AI, then retry.'
                                 )
                               : sendReason === 'app_closed'
                                 ? T('Start Codex App on this computer to connect this conversation.')
@@ -247,7 +247,7 @@
                                             'Codex App did not respond. Keep the App running and open this conversation, then try again.'
                                           )
                                         : T(
-                                            'Open this conversation in Codex App on this computer. mydash will connect automatically.'
+                                            'Open this conversation in Codex App on this computer. FolioPier AI will connect automatically.'
                                           ));
     const explanation = $('#article-send-reason');
     explanation.textContent = reason;

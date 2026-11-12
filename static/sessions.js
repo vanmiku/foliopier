@@ -135,13 +135,13 @@
             ? ['opening', 'connecting'].includes(data.session.connection?.state)
               ? T('Connecting to Codex App…')
               : data.session.connection?.reason === 'app_login_required'
-                ? T('Sign in to the Mac hosting mydash to wake Codex App. Your queued message is kept.')
+                ? T('Sign in to the Mac hosting FolioPier AI to wake Codex App. Your queued message is kept.')
                 : data.session.connection?.state === 'failed'
                   ? T(
                       'Automatic connection did not finish. Retry connection; your draft and queued messages are kept.'
                     )
                   : T(
-                      'mydash can open this original conversation on the hosting Mac without sending a message.'
+                      'FolioPier AI can open this original conversation on the hosting Mac without sending a message.'
                     )
             : data.session.sendReason === 'daemon_not_loaded'
               ? T(
@@ -149,7 +149,7 @@
                 )
               : data.session.sendReason === 'daemon_readonly'
                 ? T(
-                    'Codex does not allow direct input to this session. Continue in the original client; mydash will not change its permissions.'
+                    'Codex does not allow direct input to this session. Continue in the original client; FolioPier AI will not change its permissions.'
                   )
                 : data.session.sendReason === 'app_history_limit'
                   ? T(

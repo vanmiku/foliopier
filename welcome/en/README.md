@@ -1,12 +1,14 @@
-# Welcome to mydash
+# Welcome to FolioPier AI
 
-mydash is installed and working. This is the first item, in the **mydash** project. From now on, whatever your coding agents publish shows up on the home page, grouped by the folder each session started in.
+FolioPier AI is installed and working. This is the first item, in the **FolioPier AI** project. From now on, whatever your coding agents publish shows up on the home page, grouped by the folder each session started in.
 
-![mydash](logo.png)
+![FolioPier AI](logo.png)
+
+<img src="companion.svg" width="96" alt="FolioPier AI paper companion">
 
 ## How it works
 
-- Your agent runs `mydash publish <file> --slug <id>` and gives you the link.
+- Your agent runs `foliopier publish <file> --slug <id>` and gives you the link.
 - Publishing the same slug again adds a new version. An open page refreshes itself, and tells you what changed since you last looked.
 - New items are marked unread. Pin the ones you keep coming back to.
 
@@ -25,11 +27,11 @@ This item also has a [sample table](table.csv) and a [small web page](page.html)
 
 ```mermaid
 flowchart LR
-  A[Agent session] -- mydash publish --> B[(~/.mydash)]
-  B --> C[mydash server]
+  A[Agent session] -- foliopier publish --> B[(~/.mydash)]
+  B --> C[FolioPier AI server]
   C --> D[Browser or phone]
 ```
 
 ## Try it
 
-Ask your agent: *“Write a one-page summary of this project and publish it to mydash.”*
+Ask your agent: *“Write a one-page summary of this project and publish it to FolioPier AI.”*

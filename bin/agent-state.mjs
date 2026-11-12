@@ -39,8 +39,8 @@ function asksInText(msg) {
 // 这个会话有一张审批单在等用户答：回复里的问题多半就是在说它，不拦
 const waitingForm = () => Object.values(readJson(path.join(HOME, 'state', 'open-items.json')) || {}).some(x => x.session === id && x.kind === 'approval' && x.state === 'pending');
 const REASON = {
-  claude: 'Your reply ends by asking the user something in plain text, which does not reach them in mydash. If it is a choice or decision for them, ask it again with the AskUserQuestion tool (2–4 options; they can also write their own answer) and do not repeat the rest of your reply. If it needs no decision from them (a rhetorical question, something only they can go and do, or a question you already asked with a tool and got the answer to), end your turn without replying to this note.',
-  codex: 'Your reply ends by asking the user something in plain text, which does not reach them in mydash. If it is a choice or decision for them, ask it again: with request_user_input when available in the current mode, otherwise request_user_input_async. Keep an unanswered asynchronous question in the active turn by waiting; do not finish the turn or re-ask it. Only when neither native tool is available, first show the question and choices in the conversation, then run `mydash ask "<question>" "<option 1>" "<option 2>"` and wait for the answer. Do not repeat the rest of your reply. If it needs no decision from them (a rhetorical question, something only they can go and do, or a question you already asked with a tool and got the answer to), end your turn without replying to this note.',
+  claude: 'Your reply ends by asking the user something in plain text, which does not reach them in FolioPier AI. If it is a choice or decision for them, ask it again with the AskUserQuestion tool (2–4 options; they can also write their own answer) and do not repeat the rest of your reply. If it needs no decision from them (a rhetorical question, something only they can go and do, or a question you already asked with a tool and got the answer to), end your turn without replying to this note.',
+  codex: 'Your reply ends by asking the user something in plain text, which does not reach them in FolioPier AI. If it is a choice or decision for them, ask it again: with request_user_input when available in the current mode, otherwise request_user_input_async. Keep an unanswered asynchronous question in the active turn by waiting; do not finish the turn or re-ask it. Only when neither native tool is available, first show the question and choices in the conversation, then run `foliopier ask "<question>" "<option 1>" "<option 2>"` and wait for the answer. Do not repeat the rest of your reply. If it needs no decision from them (a rhetorical question, something only they can go and do, or a question you already asked with a tool and got the answer to), end your turn without replying to this note.',
 };
 // The App only keeps asynchronous question controls for an active turn. A
 // successful native tool call is not proof that its card survives turn completion.
@@ -88,30 +88,30 @@ if (valid) {
 
 const TEXT = {
   en: {
-    head: 'mydash: things you published are still open on the user\'s page:',
-    pickup: 'mydash: the session that published these has ended; they are waiting in this project for you to pick up:',
-    pending: (x, k) => `- Approval form “${x.title}” (${k}) is waiting for the user. If their message answers it, close it: mydash approvals close ${k} --note "<what was decided>"`,
-    submitted: (x, k) => `- The user answered approval form “${x.title}” (${k}) on the page. Read it: mydash approvals ${k}; when handled: mydash approvals done ${x.answer || '<id>'}`,
-    todo: (x, k) => `- To-do list “${x.title}” (${k}) has unticked items. If the user says one is done: mydash todos done ${k} "<start of the item>"`,
-    ask: (x, a) => `- On “${x.title}”, item “${a.label}”, the user asks: ${a.text} — answer in one or two sentences: mydash asks reply ${a.id} "<answer>"`,
+    head: 'FolioPier AI: things you published are still open on the user\'s page:',
+    pickup: 'FolioPier AI: the session that published these has ended; they are waiting in this project for you to pick up:',
+    pending: (x, k) => `- Approval form “${x.title}” (${k}) is waiting for the user. If their message answers it, close it: foliopier approvals close ${k} --note "<what was decided>"`,
+    submitted: (x, k) => `- The user answered approval form “${x.title}” (${k}) on the page. Read it: foliopier approvals ${k}; when handled: foliopier approvals done ${x.answer || '<id>'}`,
+    todo: (x, k) => `- To-do list “${x.title}” (${k}) has unticked items. If the user says one is done: foliopier todos done ${k} "<start of the item>"`,
+    ask: (x, a) => `- On “${x.title}”, item “${a.label}”, the user asks: ${a.text} — answer in one or two sentences: foliopier asks reply ${a.id} "<answer>"`,
   },
   zh: {
-    head: 'mydash：你发的这些东西在用户的页面上还开着：',
-    pickup: 'mydash：发这些东西的会话已经结束了，它们在这个项目里等你接手：',
-    pending: (x, k) => `- 审批单「${x.title}」（${k}）在等用户答。如果用户这条消息答了它，就关掉它：mydash approvals close ${k} --note "<定了什么>"`,
-    submitted: (x, k) => `- 用户已经在网页上答了审批单「${x.title}」（${k}）。读答复：mydash approvals ${k}；处理完：mydash approvals done ${x.answer || '<id>'}`,
-    todo: (x, k) => `- 待办「${x.title}」（${k}）还有没勾的。用户说某项做完了，就替用户勾上：mydash todos done ${k} "<那一项开头几个字>"`,
-    ask: (x, a) => `- 用户在「${x.title}」的「${a.label}」上问：${a.text}　用一两句话回答：mydash asks reply ${a.id} "<回答>"`,
+    head: 'FolioPier AI：你发的这些东西在用户的页面上还开着：',
+    pickup: 'FolioPier AI：发这些东西的会话已经结束了，它们在这个项目里等你接手：',
+    pending: (x, k) => `- 审批单「${x.title}」（${k}）在等用户答。如果用户这条消息答了它，就关掉它：foliopier approvals close ${k} --note "<定了什么>"`,
+    submitted: (x, k) => `- 用户已经在网页上答了审批单「${x.title}」（${k}）。读答复：foliopier approvals ${k}；处理完：foliopier approvals done ${x.answer || '<id>'}`,
+    todo: (x, k) => `- 待办「${x.title}」（${k}）还有没勾的。用户说某项做完了，就替用户勾上：foliopier todos done ${k} "<那一项开头几个字>"`,
+    ask: (x, a) => `- 用户在「${x.title}」的「${a.label}」上问：${a.text}　用一两句话回答：foliopier asks reply ${a.id} "<回答>"`,
   },
 };
 const RULE = {
   en: {
-    claude: 'mydash: when the user has to choose or decide something, ask with the AskUserQuestion tool (it reaches them in mydash and on their phone); for a long write-up with several decisions, publish a mydash approval form. Do not leave the choice as a question at the end of your reply.',
-    codex: 'mydash: when the user has to choose or decide something, ask with request_user_input when available in the current mode, otherwise request_user_input_async. Wait for its answer before finishing the turn so the native App card stays visible; do not re-ask it. Only if neither native tool is available, show the question and choices, then use `mydash ask "<question>" "<option>" …` (both reach them in mydash and on their phone). Do not leave the choice as a question at the end of your reply.',
+    claude: 'FolioPier AI: when the user has to choose or decide something, ask with the AskUserQuestion tool (it reaches them in FolioPier AI and on their phone); for a long write-up with several decisions, publish a FolioPier AI approval form. Do not leave the choice as a question at the end of your reply.',
+    codex: 'FolioPier AI: when the user has to choose or decide something, ask with request_user_input when available in the current mode, otherwise request_user_input_async. Wait for its answer before finishing the turn so the native App card stays visible; do not re-ask it. Only if neither native tool is available, show the question and choices, then use `foliopier ask "<question>" "<option>" …` (both reach them in FolioPier AI and on their phone). Do not leave the choice as a question at the end of your reply.',
   },
   zh: {
-    claude: 'mydash：要用户做选择或拍板时，用 AskUserQuestion 选择题问（会到用户的 mydash 和手机上）；内容多、要连着拍好几个板的，发 mydash 审批单。不要只在回复末尾用文字问。',
-    codex: 'mydash：要用户做选择或拍板时，当前模式能用 request_user_input 时用它问，否则优先用 request_user_input_async。异步问题未答时保持本轮等待，不要结束本轮或重新提问，避免 App 收起卡片。只有两个原生工具都不可用时，先在会话里显示问题和选项，再运行 `mydash ask "问题" "选项" …`（都会到用户的 mydash 和手机上）。不要只在回复末尾用文字问。',
+    claude: 'FolioPier AI：要用户做选择或拍板时，用 AskUserQuestion 选择题问（会到用户的 FolioPier AI 和手机上）；内容多、要连着拍好几个板的，发 FolioPier AI 审批单。不要只在回复末尾用文字问。',
+    codex: 'FolioPier AI：要用户做选择或拍板时，当前模式能用 request_user_input 时用它问，否则优先用 request_user_input_async。异步问题未答时保持本轮等待，不要结束本轮或重新提问，避免 App 收起卡片。只有两个原生工具都不可用时，先在会话里显示问题和选项，再运行 `foliopier ask "问题" "选项" …`（都会到用户的 FolioPier AI 和手机上）。不要只在回复末尾用文字问。',
   },
 };
 // 发单的会话结束了（或者一天没动静、或者根本没记会话）

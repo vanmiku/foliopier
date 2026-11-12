@@ -1,179 +1,107 @@
 <div align="center">
 
-<img src="static/icon.svg" width="64" height="64" alt="mydash logo">
+<img src="docs/brand/mark.svg" width="72" height="72" alt="FolioPier AI symbol">
 
-# mydash
+# FolioPier AI
 
-**A self-hosted workbench for what Claude Code and Codex make.**
+**Read, review and share what your AI agents make.**
 
-Your agents publish their plans, reports, PDFs, prototypes and Office files with one command. You open them properly rendered on your computer or your phone, answer the agents' questions there, and send comments back. Published files stay on your machine. Optional conversation connections use your Agent’s existing connection.
+Claude Code and Codex publish the files. You read them on your computer or phone, answer questions, compare versions and share the finished work.
 
-[![Release](https://img.shields.io/github/v/release/vanmiku/mydash?color=294ae8&label=release)](https://github.com/vanmiku/mydash/releases)
-[![Tests](https://github.com/vanmiku/mydash/actions/workflows/test.yml/badge.svg)](https://github.com/vanmiku/mydash/actions/workflows/test.yml)
-[![Runs on macOS, Linux and Windows](https://img.shields.io/badge/runs_on-macOS_%C2%B7_Linux_%C2%B7_Windows-555)](#install)
-[![MIT licence](https://img.shields.io/badge/license-MIT-555)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/vanmiku/foliopier?color=b7441c&label=release)](https://github.com/vanmiku/foliopier/releases)
+[![Tests](https://github.com/vanmiku/foliopier/actions/workflows/test.yml/badge.svg)](https://github.com/vanmiku/foliopier/actions/workflows/test.yml)
+[![MIT](https://img.shields.io/badge/license-MIT-555)](LICENSE)
 
-[Install](#install) · [How it works](#how-it-works) · [What you get](#what-you-get) · [Security](#security) · [Commands](#commands) · [中文](README.zh-CN.md)
+[Get started](#get-started) · [How it works](#how-it-works) · [Document sharing](#share-selected-work) · [Connection guide](docs/sessions.md) · [中文](README.zh-CN.md)
 
 </div>
 
-<br>
+<img src="docs/readme/en-hero.png" width="100%" alt="FolioPier AI on a laptop and phone, showing project deliverables and a rendered document.">
 
-<img src="docs/readme/en-hero.png" width="100%" alt="mydash on a computer and a phone. The computer shows the home page: three projects, an approval form waiting, a pinned plan, and items marked as made by Claude Code or Codex. The phone shows a Markdown plan in dark mode.">
+## Your agent works. You stay in the review.
+
+Plans, reports, prototypes and spreadsheets deserve a readable home. FolioPier AI is a local-first workbench for the deliverables your coding agents produce. It adds rendered files, project organization, version history, questions and feedback to the workflow you already use.
+
+Published files stay on your machine. There is no hosted account to create. The computer running the workbench must stay online for remote access and temporary document sharing.
 
 ## How it works
 
-1. **Your agent publishes.** When it finishes something you should look at, it runs `mydash publish plan.md --slug launch-plan` and gives you a link. Publishing the same slug again makes v2.
-2. **You read it wherever you are.** The page renders the file and files it under the project the agent was working in. If you set up notifications, your phone tells you.
-3. **You answer on the page.** Comment on a passage, fill in an approval form, tick off a to-do or answer a question. The agent picks it up and carries on.
+1. **The agent publishes.** A file or folder becomes a project item. Publishing the same slug again creates the next version.
+2. **You review.** Read the rendered content, comment on a passage, answer a question or complete an approval form from your computer or phone.
+3. **The work moves forward.** The agent reads your feedback and publishes the revision. Compare changes and share selected files when they are ready.
 
-You don't run these commands yourself. During install, `mydash integrate` tells Claude Code and Codex when to publish and how to read your answers.
+Installation adds guidance to Claude Code and Codex so they know when to publish and how to read your answers.
 
-<details>
-<summary>Under the hood</summary>
+## Get started
 
-```mermaid
-flowchart LR
-  A[Claude Code / Codex] -- mydash publish --> B[(~/.mydash/data)]
-  B --> C[mydash server<br/>127.0.0.1:4870 · 4871]
-  C -- tailscale serve --> D[Phone and other devices]
-  C --> E[This computer]
-```
-
-- Files are copied to `~/.mydash/data/<project>/<slug>/v<N>/`, next to a `meta.json`. They are plain files, easy to back up.
-- A small Node.js server with no framework renders them. launchd (macOS), systemd (Linux) or the Startup folder (Windows) keeps it running.
-- Previews are made when you publish: LibreOffice turns Office files into PDF, and PDFs become page images (CoreGraphics on macOS, `pdftoppm` on Linux).
-</details>
-
-## Install
-
-Your coding agent installs it. Paste this into Claude Code or Codex:
+Paste this into Claude Code or Codex:
 
 ```text
-Install mydash for me by following https://github.com/vanmiku/mydash/blob/main/INSTALL.md
+Install FolioPier AI for me by following https://github.com/vanmiku/foliopier/blob/main/INSTALL.md
 ```
 
-The agent checks your machine and asks you a few questions: where mydash should open (only this computer, or your phone too through Tailscale), which language, and your timezone if it's on a server. Then it installs everything and gives you the link. You only step in for what needs you, such as approving a new Tailscale device or typing a `sudo` password.
+Your agent checks the machine, walks you through access and language choices, installs the workbench and reports its address. You handle account authorizations or system password prompts when needed.
 
-**Needs:** macOS, Linux or Windows 10/11, and Node.js 20 or newer.<br>
-**Optional:** [Tailscale](https://tailscale.com) to open it from your phone anywhere (every device that opens it needs Tailscale); or enable same-Wi-Fi access in **Open on another device** (access code and device approval); LibreOffice for Word and PowerPoint previews.
+**Requires:** Node.js 20 or newer on macOS, Linux or Windows 10/11. LibreOffice is optional for Word and PowerPoint previews. Remote access can use Tailscale; same-network access is also available with an access code and device approval.
+
+On the hosting computer, `http://127.0.0.1:4870/` works without Tailscale while the service is running. Use `foliopier url --local` if you chose another port.
 
 <details>
-<summary>Installing by hand</summary>
+<summary>Install from source</summary>
 
 ```bash
-git clone https://github.com/vanmiku/mydash ~/.mydash/src
-cd ~/.mydash/src
-./setup.sh check                                   # what this machine has, and what is recommended
-./setup.sh install --access tailscale --lang en    # or --access local
-mydash doctor
+git clone https://github.com/vanmiku/foliopier
+cd foliopier
+./setup.sh check --json
+./setup.sh install --access local --lang en --json
+foliopier doctor --json
 ```
 
-`./setup.sh` with no arguments lists every option. On Windows, use `setup.cmd` in PowerShell instead of `./setup.sh`.
+On Windows, use `setup.cmd` instead of `./setup.sh`. For access options, services and upgrading an existing installation, follow [INSTALL.md](INSTALL.md) and the [compatibility notes](docs/compatibility.md).
+
 </details>
 
-## Conversations while reading
+## Read the actual files
 
-Enable conversation viewing and messaging separately in Settings. Each article offers Contents / Codex / Claude Code tabs, recent Markdown conversation, explicit passage attachment and a compact question composer. Codex App supports image upload/paste and a persistent busy queue; verified Codex/Claude tmux terminals and connected Claude App Remote Control support text. Canonical folders keep unrelated same-name projects separate. These are opt-in preview adapters with platform and account requirements.
+- **Documents and data:** Markdown with contents, tables, code and Mermaid diagrams; PDF, images, HTML, CSV and Excel tables, Office layout previews, source code, audio and video.
+- **Versions:** History and comparisons, with changed words highlighted where supported. A newer version does not discard an in-progress answer or comment.
+- **Reading on a phone:** Responsive navigation, light and dark themes, Chinese and English, and print/PDF views.
+- **Feedback in context:** Passage comments, approval forms, choices and to-dos. Your agent can read and resolve the feedback as it publishes revisions.
 
-Read the [connection guide and capability matrix](docs/sessions.md) before enabling. Approved ordinary LAN browsers can view conversations but cannot send. On the hosting computer, bookmark `http://127.0.0.1:4870/` or use `mydash url --local`; this entrance does not require Tailscale.
+<img src="docs/readme/en-phones.png" width="100%" alt="FolioPier AI mobile views for document reading, questions and sharing.">
 
-## Temporary document sharing
+## Continue a conversation while reading
 
-Enable **Settings → Internet document sharing**, then use **Share** on an article. Visitors use a link and an 8-digit access code without joining your tailnet. Choose the files, expiry, version behavior, PDF downloads and private comments. Your computer must stay online. The workbench and Agent conversations stay private; HTML attachments use static, script-free previews. [Setup and sharing guide](docs/sharing.md).
+Articles offer Contents / Codex / Claude Code tabs. Enable conversation viewing and message sending separately in Settings. Supported connections can send text, with image upload and paste on the Codex App connection. Pending, delivered and completed messages have separate states.
 
-## What you get
+These adapters are **opt-in preview features** with narrower platform coverage than the workbench. The Codex App connector currently requires its supported local IPC environment; automatic wake is implemented on macOS. Verified tmux connections and Claude App Code Remote Control have their own requirements. Accounts, usage limits and original Agent permissions still apply. Ordinary approved LAN browsers can read conversations but cannot send.
 
-<img src="docs/readme/en-phones.png" width="100%" alt="Four phone screens: the home page with an approval waiting, a Word report shown as laid out, an HTML pricing prototype running as is, and an approval form with choices.">
+Read the [capability matrix and troubleshooting guide](docs/sessions.md) before enabling a connection.
 
-### Read anything
+## Share selected work
 
-- **Any format.** Markdown with contents, tables, code and Mermaid diagrams. PDFs page by page. Images, and galleries for a folder of images. HTML that runs as is. CSV and Excel tables, including GBK-encoded CSV. Word and PowerPoint as layout previews. Audio, video and source code too.
-- **Versions you can compare.** Publishing the same `--slug` again makes v2, v3, and an open page refreshes itself. If you are in the middle of a comment, a question or an approval answer, the page stays on your version, keeps your draft and offers to open the new one; drafts also survive a reload. **Compare** any two versions line by line, with the changed words marked; when the changes are too extensive to show, it links to each version instead.
-- **Made for reading on a phone.** Bottom navigation, filters and less-used buttons tucked away on small screens, and dark mode that switches by time of day. Any document prints or saves as PDF, in light colours even in dark mode.
-- **Chinese or English, per device.** The button at the top switches the pages on that device; the command line and notifications keep the language chosen at install.
+Turn on **Settings → Internet document sharing**, then use **Share** on an article. Choose the files, access code, expiry, version behavior, PDF downloads and private visitor comments.
 
-### Answer without going back to the terminal
+Visitors open a browser link without joining your tailnet. The dedicated Tailscale Funnel reader exposes the selected document bundle; Agent conversations and workbench controls stay private. HTML attachments use static, script-free previews. PDF downloads depend on the sharing computer's browser setup.
 
-- **Comments that go back to the agent.** Select a passage and comment on it, on your phone or computer. The agent runs `mydash feedback`, sees your comments with the quoted text, and marks them handled when it publishes the fix.
-- **Approval forms and to-dos.** When an agent needs you to decide several things, it publishes an approval form: choices, multiple choice and text answers, and every choice also takes your own answer. Things only you can do arrive as a to-do list you tick off; items a command can check tick themselves. Tap **Ask** on any question or item and the agent answers right under it. Submitting wakes the agent, but only after it finishes what it is doing; if you answer in the chat instead, the form closes itself. Open forms and to-dos sit at the top under **Waiting on you**, and finished ones move to the project's records.
-- **Every question your agents ask, here too.** Claude Code's choice questions, plan approvals and permission prompts show in the terminal and in mydash at the same time; answer wherever is handy and the other one closes. Codex native choice questions stay visible in Codex and mydash at the same time. The agent keeps an unanswered asynchronous question in the active turn so the App controls remain available. Supported desktop connections let you answer from either side; if the connection is unavailable, answer in Codex. Command approvals keep their existing native-window behavior. After 30 seconds without an answer, mydash reminds you here and on your phone. Your phone is also notified when a Claude Code question waits that long. When an agent asks something in plain text at the end of a reply, it is asked once to put it as a choice question instead. Other tools can ask through `mydash ask`.
-- **Notifications** on your phone when an agent publishes or waits for you: Bark, ntfy, Telegram, Pushover, team chat bots (WeCom, Feishu, DingTalk, Slack, Discord), email, or browser push over HTTPS. Add as many as you like, even two of the same kind (say, two iPhones with Bark), each with its own name and on/off switch, plus an optional daily summary. Each kind comes with a step-by-step setup guide on the settings page. Only titles leave your machine.
+**Keep the hosting computer online.** This is temporary sharing from your machine, not always-on cloud storage. See the [sharing and setup guide](docs/sharing.md).
 
-### Keep track
+## Built around your machine
 
-- **Projects by folder.** The project is the folder the agent session started in, detected from Claude Code and Codex session records. It stays right even after `cd` into a subfolder or inside a worktree. You can give a project a friendlier name.
-- **Sorted by type and by tool.** Items are plans, reports, approvals, to-dos or other, guessed from the title or set by the agent. Each item also records whether Claude Code or Codex published it, shown as a small mark; once more than one tool has published, you can filter by tool. Other tools can label themselves with `MYDASH_AGENT`.
-- **Not drowning in unread.** Unread markers and pins. Mute a project, archive items, or let unread items older than 14 days archive themselves. A **Today** page sums up what came in.
-- **Full-text search** across everything published, narrowed by the filters you have on (type, tool, unread, archived); also from the command line (`mydash search`).
+The server uses Node.js HTTP and stores versioned files locally. The workbench and script-capable file previews use separate origins. Trusted local/Tailnet access and approved ordinary LAN access have different capabilities; public sharing has its own listener and access controls.
 
-### Runs on your machine
+The workbench supports launchd, systemd, Windows Startup or a plain background process. Updates follow tested stable releases, and installation preserves existing data and access choices. [Security model](SECURITY.md) · [Connection limits](docs/sessions.md) · [Existing-install compatibility](docs/compatibility.md)
 
-- **Back after a restart, no login needed (macOS).** With `--service launchd-boot` (one tap on the home page, then the macOS password prompt), mydash and its Tailscale node start at boot, before anyone logs in, so a headless Mac mini comes back after a power cut. `mydash forward 22 5900` passes SSH and Screen Sharing through that node, so you can log in to the Mac from anywhere.
-- **Agents on other machines.** A cloud server's agent can publish to the mydash on your Mac with a token (`mydash remote token`); unchanged files are not uploaded twice.
-- **Small on disk.** Files that did not change between versions are stored once; `mydash prune` keeps only the latest versions.
-- **Updates when you say so.** About once an hour mydash asks this repository whether there is a new release and, if so, puts an **Update** button in the top bar. Tap it, confirm, and watch the progress bar; when it is done, **OK** reloads the page. If the new version does not start, it goes back to the old one by itself. In settings you can have it install at night instead, or stop checking.
-- **Agents that know about it.** `mydash integrate claude` and `mydash integrate codex` add two short rules, a skill, the permissions they need and the hooks that bring their questions here. Codex asks once to allow the hooks: tap **Allow** on the home page. Every change is marked and can be undone with `--remove`; updating mydash keeps them current, permission included.
+## For agents and contributors
 
-## Why not Claude Code Artifacts?
+```bash
+foliopier publish report.md --slug review --title "Project review"
+foliopier feedback --json
+foliopier doctor --json
+```
 
-Claude Code can [publish pages to claude.ai](https://code.claude.com/docs/en/artifacts) on its own. mydash keeps output on your machine and can temporarily share selected documents through a separate, access-code-protected Funnel reader.
+The [agent skill](skills/mydash/SKILL.md) explains publishing, questions, approvals and to-dos. To work on the source, read [AGENTS.md](AGENTS.md). Report vulnerabilities through a [private security advisory](https://github.com/vanmiku/foliopier/security/advisories/new).
 
-| | mydash | Claude Code Artifacts |
-|---|---|---|
-| Where files live | your machine; reachable over your tailnet if you choose | claude.ai |
-| Formats | Markdown, HTML, PDF, Word, PowerPoint, Excel, CSV, images, audio, video, code | HTML and Markdown pages |
-| Which agents | Claude Code and Codex (detected and labelled), anything else that can run a command | Claude Code |
-| Organised by | project folder, with versions and unread state | individual artifacts |
+FolioPier AI is independent of OpenAI and Anthropic. Claude Code, Codex and other product names belong to their respective owners.
 
-## Security
-
-- The server listens on `127.0.0.1`. Other devices reach it through `tailscale serve` inside your tailnet, or, after enabling the switch in **Open on another device**, on this computer's LAN addresses. New LAN browsers need an access code and approval from this computer or a trusted Tailscale connection; compare the pairing code before allowing a device. Approval covers all projects and workbench actions, not a single shared item. Each installation keeps independent content and authorization state; sharing Wi-Fi does not merge it. Revoke individual devices in the same panel; turning the switch off or changing the code disconnects all LAN devices. Temporary access lasts at most 12 hours, or 30 days with **Remember this device**; borrowed computers should log out when finished. LAN HTTP traffic is unencrypted: use Tailscale on company/shared networks and restrict its access rules to trusted devices. Requests from public addresses are refused. Do not expose the workbench to the internet. The optional document-sharing service uses a separate listener and a dedicated Funnel port.
-- Published HTML and SVG run from a separate port (a different origin), so a page's scripts cannot call the workbench. Workbench pages carry a Content Security Policy that allows only mydash's own scripts, so script inside a Markdown or Word document never runs there. The `Host` header is checked against DNS rebinding, and write requests need a custom header, JSON and a same-origin `Origin`.
-- `mydash publish` refuses `.env` files, private keys and files that contain API tokens, unless you pass `--allow-secret`.
-- A to-do item can tick itself by running a command; that only happens in lists the agent explicitly published as to-dos, the command is shown on the page, and it is never run for items published from another machine.
-- Pages load nothing from third parties: fonts, Mermaid and pdf.js are served locally.
-
-<details>
-<summary>Other ways to reach it</summary>
-
-mydash only listens on this computer (and, if you turn it on, your LAN), so anything that can forward a URL to `127.0.0.1:4870` works. Set `allowedHosts` and `contentOrigin` in `~/.mydash/config.json` to the names you use.
-
-| Option | Good for | Note |
-|---|---|---|
-| Tailscale (built in) | your own devices, anywhere | no login page needed; free for personal use |
-| Same Wi-Fi (built in, switch in the sidebar) | trusted phones and laptops at home | access code + owner approval; revocable; plain HTTP on the local network |
-| [ZeroTier](https://www.zerotier.com) | the closest alternative to Tailscale | also a private mesh network |
-| [NetBird](https://netbird.io), or [Headscale](https://github.com/juanfont/headscale) with Tailscale apps | self-hosting the coordination server | open source |
-| [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) + Access | any browser, no app to install | needs your own domain; put Cloudflare Access login in front, and give the content port its own hostname |
-</details>
-
-## Commands
-
-Your agent runs most of these; you rarely need them yourself.
-
-| Command | |
-|---|---|
-| `mydash publish <files or folders> --slug <id> [--title …] [--note …]` | publish; the same slug again makes a new version |
-| `mydash ls [--all]` · `mydash url [project[/slug]]` | list items, print a URL |
-| `mydash rm <project>/<slug> [--version N]` | delete an item or one version |
-| `mydash rebuild [--agents\|--dedup\|--categories]` | add missing previews; fill in tool / type for older items; link duplicate files |
-| `mydash feedback [--json]` · `mydash feedback done <id>` | the user's open comments, for the agent |
-| `mydash search <words>` · `mydash prune --keep N` | search everything; keep only the latest N versions |
-| `mydash ask "<question>" <options…>` | ask the user in mydash and wait for the answer (for any tool) |
-| `mydash approvals [wait\|close\|done]` · `mydash todos [wait\|done]` · `mydash asks [reply]` | for the agent: answers to approval forms, to-dos, questions on items |
-| `mydash notify bark\|ntfy\|telegram\|… <url>` · `mydash notify daily 21:00` | phone notifications (or the settings page) |
-| `mydash remote token --name <machine>` · `mydash lan on` | let another machine publish here; open it on the same Wi-Fi |
-| `sudo mydash service boot` · `sudo mydash service login` | macOS: start at boot before anyone logs in, or back to starting at login |
-| `mydash forward 22 5900` · `mydash forward off` | pass SSH / Screen Sharing through mydash's own Tailscale node |
-| `mydash doctor [--json]` | check that everything works, with fixes |
-| `mydash integrate claude\|codex [--dry-run] [--remove] [--no-hooks]` | set up an agent to use mydash |
-| `mydash update [--check]` · `mydash uninstall [--purge]` | update to the latest release (the top bar also shows an Update button), remove |
-
-## Status
-
-0.1.x, a personal tool shared as is. Issues and pull requests are welcome; replies may take a while. What changed in each release is in [CHANGELOG.md](CHANGELOG.md). For changes to mydash itself, start with [AGENTS.md](AGENTS.md).
-
-## License
-
-[MIT](LICENSE). Bundled fonts and dependencies: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[MIT license](LICENSE) · Built by [vanmiku](https://github.com/vanmiku)

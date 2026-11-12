@@ -23,8 +23,8 @@ const ok = (name, cond, extra = '') => { if (cond) { pass++; console.log(`  ✓ 
 const node = (args, opts = {}) => spawnSync(process.execPath, args, { env, encoding: 'utf8', timeout: 600_000, ...opts });
 // the installed command, the way a user's shell would run it
 const mydash = (args, opts = {}) => WIN
-  ? spawnSync(path.join(bin, 'mydash.cmd'), args, { env, encoding: 'utf8', shell: true, timeout: 300_000, ...opts })
-  : spawnSync(path.join(bin, 'mydash'), args, { env, encoding: 'utf8', timeout: 300_000, ...opts });
+  ? spawnSync(path.join(bin, 'foliopier.cmd'), args, { env, encoding: 'utf8', shell: true, timeout: 300_000, ...opts })
+  : spawnSync(path.join(bin, 'foliopier'), args, { env, encoding: 'utf8', timeout: 300_000, ...opts });
 const json = r => { try { return JSON.parse(r.stdout.trim().split('\n').pop()); } catch { return { ok: false, raw: (r.stdout || '') + (r.stderr || '') }; } };
 // node:http instead of fetch: fetch silently ignores a custom Host header
 const get = (url, host) => new Promise(resolve => {
@@ -44,6 +44,9 @@ try {
   const ins = json(node([path.join(ROOT, 'bin', 'mydash.mjs'), 'setup', 'install', '--access', 'local', '--port', String(port), '--service', service, '--office', 'no', '--bin-dir', bin, '--lang', 'en', '--json'], { cwd: ROOT }));
   ok('setup install ok', ins.ok, JSON.stringify(ins).slice(0, 400));
   ok('command installed', fs.existsSync(path.join(bin, WIN ? 'mydash.cmd' : 'mydash')));
+  ok('primary command installed', fs.existsSync(path.join(bin, WIN ? 'foliopier.cmd' : 'foliopier')));
+  const legacy = spawnSync(path.join(bin, WIN ? 'mydash.cmd' : 'mydash'), ['doctor', '--json'], { env, encoding: 'utf8', shell: WIN, timeout: 30000 });
+  ok('legacy command reads the same installation', legacy.status === 0 && legacy.stdout.includes(env.MYDASH_HOME));
   if (!WIN) ok('config.json is readable only by the user', (fs.statSync(path.join(env.MYDASH_HOME, 'config.json')).mode & 0o777) === 0o600);
   if (WIN) ok('Git Bash command installed too', fs.existsSync(path.join(bin, 'mydash')));
   ok('workbench port answers', (await get(`${B}/healthz`)).status === 200);
@@ -95,6 +98,10 @@ try {
   ok('Claude Code rule added', fs.readFileSync(path.join(env.MYDASH_CLAUDE_HOME, 'CLAUDE.md'), 'utf8').includes('mydash:begin'));
   ok('skill linked', fs.existsSync(path.join(env.MYDASH_CLAUDE_HOME, 'skills', 'mydash', 'SKILL.md')));
   ok('Codex rules written', fs.existsSync(path.join(env.MYDASH_CODEX_HOME, 'rules', 'mydash.rules')));
+  const claudePermissions = JSON.parse(fs.readFileSync(path.join(env.MYDASH_CLAUDE_HOME, 'settings.json'), 'utf8')).permissions.allow;
+  ok('Claude allows the primary and legacy publish commands', ['Bash(foliopier publish:*)', 'Bash(mydash publish:*)'].every(x => claudePermissions.includes(x)));
+  const codexRules = fs.readFileSync(path.join(env.MYDASH_CODEX_HOME, 'rules', 'mydash.rules'), 'utf8');
+  ok('Codex allows the primary and legacy publish commands', ['pattern=["foliopier", "publish"]', 'pattern=["mydash", "publish"]'].every(x => codexRules.includes(x)));
   mydash(['integrate', 'claude', '--remove']); mydash(['integrate', 'codex', '--remove']);
   ok('Claude Code rule removed cleanly', fs.readFileSync(path.join(env.MYDASH_CLAUDE_HOME, 'CLAUDE.md'), 'utf8') === '# mine\n');
   ok('Codex rules removed', !fs.existsSync(path.join(env.MYDASH_CODEX_HOME, 'rules', 'mydash.rules')));
@@ -144,6 +151,8 @@ try {
   console.log('uninstall');
   const un = json(mydash(['uninstall', '--purge', '--json']));
   ok('uninstall ok', un.ok);
+  ok('primary alias removed', !fs.existsSync(path.join(bin, WIN ? 'foliopier.cmd' : 'foliopier')));
+  ok('legacy alias removed', !fs.existsSync(path.join(bin, WIN ? 'mydash.cmd' : 'mydash')));
   await sleep(1500);
   ok('server stopped', (await get(`${B}/healthz`)).status === 0);
   ok('home folder removed', !fs.existsSync(env.MYDASH_HOME));

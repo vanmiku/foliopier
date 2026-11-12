@@ -42,7 +42,7 @@ export function main() {
   try {
     const notes = path.join(dir, 'notes.md'); fs.writeFileSync(notes, plan.notes + '\n');
     console.log(gh(['release', 'create', plan.tag, '--repo', repo, '--target', plan.commit,
-      '--title', `mydash ${pkg.version}`, '--notes-file', notes, '--latest']));
+      '--title', `FolioPier AI ${pkg.version}`, '--notes-file', notes, '--latest']));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
