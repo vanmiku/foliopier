@@ -1,27 +1,27 @@
-# Installing mydash: instructions for coding agents
+# Installing FolioPier AI: instructions for coding agents
 
-You are a coding agent (Claude Code, Codex, or similar) and the user asked you to install mydash. Follow these steps in order. Every command is safe to re-run. Use `--json` and read the results instead of guessing.
+You are a coding agent (Claude Code, Codex, or similar) and the user asked you to install FolioPier AI. Follow these steps in order. Every command is safe to re-run. Use `--json` and read the results instead of guessing.
 
 **Rules**
 
 - Talk to the user in their language. Keep it short: say what you are about to do, ask the questions in step 3, and report the URL at the end.
 - Never type passwords or approve logins for the user. When a step needs the user (marked **user**), show them exactly what to do and wait.
-- Ask before you change anything outside the mydash folders: shell profiles, `~/.claude`, `~/.codex`, package installs that need `sudo`.
+- Ask before you change anything outside the FolioPier AI folders: shell profiles, `~/.claude`, `~/.codex`, package installs that need `sudo`.
 - Supported: macOS, Linux (including WSL) and Windows 10/11. On Windows, run `setup.cmd` wherever this guide says `./setup.sh` (it works from PowerShell, cmd and Git Bash), and see [Windows notes](#windows-notes).
 
 ## 1. Get the code
 
 ```bash
-git clone https://github.com/vanmiku/mydash ~/.mydash/src
+git clone https://github.com/vanmiku/foliopier ~/.mydash/src
 cd ~/.mydash/src
 ```
 
-On macOS, keep the checkout out of `~/Documents`, `~/Desktop` and `~/Downloads`: background services cannot read those folders. The installer copies the code to `~/.mydash/app` anyway, so this only matters for `mydash update`.
+On macOS, keep the checkout out of `~/Documents`, `~/Desktop` and `~/Downloads`: background services cannot read those folders. The installer copies the code to `~/.mydash/app` anyway, so this only matters for `foliopier update`.
 
 Windows (PowerShell):
 
 ```powershell
-git clone https://github.com/vanmiku/mydash $HOME\.mydash\src
+git clone https://github.com/vanmiku/foliopier $HOME\.mydash\src
 cd $HOME\.mydash\src
 ```
 
@@ -48,7 +48,7 @@ Ask everything in `questions` in one message, with the recommended answers pre-s
 1. **Where should it open?**
    - `local`: only on this computer, at `http://127.0.0.1:4870/`.
    - `tailscale`: on their other devices too, phone included, through the Tailscale they already use, at `http://<this-machine>/`. Recommended when `check` shows Tailscale running.
-   - `tailscale-node`: through Tailscale under its own name, `http://mydash/`. This adds one device to their tailnet and needs one approval click. Every device that opens this address needs Tailscale, this computer included; without it, this computer uses `http://127.0.0.1:4870/`. If the tailnet already has a device called `mydash` (an old computer, say), Tailscale names this one `mydash-1`, and that becomes the address. On macOS it builds Tailscale from source, so it needs Go. Not available on Windows.
+   - `tailscale-node`: through Tailscale under its own name, `http://foliopier/`. This adds one device to their tailnet and needs one approval click. Every device that opens this address needs Tailscale, this computer included; without it, this computer uses `http://127.0.0.1:4870/`. If the tailnet already has a device called `foliopier` (an old computer, say), Tailscale names this one `foliopier-1`, and that becomes the address. On macOS it builds Tailscale from source, so it needs Go. Not available on Windows.
 2. **Same Wi-Fi?** Whether other devices on the same Wi-Fi (or wired network) may open it too. New browsers need an access code and approval from this computer or a trusted Tailscale connection; this computer and the tailnet never need it. Add `--lan on` if yes. Recommend it only on a home network the user trusts.
 3. **Language** of the pages: `en` or `zh`. Default to the language the user writes in.
 4. **Timezone**, only when the server clock is UTC (common on cloud servers). Use an IANA name such as `Europe/London` or `Asia/Shanghai`.
@@ -63,7 +63,7 @@ Ask everything in `questions` in one message, with the recommended answers pre-s
 It takes 10–60 seconds. Building the Tailscale node on macOS can take several minutes. The result has:
 
 - `ok`, and `url`: the address to give the user. With `tailscale-node` it is `http://127.0.0.1:<port>/` until the device is approved, then switches to the device's real name on its own.
-- `localUrl`: the address on the computer hosting mydash, independent of Tailscale. Always give this address to the user as well as `url`, and recommend bookmarking it on that computer. Turning Tailscale off makes its network address unavailable even on the hosting computer; `localUrl` still works while the mydash service is running. Other devices cannot use this loopback address. The address is also in Settings and “Open on another device”; `mydash url --local` prints it later.
+- `localUrl`: the address on the computer hosting FolioPier AI, independent of Tailscale. Always give this address to the user as well as `url`, and recommend bookmarking it on that computer. Turning Tailscale off makes its network address unavailable even on the hosting computer; `localUrl` still works while the foliopier service is running. Other devices cannot use this loopback address. The address is also in Settings and “Open on another device”; `foliopier url --local` prints it later.
 - `steps`: what was done. Any step with `ok: false` has the reason in `detail`.
 - `human`: things only the user can do. Show each one to the user, with its `url` or `command`, and wait for them:
   - `tailscale-node-login`: the user opens the link and approves the new device. Forwarding starts automatically within a minute.
@@ -74,18 +74,18 @@ It takes 10–60 seconds. Building the Tailscale node on macOS can take several 
   - Entries with `"agent": true` you may do yourself after asking. For example, add `~/.local/bin` to `PATH` in their shell profile.
 - `next`: suggested follow-ups, usually step 6.
 
-On Linux with systemd, if `check` reported `linger` as disabled, ask the user to run `sudo loginctl enable-linger $USER`. Without it, mydash stops when they log out.
+On Linux with systemd, if `check` reported `linger` as disabled, ask the user to run `sudo loginctl enable-linger $USER`. Without it, FolioPier AI stops when they log out.
 
-On macOS, mydash starts when the user logs in. For a Mac that should come back after a power cut or restart without anyone logging in (a headless Mac mini, say), install with `--service launchd-boot`; the result then lists a `boot-service` step. The user does it once, without a terminal: at the Mac, the mydash home page shows **Start mydash at boot** under Waiting on you, and tapping it opens the macOS password prompt on that screen (the password goes to macOS, not to mydash). `sudo mydash service boot` does the same from a terminal. mydash and its Tailscale node then run at boot, as the user, before login. FileVault must be off for that, because with FileVault on the Mac waits at the unlock screen. `sudo mydash service login` switches back.
+On macOS, FolioPier AI starts when the user logs in. For a Mac that should come back after a power cut or restart without anyone logging in (a headless Mac mini, say), install with `--service launchd-boot`; the result then lists a `boot-service` step. The user does it once, without a terminal: at the Mac, the FolioPier AI home page shows **Start FolioPier AI at boot** under Waiting on you, and tapping it opens the macOS password prompt on that screen (the password goes to macOS, not to FolioPier AI). `sudo foliopier service boot` does the same from a terminal. FolioPier AI and its Tailscale node then run at boot, as the user, before login. FileVault must be off for that, because with FileVault on the Mac waits at the unlock screen. `sudo foliopier service login` switches back.
 
 ## Address checks for a new installation
 
-Do not assume that `http://mydash/` is every user's address. Give the exact `url` and `localUrl` printed by installation, and confirm them with `mydash url` and `mydash url --local` on the hosting computer.
+Do not assume that `http://foliopier/` is every user's address. Give the exact `url` and `localUrl` printed by installation, and confirm them with `foliopier url` and `foliopier url --local` on the hosting computer.
 
-- With `--access tailscale`, the network address uses the hosting computer's actual Tailscale name and may have a port; it need not be `mydash`.
-- With `--access tailscale-node`, the independent device needs approval. A name collision gives it another actual name, such as `mydash-1`; the name is unique within that tailnet.
+- With `--access tailscale`, the network address uses the hosting computer's actual Tailscale name and may have a port; it need not be `foliopier`.
+- With `--access tailscale-node`, the independent device needs approval. A name collision gives it another actual name, such as `foliopier-1`; the name is unique within that tailnet.
 - Short names require MagicDNS and the browsing device's Tailscale DNS settings. The hosting computer's system Tailscale client must also be connected to the correct tailnet to use network names; the independent node does not connect its host's browser automatically. If a device was shared from another tailnet, use its full Tailscale domain name.
-- `mydash doctor --json` checks both main and content-port Serve mappings. The network health check must identify this installation, so a different mydash instance or unrelated HTTP 200 page does not count as success.
+- `foliopier doctor --json` checks both main and content-port Serve mappings. The network health check must identify this installation, so a different FolioPier AI instance or unrelated HTTP 200 page does not count as success.
 - A failed network lookup does not justify changing access controls or enabling LAN access. Use the local address on the host while checking the actual name, device approval, client DNS and tailnet access rules. Keep the exact browser error for diagnosis.
 
 Settings → **HTTPS access** shows the actual network address and an automatic-redirect switch. A saved HTTPS URL is verified in the background: its certificate and both workbench/content health checks must pass for this installation before HTTP pages redirect. Unavailable, stale, renamed or mismatched endpoints leave HTTP usable. Readiness is cached for at most 30 seconds; a hosting computer unable to reach its own Tailnet HTTPS addresses cannot enable automatic redirection until that connection works. Loopback addresses, API calls and ordinary LAN browsers never redirect. Switching access modes discards inherited HTTPS metadata; the independent node can rediscover its current HTTPS address.
@@ -95,124 +95,124 @@ See Tailscale's [MagicDNS guide](https://tailscale.com/docs/features/magicdns), 
 ## 5. Verify
 
 ```bash
-mydash doctor --json
+foliopier doctor --json
 ```
 
-`ok` must be true. If it is not, follow the `fix` of each failing check, then run doctor again. If `mydash` is not found, use `~/.local/bin/mydash` and fix `PATH` (step 4).
+`ok` must be true. If it is not, follow the `fix` of each failing check, then run doctor again. If `foliopier` is not found, use `~/.local/bin/mydash` and fix `PATH` (step 4).
 
 Then publish something real and show it to the user:
 
 ```bash
-mydash publish README.md --title "mydash is installed" --slug hello --note "test"
+foliopier publish README.md --title "FolioPier AI is installed" --slug hello --note "test"
 ```
 
-Give the user the printed URL and ask them to open it on their phone as well, if they chose Tailscale. The install already added a welcome item to the project called `mydash`.
+Give the user the printed URL and ask them to open it on their phone as well, if they chose Tailscale. The install already added a welcome item to the project called `foliopier`.
 
 ## 6. Connect the agents (ask first)
 
 This teaches the agent to publish here and to bring the user's decisions and to-dos here:
 
 ```bash
-mydash integrate claude --dry-run     # show the user what would change
-mydash integrate claude
-mydash integrate codex --dry-run
-mydash integrate codex
+foliopier integrate claude --dry-run     # show the user what would change
+foliopier integrate claude
+foliopier integrate codex --dry-run
+foliopier integrate codex
 ```
 
 Run it for each agent the user uses (`check` lists which are installed), after they agree to the dry-run output. What it adds:
 
-- **Two short rules** in the agent's global instructions, each between markers: publish deliverables with `mydash publish`; and put choices, approval forms and to-dos for the user through mydash instead of asking in the reply.
-- **The `mydash` skill**, with the details: how to publish, how to write an approval form and a to-do list, how to wait for answers.
-- **Permissions** so the mydash commands neither prompt nor get blocked by the Codex sandbox.
+- **Two short rules** in the agent's global instructions, each between markers: publish deliverables with `foliopier publish`; and put choices, approval forms and to-dos for the user through FolioPier AI instead of asking in the reply.
+- **The `foliopier` skill**, with the details: how to publish, how to write an approval form and a to-do list, how to wait for answers.
+- **Permissions** so the FolioPier AI commands neither prompt nor get blocked by the Codex sandbox.
 - **Hooks**:
-  - Questions the agent asks also come to mydash. Claude Code's choice questions, plan approvals and permission prompts show in the terminal and in mydash at the same time; whichever the user answers first counts and the other closes. Codex native choice questions stay visible in Codex and mydash at the same time; supported desktop connections let the user answer from either side. If that connection is unavailable, the original Codex question remains usable. Command approvals keep their existing native-window behavior. Use the native asynchronous question tool in Default mode; use `mydash ask` only when neither native question tool is available. The settings page can switch either agent to asking in mydash first. The phone is notified if nobody answers within 30 seconds (the settings page changes this or turns it all off).
+  - Questions the agent asks also come to FolioPier AI. Claude Code's choice questions, plan approvals and permission prompts show in the terminal and in FolioPier AI at the same time; whichever the user answers first counts and the other closes. Codex native choice questions stay visible in Codex and FolioPier AI at the same time; supported desktop connections let the user answer from either side. If that connection is unavailable, the original Codex question remains usable. Command approvals keep their existing native-window behavior. Use the native asynchronous question tool in Default mode; use `foliopier ask` only when neither native question tool is available. The settings page can switch either agent to asking in FolioPier AI first. The phone is notified if nobody answers within 30 seconds (the settings page changes this or turns it all off).
   - When an agent ends a reply with a question in plain text, it is asked once to put it as a choice question instead.
   - The agent's busy or idle state is noted, so answers submitted on the page wait until it finishes the current turn.
-  - Sessions nobody is watching (`claude -p`, the Agent SDK) are left alone: no questions go to mydash and nothing is re-asked, so batch output does not change.
+  - Sessions nobody is watching (`claude -p`, the Agent SDK) are left alone: no questions go to FolioPier AI and nothing is re-asked, so batch output does not change.
 
   Leave the hooks out with `--no-hooks`.
 
 | Agent | Files |
 |---|---|
-| Claude Code | `~/.claude/CLAUDE.md` (blocks between `<!-- mydash:begin -->` / `<!-- mydash:end -->` and `<!-- mydash:decide:begin -->` / `<!-- mydash:decide:end -->`), `~/.claude/skills/mydash` (a symlink), `~/.claude/settings.json` (nine `Bash(mydash …:*)` allow rules, and hooks on UserPromptSubmit, Stop, StopFailure, SessionEnd, PreToolUse and PermissionRequest) |
-| Codex | `~/.codex/AGENTS.md` (the same blocks), `~/.codex/skills/mydash`, `~/.codex/rules/mydash.rules` and `mydash-ask.rules` (the sandbox blocks writing to `~/.mydash` and connecting to `127.0.0.1`; these let the mydash commands run outside it), `~/.codex/hooks.json` (hooks on UserPromptSubmit, Stop, PreToolUse and PermissionRequest) |
+| Claude Code | `~/.claude/CLAUDE.md` (blocks between `<!-- mydash:begin -->` / `<!-- mydash:end -->` and `<!-- mydash:decide:begin -->` / `<!-- mydash:decide:end -->`), `~/.claude/skills/mydash` (a symlink), `~/.claude/settings.json` (allow rules for both `Bash(foliopier …:*)` and the legacy `Bash(mydash …:*)` commands, and hooks on UserPromptSubmit, Stop, StopFailure, SessionEnd, PreToolUse and PermissionRequest) |
+| Codex | `~/.codex/AGENTS.md` (the same blocks), `~/.codex/skills/mydash`, `~/.codex/rules/mydash.rules` and `mydash-ask.rules` (the sandbox blocks writing to `~/.mydash` and connecting to `127.0.0.1`; these let the FolioPier AI commands run outside it), `~/.codex/hooks.json` (hooks on UserPromptSubmit, Stop, PreToolUse and PermissionRequest) |
 
-If the instructions file already has the user's own rule for one of the blocks (it mentions `mydash publish`, or `mydash approvals` / `mydash ask`), that block is skipped. `--remove` undoes exactly what was added. Updating mydash brings these up to date. New sessions pick the changes up; the current one may not.
+If the instructions file already has the user's own rule for one of the blocks (it mentions `foliopier publish`, or `foliopier approvals` / `foliopier ask`), that block is skipped. `--remove` undoes exactly what was added. Updating FolioPier AI brings these up to date. New sessions pick the changes up; the current one may not.
 
-**Codex runs a new hook only after the user allows it** (**user**). After `mydash integrate codex`, tell the user to open the mydash home page: under Waiting on you, **Let Codex bring its questions to mydash** has an **Allow** button. mydash then records Codex's trust for exactly its own hooks, the same record `/hooks` in Codex writes (a fingerprint of each hook's content in `~/.codex/config.toml`); hooks whose content is not what this version installs are never trusted this way. `/hooks` in Codex in a terminal works too. When an update rewrites the mydash hooks the user has allowed, the permission carries over. New conversations in the Codex app pick them up. `mydash doctor` shows whether they are trusted.
+**Codex runs a new hook only after the user allows it** (**user**). After `foliopier integrate codex`, tell the user to open the FolioPier AI home page: under Waiting on you, **Let Codex bring its questions to FolioPier AI** has an **Allow** button. FolioPier AI then records Codex's trust for exactly its own hooks, the same record `/hooks` in Codex writes (a fingerprint of each hook's content in `~/.codex/config.toml`); hooks whose content is not what this version installs are never trusted this way. `/hooks` in Codex in a terminal works too. When an update rewrites the FolioPier AI hooks the user has allowed, the permission carries over. New conversations in the Codex app pick them up. `foliopier doctor` shows whether they are trusted.
 
 ## Same Wi-Fi access
 
-The user can open **Open on another device** at the bottom of the sidebar and enable the same-Wi-Fi switch. It takes effect immediately without a command or service restart. `--lan on` / `mydash lan on` remain available for installers. The service listens on this computer's LAN addresses, for example `http://<name>.local:4870/`.
+The user can open **Open on another device** at the bottom of the sidebar and enable the same-Wi-Fi switch. It takes effect immediately without a command or service restart. `--lan on` / `foliopier lan on` remain available for installers. The service listens on this computer's LAN addresses, for example `http://<name>.local:4870/`.
 
 Scan the QR code or enter the access code, optionally name the device, and submit a request. On this computer (or a trusted Tailscale connection), compare the pairing code and allow or deny it in the same panel. Pending requests expire in 10 minutes and cannot read any projects or files. Approval grants access to **all projects and workbench actions**, so only approve trusted devices. LAN clients cannot manage access codes or authorize other devices.
 
 Temporary access expires on the server after at most 12 hours; **Remember this device** extends it to 30 days. Use **Log out this device** when finished on a borrowed computer. Revoke one device from the owner panel, or change the code to disconnect all devices. Switching LAN access off also revokes all devices; switching it on again requires fresh approval. Existing sessions from versions before 0.1.6 remain trusted for at most 30 days from their original sign-in and appear in the device list; revoke them or change the code if the network is shared.
 
-Installations keep separate data and random instance identities: being on the same Wi-Fi does not combine their content. Plain LAN HTTP is **not encrypted**; use Tailscale for company/shared networks and restrict its access rules to trusted devices. Local and Tailscale access keep their existing trust model; this is personal device pairing, not per-user or per-project permissions. Requests from public addresses are refused. If the install result lists a `firewall` step, the user may have to click Allow once. Tell the user the access code from `mydash lan --json` only if they ask.
+Installations keep separate data and random instance identities: being on the same Wi-Fi does not combine their content. Plain LAN HTTP is **not encrypted**; use Tailscale for company/shared networks and restrict its access rules to trusted devices. Local and Tailscale access keep their existing trust model; this is personal device pairing, not per-user or per-project permissions. Requests from public addresses are refused. If the install result lists a `firewall` step, the user may have to click Allow once. Tell the user the access code from `foliopier lan --json` only if they ask.
 
 
 ## Agents on another machine
 
-To let an agent on a second machine (for example a cloud server) publish into this mydash, install only the command there:
+To let an agent on a second machine (for example a cloud server) publish into this FolioPier AI, install only the command there:
 
 ```bash
-# on the machine that runs mydash
-mydash remote token --name cloud-server            # prints a token once
+# on the machine that runs FolioPier AI
+foliopier remote token --name cloud-server            # prints a token once
 # on the other machine
 ./setup.sh install --remote http://<this machine> --token <token> --machine "cloud server" --json
 ```
 
-The other machine must reach this one (same tailnet, or `--lan on` on the same network). `mydash publish`, `ls`, `feedback` and `doctor` there all talk to this mydash. Files already uploaded are not sent again; previews are made here. `mydash remote revoke <name>` cuts a machine off.
+The other machine must reach this one (same tailnet, or `--lan on` on the same network). `foliopier publish`, `ls`, `feedback` and `doctor` there all talk to this FolioPier AI. Files already uploaded are not sent again; previews are made here. `foliopier remote revoke <name>` cuts a machine off.
 
 ## Phone notifications (optional, ask first)
 
-The user can set these up on the settings page (`/settings`, the gear at the top), which has a step-by-step setup guide for each kind and a test button. Point them there if they are unsure how to get a key or a topic. From the command line: `mydash notify bark https://api.day.app/<key>` (iPhone, Bark app), `mydash notify ntfy https://ntfy.sh/<topic>`, and `telegram`, `pushover`, `webhook <url>` (WeCom, Feishu, DingTalk, Slack and Discord bots, recognised by the URL) and `email`. Several can be on at once, including two of the same kind: `--name` labels one, and `mydash notify` lists them with their ids for `mydash notify remove <id>`. Browser push works when mydash is served over HTTPS. A notification goes out whenever an agent publishes (except for muted projects) and when a question waits for the user. `mydash notify daily 21:00` adds one summary a day. Only titles and project names go through the push service.
+The user can set these up on the settings page (`/settings`, the gear at the top), which has a step-by-step setup guide for each kind and a test button. Point them there if they are unsure how to get a key or a topic. From the command line: `foliopier notify bark https://api.day.app/<key>` (iPhone, Bark app), `foliopier notify ntfy https://ntfy.sh/<topic>`, and `telegram`, `pushover`, `webhook <url>` (WeCom, Feishu, DingTalk, Slack and Discord bots, recognised by the URL) and `email`. Several can be on at once, including two of the same kind: `--name` labels one, and `foliopier notify` lists them with their ids for `foliopier notify remove <id>`. Browser push works when FolioPier AI is served over HTTPS. A notification goes out whenever an agent publishes (except for muted projects) and when a question waits for the user. `foliopier notify daily 21:00` adds one summary a day. Only titles and project names go through the push service.
 
 ## Other AI tools
 
-mydash records which tool published each item and shows it on the page (a small mark on each entry, the full name on the item page, and a filter when more than one tool has published). Claude Code and Codex are detected automatically. Any other tool can still publish; to have it labelled, set `MYDASH_AGENT` in its environment, for example `MYDASH_AGENT=gemini mydash publish …`.
+FolioPier AI records which tool published each item and shows it on the page (a small mark on each entry, the full name on the item page, and a filter when more than one tool has published). Claude Code and Codex are detected automatically. Any other tool can still publish; to have it labelled, set `MYDASH_AGENT` in its environment, for example `MYDASH_AGENT=gemini foliopier publish …`.
 
-Other tools can also ask the user through mydash: `mydash ask "<question>" "<option 1>" "<option 2>"` (`--multi` for several answers) waits until the user answers on the page and prints the answer; exit code 3 means the user wants to answer in the tool itself. Add a line to that tool's instructions telling it to ask this way.
+Other tools can also ask the user through FolioPier AI: `foliopier ask "<question>" "<option 1>" "<option 2>"` (`--multi` for several answers) waits until the user answers on the page and prints the answer; exit code 3 means the user wants to answer in the tool itself. Add a line to that tool's instructions telling it to ask this way.
 
 ## Windows notes
 
-- Use `setup.cmd` instead of `./setup.sh`. The `mydash` command goes into npm's global folder (`%APPDATA%\npm`), which the Node installer already put on `PATH`; open a new terminal if `mydash` is not found. Both `mydash.cmd` (PowerShell, cmd) and a `mydash` script for Git Bash are installed, because Claude Code on Windows runs commands in Git Bash when it is installed and in PowerShell otherwise.
-- mydash starts at sign-in from the Startup folder (`shell:startup`, a small `mydash.server.vbs` that runs it hidden). No administrator rights are needed.
+- Use `setup.cmd` instead of `./setup.sh`. The `foliopier` command goes into npm's global folder (`%APPDATA%\npm`), which the Node installer already put on `PATH`; open a new terminal if `foliopier` is not found. Both `foliopier.cmd` and `mydash.cmd` (PowerShell, cmd) and a `foliopier` script for Git Bash are installed, because Claude Code on Windows runs commands in Git Bash when it is installed and in PowerShell otherwise.
+- FolioPier AI starts at sign-in from the Startup folder (`shell:startup`, a small `mydash.server.vbs` that runs it hidden). No administrator rights are needed.
 - Optional extras with winget: `winget install --id TheDocumentFoundation.LibreOffice -e` (Word / PowerPoint previews), `winget install --id oschwartz10612.Poppler -e` (PDF page images), and Tailscale from https://tailscale.com/download/windows.
-- `--access tailscale-node` is not available; use `--access tailscale` to reach mydash from a phone.
+- `--access tailscale-node` is not available; use `--access tailscale` to reach FolioPier AI from a phone.
 
 ## Updating
 
 ```bash
-mydash update --check --json   # only look: is there a newer release?
-mydash update --json           # install the latest release
+foliopier update --check --json   # only look: is there a newer release?
+foliopier update --json           # install the latest release
 ```
 
-mydash follows releases (tags `vX.Y.Z`), not every commit on `main`. `update` fetches the tags into the checkout recorded at install time, moves it to the newest release, reinstalls with the same options, and lists the new commits in `changes`. If the new version does not start, it moves back and reinstalls the old one (`rolledBack: true`). It leaves the checkout alone if it has commits of its own.
+FolioPier AI follows releases (tags `vX.Y.Z`), not every commit on `main`. `update` fetches the tags into the checkout recorded at install time, moves it to the newest release, reinstalls with the same options, and lists the new commits in `changes`. If the new version does not start, it moves back and reinstalls the old one (`rolledBack: true`). It leaves the checkout alone if it has commits of its own.
 
-The service also checks once a day. By default it only tells the user: an Update button in the top bar of every page (it asks first, then shows the progress and reloads the page when done), and a phone notification if those are set up. In Settings → Updates the user can switch to installing at night (3–5 am in their timezone) or turn it off. `mydash doctor` shows the version in its `update` line.
+The service also checks once a day. By default it only tells the user: an Update button in the top bar of every page (it asks first, then shows the progress and reloads the page when done), and a phone notification if those are set up. In Settings → Updates the user can switch to installing at night (3–5 am in their timezone) or turn it off. `foliopier doctor` shows the version in its `update` line.
 
 ## Uninstalling
 
 ```bash
-mydash uninstall --json           # services, the command, integrations; keeps published items
-mydash uninstall --purge --json   # also deletes ~/.mydash, including every published item (ask first)
+foliopier uninstall --json           # services, the command, integrations; keeps published items
+foliopier uninstall --purge --json   # also deletes ~/.mydash, including every published item (ask first)
 ```
 
-If mydash was set to start at boot (`launchd-boot`), uninstall stops first and returns a `boot-service-off` step: the user runs that `sudo … service login` command once, then you run uninstall again.
+If FolioPier AI was set to start at boot (`launchd-boot`), uninstall stops first and returns a `boot-service-off` step: the user runs that `sudo … service login` command once, then you run uninstall again.
 
 ## Troubleshooting
 
 | Symptom | What to do |
 |---|---|
-| `mydash: command not found` | Use `~/.local/bin/mydash`; add `~/.local/bin` to `PATH` |
-| Codex: publish fails with a permission or network error | `mydash integrate codex`, then start a new Codex session |
+| `foliopier: command not found` | Use `~/.local/bin/mydash`; add `~/.local/bin` to `PATH` |
+| Codex: publish fails with a permission or network error | `foliopier integrate codex`, then start a new Codex session |
 | doctor: `server` not responding | Look at `~/.mydash/logs/`; run `./setup.sh install --json` again |
 | doctor: `tailscale-node` is `NeedsLogin` | The user opens the link in `fix` and approves the device |
 | doctor: `tailscale-serve` not forwarding | Run the command in `fix`. On Linux, the user may first need `sudo tailscale set --operator=$USER` |
 | The page opens on this machine but not on the phone | Check that the phone is in the same tailnet with Tailscale on; try the full name `http://<name>.<tailnet>.ts.net/` |
-| Word / PowerPoint show no preview | Install LibreOffice (see `check`), run `./setup.sh install` again, then `mydash rebuild` |
+| Word / PowerPoint show no preview | Install LibreOffice (see `check`), run `./setup.sh install` again, then `foliopier rebuild` |
 | Wrong times on the pages | Reinstall with `--timezone <IANA name>` |
 | Ports 4870 / 4871 are taken | Reinstall with `--port <n> --content-port <m>` |
 

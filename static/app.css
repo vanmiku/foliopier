@@ -1,4 +1,4 @@
-/* mydash · 清爽工作台风格 */
+/* FolioPier AI · 清爽工作台风格 */
 /* Geist 字体随仓库分发（static/fonts，SIL OFL），不从 Google Fonts 加载 */
 @font-face { font-family: "Geist"; src: url("fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: "Geist Mono"; src: url("fonts/GeistMono-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
@@ -6,10 +6,10 @@
   --bg: #f6f6f7; --surface: #ffffff; --surface-2: #f2f2f4; --surface-3: #e9e9ed; --side-bg: #fbfbfc;
   --border: #e5e5ea; --border-2: #d5d5dc;
   --text: #16161a; --text-2: #52525c; --text-3: #6b6b75;
-  --accent: #294ae8; --accent-2: #2443e0; --accent-soft: rgba(51, 85, 255, .09); --accent-ring: rgba(51, 85, 255, .25);
+  --accent: #b7441c; --accent-2: #9c3615; --accent-soft: rgba(241, 102, 50, .09); --accent-ring: rgba(183, 68, 28, .25);
   --unread: #b43f10; --unread-soft: rgba(255, 91, 31, .11);
   --pin: #956000; --pin-soft: rgba(227, 154, 0, .13);
-  --accent-solid: #294ae8; --unread-solid: #c54616;
+  --accent-solid: #b7441c; --unread-solid: #c54616;
   --ag-claude: #b45333; --ag-codex: #0a7359; --ag-other: #71717a;
   --cat-approval: #7c3aed; --cat-approval-solid: #7c3aed; --cat-todo: #086b82; --cat-plan: #2f55e8; --cat-report: #15803d; --cat-other: #71717a;
   --ok: #15803d;
@@ -26,8 +26,8 @@
   --bg: #0d0d10; --surface: #16161a; --surface-2: #1d1d22; --surface-3: #27272e; --side-bg: #111114;
   --border: #26262d; --border-2: #37373f;
   --text: #ececf0; --text-2: #a9a9b3; --text-3: #8e8e99;
-  --accent: #7b93ff; --accent-2: #9aacff; --accent-soft: rgba(123, 147, 255, .14); --accent-ring: rgba(123, 147, 255, .35);
-  --accent-solid: #4a66f5; --unread-solid: #c54616;
+  --accent: #ffad85; --accent-2: #ffc4a6; --accent-soft: rgba(255, 173, 133, .12); --accent-ring: rgba(255, 173, 133, .35);
+  --accent-solid: #b7441c; --unread-solid: #c54616;
   --unread: #ff7d4a; --unread-soft: rgba(255, 125, 74, .15);
   --pin: #f4b532; --pin-soft: rgba(244, 181, 50, .14);
   --ag-claude: #e8916f; --ag-codex: #3fcf9f; --ag-other: #a1a1aa;

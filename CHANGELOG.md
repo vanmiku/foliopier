@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 (2026-11-12)
+
+- Rename the product to **FolioPier AI**, with a new abstract mark, paper companion and updated desktop/mobile icons, workbench labels, notifications and document-share branding.
+- Make `foliopier` the primary command while retaining `mydash` as a compatible alias. Existing documents, configuration, service identities, browser state and Agent permissions remain in place. No manual data migration is needed.
+- Refresh the English/Chinese product introduction, screenshots, installation and connection guides. The repository moves in place to `vanmiku/foliopier`; old Git URLs continue through GitHub redirects.
+- New dedicated Tailscale nodes default to `foliopier`. Existing devices keep their current names and addresses; use the actual address printed by the installer.
+
 ## 0.3.0 (2026-11-11)
 
 - Share published Markdown documents and selected attachments through a dedicated Tailscale Funnel reader. Visitors need only a browser, a link and its required 8-digit access code. Links expire after 24 hours by default, support up to 30 days, and can be extended, stopped or given a new code from the share manager.

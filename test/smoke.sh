@@ -148,7 +148,7 @@ check "边栏条目数正确" "curl -s '$B/api/sidebar' | grep -c '<em>1</em>'"
 
 echo "已读 / 未读"
 check "新条目默认未读" "curl -s '$B/' | grep -c 'class=\"entry unread\" data-id=\"smoke/battle-plan\"'"
-check "标题带未读数" "curl -s '$B/' | grep -c '<title>([0-9]*) mydash'"
+check "标题带未读数" "curl -s '$B/' | grep -c '<title>([0-9]*) FolioPier AI'"
 check "缺少 X-Mydash 头被拒（防跨站伪造）" "POSTJ -d '{\"id\":\"smoke/battle-plan\"}' '$B/api/read' | grep -c 403"
 check "外站 Origin 被拒" "POSTJ -H 'X-Mydash: 1' -H 'Origin: http://evil.example' -d '{\"id\":\"smoke/battle-plan\"}' '$B/api/read' | grep -c 403"
 check "表单类型被拒" "curl -s -o /dev/null -w '%{http_code}' -X POST -H 'X-Mydash: 1' -d 'id=smoke/battle-plan' '$B/api/read' | grep -c 415"
@@ -470,7 +470,7 @@ check "关了的单子进处理记录，钩子不再提醒" "curl -s '$B/p/appro
 check "已经关了的不能再关" "! $CLI approvals close approj/t1 >/dev/null 2>&1"
 node -e 'const fs=require("fs"),[f,a]=process.argv.slice(1),m=JSON.parse(fs.readFileSync(f)),t=new Date(Date.now()-4*864e5);m.versions.at(-1).time=t.toISOString();m.updated=t.toISOString();fs.writeFileSync(f,JSON.stringify(m,null,2));fs.utimesSync(a,t,t)' "$MYDASH_DATA/approj/s2/meta.json" "$MYDASH_HOME/state/agents/sess-ap-1.json"; sleep 1
 check "没人答、发单的会话也停了 3 天：过期，进处理记录" "! curl -s '$B/' | grep 'ap-row\" href=\"/p/approj/s2\"' >/dev/null && curl -s '$B/p/approj' | grep 'ap-pill ap-expired' >/dev/null && curl -s '$B/p/approj/s2' | grep '\"how\":\"expired\"' >/dev/null"
-check "帮助里有 approvals、ask" "$CLI --help | grep 'mydash approvals' >/dev/null && $CLI --help | grep 'mydash ask' >/dev/null"
+check "帮助里有 approvals、ask" "$CLI --help | grep 'foliopier approvals' >/dev/null && $CLI --help | grep 'foliopier ask' >/dev/null"
 # 类型
 (cd "$AP" && printf '# 下周发布计划\n\n内容\n' > plan.md && $CLI publish plan.md -p approj -s next-plan >/dev/null)
 (cd "$AP" && printf '# 杂项\n\n内容\n' > misc.md && $CLI publish misc.md -p approj -s misc --type report >/dev/null)
@@ -508,7 +508,7 @@ node -e 'const f=process.argv[1],fs=require("fs"),m=JSON.parse(fs.readFileSync(f
 check "改了类型后待办跟着更新（不用旧缓存）" "curl -s '$B/p/approj/migration' | grep '已完成 0/2' >/dev/null"
 (cd "$AP" && $CLI publish misc.md -p approj -s misc-todo --type todo >/dev/null)
 check "--type todo" "grep '\"category\": \"todo\"' '$MYDASH_DATA/approj/misc-todo/meta.json' >/dev/null"
-check "帮助里有 todos、asks" "$CLI --help | grep 'mydash todos' >/dev/null && $CLI --help | grep 'mydash asks' >/dev/null"
+check "帮助里有 todos、asks" "$CLI --help | grep 'foliopier todos' >/dev/null && $CLI --help | grep 'foliopier asks' >/dev/null"
 check "待办类不进时间线" "! curl -s '$B/' | grep 'data-id=\"approj/before-launch\"' >/dev/null"
 check "对话里说做完了：todos done 按开头几个字勾上" "$CLI todos done approj/before-launch '运行 sudo' | grep '3/4' >/dev/null"
 check "对不上或对上好几项时报错" "! $CLI todos done approj/before-launch '不存在的一项' >/dev/null 2>&1"
@@ -671,7 +671,7 @@ check "Telegram：设好后先发一条测试" "$CLI notify telegram 123456:ABCD
 check "Pushover" "$CLI notify pushover uQiRzpo4DXghDmr9QzzfQu27cmVRsG azGDORePK8gMaC0QOYAMyEEuzJnyUi >/dev/null && grep 'POST /po/1/messages.json' '$SINKF' >/dev/null"
 check "群机器人：内容带 mydash（钉钉关键词）" "$CLI notify webhook http://127.0.0.1:$SINKP/hook >/dev/null && grep 'POST /hook' '$SINKF' | grep '\[mydash\]' >/dev/null"
 check "群机器人按网址认出是哪家" "node -e 'import(\"$ROOT/lib/notify.mjs\").then(n=>process.exit([\"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=x\",\"https://open.feishu.cn/open-apis/bot/v2/hook/x\",\"https://oapi.dingtalk.com/robot/send?access_token=x\",\"https://hooks.slack.com/services/x\",\"https://discord.com/api/webhooks/x\"].map(n.webhookKind).join()===\"wecom,feishu,dingtalk,slack,discord\"?0:1))'"
-check "邮件：用 SMTP 登录后发出，中文标题编码正确" "$CLI notify email --host 127.0.0.1 --port $SMTPP --secure none --user me@example.com --pass pw-secret --to me@example.com >/dev/null && grep '> AUTH PLAIN' '$SMTPF' >/dev/null && grep '^Subject: mydash' '$SMTPF' >/dev/null && grep 'RCPT TO:<me@example.com>' '$SMTPF' >/dev/null"
+check "邮件：用 SMTP 登录后发出，中文标题编码正确" "$CLI notify email --host 127.0.0.1 --port $SMTPP --secure none --user me@example.com --pass pw-secret --to me@example.com >/dev/null && grep '> AUTH PLAIN' '$SMTPF' >/dev/null && grep '^Subject: FolioPier AI' '$SMTPF' >/dev/null && grep 'RCPT TO:<me@example.com>' '$SMTPF' >/dev/null"
 check "填了密码类的渠道后，配置文件只给自己读" "test \"\$(stat -c %a '$MYDASH_HOME/config.json' 2>/dev/null || stat -f %Lp '$MYDASH_HOME/config.json')\" = 600"
 : > "$SINKF"; : > "$SMTPF"
 (cd "$AP" && printf '# 多渠道\n\n内容\n' > n4.md && $CLI publish n4.md -p notifproj -s note-4 >/dev/null); sleep 2
@@ -721,7 +721,7 @@ const b = got.body, salt = b.subarray(0, 16), asPub = b.subarray(21, 21 + b[20])
 const ikm = Buffer.from(crypto.hkdfSync('sha256', ua.computeSecret(asPub), auth, Buffer.concat([Buffer.from('WebPush: info\0'), ua.getPublicKey(), asPub]), 32));
 const d = crypto.createDecipheriv('aes-128-gcm', Buffer.from(crypto.hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: aes128gcm\0'), 16)), Buffer.from(crypto.hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12)));
 d.setAuthTag(ct.subarray(-16)); const msg = JSON.parse(Buffer.concat([d.update(ct.subarray(0, -16)), d.final()]).subarray(0, -1).toString());
-if (msg.title !== 'mydash') fail('payload ' + JSON.stringify(msg));
+if (msg.title !== 'FolioPier AI') fail('payload ' + JSON.stringify(msg));
 const left = (await (await fetch(B + '/api/webpush')).json()).devices; if (left !== 1) fail('410 not removed: ' + left);
 console.log('OK'); srv.close(); process.exit(0);
 JS
@@ -924,7 +924,7 @@ stopq() { printf '%s' "{\"session_id\":\"$1\",\"stop_hook_active\":$2,\"last_ass
 check "回复末尾用文字问：让它接着用 AskUserQuestion 再问（Claude 用 additionalContext，不显示成错误），状态还算忙" "stopq smoke-stop-1 false '做好了。要不要我接着把 B 也改了？' | grep '\"hookEventName\":\"Stop\"' | grep AskUserQuestion >/dev/null && grep '\"busy\"' '$MYDASH_HOME/state/agents/smoke-stop-1.json' >/dev/null"
 check "已经拦过一次（stop_hook_active）就不再拦，记成闲" "test -z \"\$(stopq smoke-stop-1 true '要不要？')\" && grep '\"idle\"' '$MYDASH_HOME/state/agents/smoke-stop-1.json' >/dev/null"
 check "没有问题、问号只在代码和网址里：不拦" "test -z \"\$(stopq smoke-stop-2 false '见 https://x.y/a?b=1 和 \`a?b\`，做完了。')\""
-check "Codex：拦下（decision: block），让它用 request_user_input 或 mydash ask" "stopq smoke-stop-3 false '用哪个？' codex | grep '\"decision\":\"block\"' | grep 'mydash ask' >/dev/null"
+check "Codex：拦下（decision: block），让它用 request_user_input 或 mydash ask" "stopq smoke-stop-3 false '用哪个？' codex | grep '\"decision\":\"block\"' | grep 'foliopier ask' >/dev/null"
 node -e 'const f=process.argv[1],fs=require("fs"),c=JSON.parse(fs.readFileSync(f));c.prompts={chat:false};fs.writeFileSync(f,JSON.stringify(c,null,2))' "$MYDASH_HOME/config.json"
 check "设置里关掉就不拦" "test -z \"\$(stopq smoke-stop-4 false '要不要？')\""
 node -e 'const f=process.argv[1],fs=require("fs"),c=JSON.parse(fs.readFileSync(f));delete c.prompts;fs.writeFileSync(f,JSON.stringify(c,null,2))' "$MYDASH_HOME/config.json"

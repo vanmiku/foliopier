@@ -1502,7 +1502,7 @@ class ReviewUI(unittest.TestCase):
         self.page.route('**/api/sessions/'+ident,chat)
         self.page.route('**/api/sessions/send',lambda r:(sent.append(1),r.fulfill(status=500,json={})))
         self.page.set_viewport_size({'width':1366,'height':820});self.go('/p/test/session-document')
-        self.assertIn('computer hosting mydash',self.page.locator('#article-send-reason').inner_text())
+        self.assertIn('computer hosting FolioPier AI',self.page.locator('#article-send-reason').inner_text())
         self.open_article_composer();self.page.locator('#article-message').fill('Keep this question')
         count=len(calls);self.page.locator('[data-article-reconnect]').click()
         self.page.wait_for_function('()=>!document.querySelector("[data-article-reconnect]").disabled')

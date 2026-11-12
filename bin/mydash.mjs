@@ -25,31 +25,31 @@ import { t, lang } from '../lib/i18n.mjs';
 const VERSION = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8')).version;
 
 const HELP = {
-  en: `mydash ${VERSION}: publish what your coding agent makes to the mydash workbench
+  en: `FolioPier AI ${VERSION}: publish what your coding agent makes to the FolioPier AI workbench
 
 Usage
-  mydash publish <files or folders...> [options]   publish (same slug again = new version)
-  mydash ls [project] [--all]                      list items (default: the current project)
-  mydash search <words> [--project p]              search the text of everything published
-  mydash url [project[/slug]] [--local]            print a URL (--local: hosting computer, no Tailscale needed)
-  mydash rm <project>/<slug> [--version N]         delete an item or one version
-  mydash rebuild [project[/slug]] [--agents|--dedup]  add missing previews; --agents: which tool published old items; --dedup: link identical files
-  mydash prune [project[/slug]] [--keep N]         keep only the latest N versions of each item (default 5)
-  mydash feedback [project[/slug]] [--all] [--json]  the user's open comments; feedback done <id> marks them handled
-  mydash doctor [--json]                           check that everything works
-  mydash integrate claude|codex|all [--dry-run] [--remove] [--no-hooks]   teach Claude Code / Codex to use mydash
-  mydash lan [on|off|reset]                        open it on the same Wi-Fi, with an access code
-  mydash notify bark|ntfy|telegram|pushover|webhook|email … [--name n] | remove <id> | daily <HH:MM|off> | test | off   push notifications; several of each kind are fine (or use the settings page)
-  mydash update [--check]                          update to the latest release (--check: only see whether there is one)
-  mydash uninstall [--purge] | setup ...           maintenance (see INSTALL.md)
-  sudo mydash service boot | login                 macOS: start at boot, before anyone logs in (after setup install --service launchd-boot) / back to starting at login
-  mydash forward <port…> | off                     own Tailscale node only: also forward these ports, e.g. 22 5900 for SSH and Screen Sharing
+  foliopier publish <files or folders...> [options]   publish (same slug again = new version)
+  foliopier ls [project] [--all]                      list items (default: the current project)
+  foliopier search <words> [--project p]              search the text of everything published
+  foliopier url [project[/slug]] [--local]            print a URL (--local: hosting computer, no Tailscale needed)
+  foliopier rm <project>/<slug> [--version N]         delete an item or one version
+  foliopier rebuild [project[/slug]] [--agents|--dedup]  add missing previews; --agents: which tool published old items; --dedup: link identical files
+  foliopier prune [project[/slug]] [--keep N]         keep only the latest N versions of each item (default 5)
+  foliopier feedback [project[/slug]] [--all] [--json]  the user's open comments; feedback done <id> marks them handled
+  foliopier doctor [--json]                           check that everything works
+  foliopier integrate claude|codex|all [--dry-run] [--remove] [--no-hooks]   teach Claude Code / Codex to use FolioPier AI
+  foliopier lan [on|off|reset]                        open it on the same Wi-Fi, with an access code
+  foliopier notify bark|ntfy|telegram|pushover|webhook|email … [--name n] | remove <id> | daily <HH:MM|off> | test | off   push notifications; several of each kind are fine (or use the settings page)
+  foliopier update [--check]                          update to the latest release (--check: only see whether there is one)
+  foliopier uninstall [--purge] | setup ...           maintenance (see INSTALL.md)
+  sudo foliopier service boot | login                 macOS: start at boot, before anyone logs in (after setup install --service launchd-boot) / back to starting at login
+  foliopier forward <port…> | off                     own Tailscale node only: also forward these ports, e.g. 22 5900 for SSH and Screen Sharing
 
-Decisions and to-dos (agents run these; details in the mydash skill)
-  mydash ask "<question>" <option…> [--multi]      ask the user in mydash and wait for the answer
-  mydash approvals [project[/slug]] | wait <p/s> | close <p/s> --note "…" | done <id>   answers to approval forms
-  mydash todos [project[/slug]] | wait <p/s> | done <p/s> "<item>" | check   to-do lists the user ticks off
-  mydash asks [--all] | reply <id> "<answer>"      questions the user asked about an item
+Decisions and to-dos (agents run these; details in the FolioPier AI skill)
+  foliopier ask "<question>" <option…> [--multi]      ask the user in FolioPier AI and wait for the answer
+  foliopier approvals [project[/slug]] | wait <p/s> | close <p/s> --note "…" | done <id>   answers to approval forms
+  foliopier todos [project[/slug]] | wait <p/s> | done <p/s> "<item>" | check   to-do lists the user ticks off
+  foliopier asks [--all] | reply <id> "<answer>"      questions the user asked about an item
 
 publish options
   -t, --title    title; default: the first Markdown heading or the file name
@@ -58,7 +58,7 @@ publish options
       --type     plan | report | other (default: guessed from the title)
       --resolves <id,id…|all>  mark these comments on this item as handled by this version
   -m, --main     with several files, which one opens first
-      --name     file name when publishing stdin: cat x.md | mydash publish - --name plan.md
+      --name     file name when publishing stdin: cat x.md | foliopier publish - --name plan.md
       --json     machine-readable output
       --force    skip the size limits
       --allow-secret   publish even if a file looks like a key or credentials
@@ -67,31 +67,31 @@ publish options
 
 Local images and files referenced from Markdown are included automatically.
 `,
-  zh: `mydash ${VERSION}：把编程 agent 的中间产物发布到 mydash 工作台
+  zh: `FolioPier AI ${VERSION}：把编程 agent 的中间产物发布到 FolioPier AI 工作台
 
 用法
-  mydash publish <文件或目录...> [选项]           发布（同一 slug 再发 = 新版本）
-  mydash ls [项目] [--all]                         列出条目（默认当前项目）
-  mydash search <关键词> [--project 项目]          在发布过的所有内容的正文里搜索
-  mydash url [项目[/slug]] [--local]               打印网址（--local：部署机器本机，无需 Tailscale）
-  mydash rm <项目>/<slug> [--version N]            删除条目或某个版本
-  mydash rebuild [项目[/slug]] [--agents|--dedup]  补齐预览；--agents 补记发布工具；--dedup 相同文件改成链接
-  mydash prune [项目[/slug]] [--keep N]            每个条目只留最近 N 个版本（默认 5）
-  mydash feedback [项目[/slug]] [--all] [--json]    用户还没处理的批注；feedback done <id> 标记已处理
-  mydash doctor [--json]                           检查服务和配置
-  mydash integrate claude|codex|all [--dry-run] [--remove] [--no-hooks]   让 Claude Code / Codex 用上 mydash
-  mydash lan [on|off|reset]                        同一 WiFi 下的设备凭访问码打开
-  mydash notify bark|ntfy|telegram|pushover|webhook|email … [--name 名字] | remove <编号> | daily <HH:MM|off> | test | off   推送到手机，同一种也能加好几个（也可以在设置页里填）
-  mydash update [--check]                          更新到最新的正式版本（--check：只看有没有新版本）
-  mydash uninstall [--purge] | setup ...           维护（见 INSTALL.md）
-  sudo mydash service boot | login                 macOS：开机就启动、不用登录（先 setup install --service launchd-boot）/ 改回登录后启动
-  mydash forward <端口…> | off                     只用于独立 Tailscale 节点：顺带转发这些端口，比如 22 5900（SSH、屏幕共享）
+  foliopier publish <文件或目录...> [选项]           发布（同一 slug 再发 = 新版本）
+  foliopier ls [项目] [--all]                         列出条目（默认当前项目）
+  foliopier search <关键词> [--project 项目]          在发布过的所有内容的正文里搜索
+  foliopier url [项目[/slug]] [--local]               打印网址（--local：部署机器本机，无需 Tailscale）
+  foliopier rm <项目>/<slug> [--version N]            删除条目或某个版本
+  foliopier rebuild [项目[/slug]] [--agents|--dedup]  补齐预览；--agents 补记发布工具；--dedup 相同文件改成链接
+  foliopier prune [项目[/slug]] [--keep N]            每个条目只留最近 N 个版本（默认 5）
+  foliopier feedback [项目[/slug]] [--all] [--json]    用户还没处理的批注；feedback done <id> 标记已处理
+  foliopier doctor [--json]                           检查服务和配置
+  foliopier integrate claude|codex|all [--dry-run] [--remove] [--no-hooks]   让 Claude Code / Codex 用上 FolioPier AI
+  foliopier lan [on|off|reset]                        同一 WiFi 下的设备凭访问码打开
+  foliopier notify bark|ntfy|telegram|pushover|webhook|email … [--name 名字] | remove <编号> | daily <HH:MM|off> | test | off   推送到手机，同一种也能加好几个（也可以在设置页里填）
+  foliopier update [--check]                          更新到最新的正式版本（--check：只看有没有新版本）
+  foliopier uninstall [--purge] | setup ...           维护（见 INSTALL.md）
+  sudo foliopier service boot | login                 macOS：开机就启动、不用登录（先 setup install --service launchd-boot）/ 改回登录后启动
+  foliopier forward <端口…> | off                     只用于独立 Tailscale 节点：顺带转发这些端口，比如 22 5900（SSH、屏幕共享）
 
-拍板和待办（agent 用，详见 mydash skill）
-  mydash ask "<问题>" <选项…> [--multi]             在 mydash 上问用户，等答完再返回
-  mydash approvals [项目[/slug]] | wait <项目/slug> | close <项目/slug> --note "…" | done <id>   审批单的答复
-  mydash todos [项目[/slug]] | wait <项目/slug> | done <项目/slug> "<那一项>" | check   用户要勾的待办
-  mydash asks [--all] | reply <id> "<回答>"          用户在某一项上问的问题
+拍板和待办（agent 用，详见 FolioPier AI skill）
+  foliopier ask "<问题>" <选项…> [--multi]             在 FolioPier AI 上问用户，等答完再返回
+  foliopier approvals [项目[/slug]] | wait <项目/slug> | close <项目/slug> --note "…" | done <id>   审批单的答复
+  foliopier todos [项目[/slug]] | wait <项目/slug> | done <项目/slug> "<那一项>" | check   用户要勾的待办
+  foliopier asks [--all] | reply <id> "<回答>"          用户在某一项上问的问题
 
 publish 选项
   -t, --title    标题，默认取 Markdown 的第一个标题或文件名
@@ -100,7 +100,7 @@ publish 选项
       --type     plan（方案）| report（汇报）| other（其他），默认按标题推断
       --resolves <id,id…|all>  这一版处理了哪些批注（标记为已处理）
   -m, --main     多个文件时，默认打开哪一个
-      --name     从标准输入发布时的文件名，例如：cat x.md | mydash publish - --name plan.md
+      --name     从标准输入发布时的文件名，例如：cat x.md | foliopier publish - --name plan.md
       --json     以 JSON 输出结果
       --force    跳过大小限制
       --allow-secret   文件看起来像密钥或凭据时仍然发布
@@ -133,7 +133,7 @@ function parseArgs(argv) {
   return { opts, pos };
 }
 
-function die(msg, code = 1) { process.stderr.write(`mydash: ${msg}\n`); process.exit(code); }
+function die(msg, code = 1) { process.stderr.write(`foliopier: ${msg}\n`); process.exit(code); }
 
 async function cmdLs(pos, opts) {
   const want = opts.all ? '' : (pos[0] || detectProject(process.cwd()).name);
@@ -159,7 +159,7 @@ async function cmdLs(pos, opts) {
 
 function cmdUrl(pos, opts) {
   const remote = remoteConfig();
-  if (opts.local && remote) die(t('This is a remote publishing client. Open the local address on the computer hosting mydash.'));
+  if (opts.local && remote) die(t('This is a remote publishing client. Open the local address on the computer hosting FolioPier AI.'));
   const target = pos[0]; const base = opts.local ? localUrl() : remote?.url || baseUrl();
   if (!target) { process.stdout.write(base + '/\n'); return; }
   const [project, slug] = target.split('/');
@@ -167,7 +167,7 @@ function cmdUrl(pos, opts) {
 }
 
 async function cmdRm(pos, opts) {
-  const target = pos[0]; if (!target || !target.includes('/')) die(t('Usage: mydash rm <project>/<slug> [--version N]'));
+  const target = pos[0]; if (!target || !target.includes('/')) die(t('Usage: foliopier rm <project>/<slug> [--version N]'));
   const [project, slug] = target.split('/');
   const dir = itemDir(cleanName(project), cleanName(slug));
   if (!dir.startsWith(DATA_DIR + path.sep)) die(t('Invalid path'));
@@ -212,12 +212,12 @@ async function cmdDoctor(opts) {
     const name = a === 'claude' ? 'Claude Code' : 'Codex';
     const PART = { 'publish-rule': t('the publish rule'), 'decide-rule': t('the rule for choices and to-dos'), skill: t('the skill'), permissions: t('permissions'), rules: t('sandbox rules'), hooks: t('hooks') };
     const partial = !s.integrated && s.missing.length < 5;
-    h.checks.push({ id: `integrate-${a}`, ok: s.integrated, level: 'optional', detail: s.integrated ? t('{agent} is set up to use mydash', { agent: name }) : partial ? t('{agent} is set up, but these are missing or old: {list}', { agent: name, list: s.missing.map(m => PART[m]).join(', ') }) : t('{agent} is not set up to use mydash yet', { agent: name }), fix: s.integrated ? undefined : t('Ask the user, then run: mydash integrate {a} (preview with --dry-run)', { a }) });
+    h.checks.push({ id: `integrate-${a}`, ok: s.integrated, level: 'optional', detail: s.integrated ? t('{agent} is set up to use FolioPier AI', { agent: name }) : partial ? t('{agent} is set up, but these are missing or old: {list}', { agent: name, list: s.missing.map(m => PART[m]).join(', ') }) : t('{agent} is not set up to use FolioPier AI yet', { agent: name }), fix: s.integrated ? undefined : t('Ask the user, then run: foliopier integrate {a} (preview with --dry-run)', { a }) });
     // 装过钩子的才查：缺了、指向的文件没了、Codex 里还没信任
     const hh = hookHealth(a); if (!hh) continue;
-    const bad = [!hh.complete && t('some mydash hooks are missing or out of date'), hh.missing.length && t('a hook points to a file that no longer exists: {files}', { files: hh.missing.join(', ') }), hh.untrusted && t('{n} mydash hook is not trusted in Codex yet, so it does not run|{n} mydash hooks are not trusted in Codex yet, so they do not run', { n: hh.untrusted })].filter(Boolean);
-    h.checks.push({ id: `hooks-${a}`, ok: !bad.length, level: 'recommended', detail: bad.length ? bad.join('; ') : t('{agent}: questions and approvals come to mydash', { agent: a === 'claude' ? 'Claude Code' : 'Codex' }),
-      fix: !hh.complete || hh.missing.length ? t('Run ./setup.sh install from the mydash source folder') : hh.untrusted ? t('Open Codex in a terminal, type /hooks and trust the mydash hooks') : undefined });
+    const bad = [!hh.complete && t('some FolioPier AI hooks are missing or out of date'), hh.missing.length && t('a hook points to a file that no longer exists: {files}', { files: hh.missing.join(', ') }), hh.untrusted && t('{n} FolioPier AI hook is not trusted in Codex yet, so it does not run|{n} FolioPier AI hooks are not trusted in Codex yet, so they do not run', { n: hh.untrusted })].filter(Boolean);
+    h.checks.push({ id: `hooks-${a}`, ok: !bad.length, level: 'recommended', detail: bad.length ? bad.join('; ') : t('{agent}: questions and approvals come to FolioPier AI', { agent: a === 'claude' ? 'Claude Code' : 'Codex' }),
+      fix: !hh.complete || hh.missing.length ? t('Run ./setup.sh install from the FolioPier AI source folder') : hh.untrusted ? t('Open Codex in a terminal, type /hooks and trust the FolioPier AI hooks') : undefined });
   }
   const ok = allRequiredOk(h.checks);
   if (opts.json) { process.stdout.write(JSON.stringify({ ok, version: VERSION, ...h, project: dp, integrations: integ }) + '\n'); if (!ok) process.exitCode = 1; return; }
@@ -228,7 +228,7 @@ async function cmdDoctor(opts) {
 
 async function cmdIntegrate(pos, opts) {
   const which = pos[0] === 'all' ? ['claude', 'codex'] : [pos[0]];
-  if (!['claude', 'codex'].includes(which[0])) die(t('Usage: mydash integrate claude|codex|all [--dry-run] [--remove]'));
+  if (!['claude', 'codex'].includes(which[0])) die(t('Usage: foliopier integrate claude|codex|all [--dry-run] [--remove]'));
   const res = {};
   for (const a of which) res[a] = integrate(a, { remove: Boolean(opts.remove), dryRun: Boolean(opts['dry-run']), hooks: !opts['no-hooks'] });
   if (opts.json) { process.stdout.write(JSON.stringify({ ok: true, dryRun: Boolean(opts['dry-run']), remove: Boolean(opts.remove), changes: res }) + '\n'); return; }
@@ -274,20 +274,20 @@ try {
       if (pos[0] === 'off') { for (const p of cur) TSm.serveTcpOff(tg, p); next = []; }
       else if (pos.length) {
         const ports = pos.map(Number);
-        if (!ports.every(p => Number.isInteger(p) && p > 0 && p < 65536) || ports.some(p => [80, 443, c.contentPort, 4872].includes(p))) die(t('Usage: mydash forward <port…> | off   (e.g. mydash forward 22 5900)'));
+        if (!ports.every(p => Number.isInteger(p) && p > 0 && p < 65536) || ports.some(p => [80, 443, c.contentPort, 4872].includes(p))) die(t('Usage: foliopier forward <port…> | off   (e.g. foliopier forward 22 5900)'));
         for (const p of cur.filter(p => !ports.includes(p))) TSm.serveTcpOff(tg, p);
         for (const p of ports) { const r = TSm.serveTcp(tg, p); if (!r.ok) die(r.out.trim()); }
         next = [...new Set(ports)];
       }
       if (next !== cur) st.updateConfig(x => ({ ...x, nodeTcp: next }));
       const host = (TSm.names(TSm.status(tg) || {}).fqdn) || c.hostname || 'mydash';
-      process.stdout.write(next.length ? t('Forwarded on {host}: {ports}. Screen Sharing: vnc://{host} · SSH: ssh {user}@{host}', { host, ports: next.join(', '), user: os.userInfo().username }) + '\n' : t('No ports forwarded on the mydash node.') + '\n');
+      process.stdout.write(next.length ? t('Forwarded on {host}: {ports}. Screen Sharing: vnc://{host} · SSH: ssh {user}@{host}', { host, ports: next.join(', '), user: os.userInfo().username }) + '\n' : t('No ports forwarded on the FolioPier AI node.') + '\n');
       break;
     }
     case 'service': {
       // sudo mydash service boot | login：开机就启动 / 改回登录后启动（macOS，要管理员权限）
       const { bootServices } = await import('../lib/service.mjs');
-      if (!['boot', 'login'].includes(pos[0])) die(t('Usage: sudo mydash service boot | login'));
+      if (!['boot', 'login'].includes(pos[0])) die(t('Usage: sudo foliopier service boot | login'));
       const r = bootServices(pos[0]);
       if (opts.json) process.stdout.write(JSON.stringify(r) + '\n');
       else { for (const d of r.done || []) process.stdout.write(`✓ ${d}\n`); if (r.error) process.stdout.write(`✗ ${r.error}${r.fix ? `\n  ${r.fix}` : ''}\n`); if (r.next) process.stdout.write(`${r.next}\n`); }
@@ -309,7 +309,7 @@ try {
       if (opts.check) {
         const s = await checkForUpdate({ force: true });
         if (opts.json) process.stdout.write(JSON.stringify({ ok: !s.error, ...s }) + '\n');
-        else process.stdout.write((!s.canCheck ? t('Cannot check: mydash was not installed from a git checkout.') : s.error ? s.error : s.available ? t('Version {v} is available (installed: {cur}). Run: mydash update', { v: s.latest.version, cur: s.current }) + (s.latest.url ? `\n${s.latest.url}` : '') : t('Already up to date ({v}).', { v: s.current })) + '\n');
+        else process.stdout.write((!s.canCheck ? t('Cannot check: FolioPier AI was not installed from a git checkout.') : s.error ? s.error : s.available ? t('Version {v} is available (installed: {cur}). Run: foliopier update', { v: s.latest.version, cur: s.current }) + (s.latest.url ? `\n${s.latest.url}` : '') : t('Already up to date ({v}).', { v: s.current })) + '\n');
         if (s.error) process.exitCode = 1;
         break;
       }
@@ -323,7 +323,7 @@ try {
       if (!r.ok) process.exitCode = 1;
       break;
     }
-    default: die(t('Unknown command: {cmd}; see mydash --help', { cmd }));
+    default: die(t('Unknown command: {cmd}; see foliopier --help', { cmd }));
   }
 } catch (e) {
   if (e instanceof UsageError) die(e.message);

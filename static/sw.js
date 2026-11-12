@@ -3,8 +3,8 @@ self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('push', e => {
   let d = {};
-  try { d = e.data ? e.data.json() : {}; } catch { d = { title: 'mydash', body: e.data ? e.data.text() : '' }; }
-  e.waitUntil(self.registration.showNotification(d.title || 'mydash', { body: d.body || '', icon: '/static/icon-180.png', badge: '/static/icon-180.png', data: { url: d.link || '/' } }));
+  try { d = e.data ? e.data.json() : {}; } catch { d = { title: 'FolioPier AI', body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'FolioPier AI', { body: d.body || '', icon: '/static/icon-180.png', badge: '/static/icon-180.png', data: { url: d.link || '/' } }));
 });
 self.addEventListener('notificationclick', e => {
   e.notification.close();

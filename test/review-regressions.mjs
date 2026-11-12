@@ -157,7 +157,7 @@ test('doctor rejects a network address that answers for another installation or 
     contentPort: port, baseUrl: `http://127.0.0.1:${port}/peer` }));
   const check = async () => (await health()).checks.find((x) => x.id === 'url');
   assert.equal((await check()).ok, false, 'a name pointing at another installation must not pass');
-  assert.match((await check()).detail, /this mydash installation/i);
+  assert.match((await check()).detail, /this FolioPier AI installation/i);
   peerId = null;
   assert.equal((await check()).ok, false, 'a generic 200 response must not pass');
   peerId = INSTALL_ID;

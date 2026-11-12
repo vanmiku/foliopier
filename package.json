@@ -1,35 +1,36 @@
 {
-  "name": "mydash",
-  "version": "0.3.0",
+  "name": "foliopier",
+  "version": "0.3.1",
   "private": true,
-  "description": "A self-hosted workbench for what your coding agents (Claude Code, Codex) make: publish plans, reports, PDFs, screenshots, HTML and Office files, read them rendered on your computer or phone.",
+  "description": "FolioPier AI: a local-first workbench to read, review and share deliverables from Claude Code and Codex.",
   "license": "MIT",
   "author": "vanmiku",
-  "homepage": "https://github.com/vanmiku/mydash",
+  "homepage": "https://github.com/vanmiku/foliopier",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vanmiku/mydash.git"
+    "url": "git+https://github.com/vanmiku/foliopier.git"
   },
   "bugs": {
-    "url": "https://github.com/vanmiku/mydash/issues"
+    "url": "https://github.com/vanmiku/foliopier/issues"
   },
   "keywords": [
+    "ai-agents",
     "claude-code",
     "codex",
-    "ai-agents",
+    "document-review",
+    "local-first",
     "self-hosted",
     "markdown",
-    "pdf",
-    "tailscale",
-    "dashboard"
+    "pdf"
   ],
   "type": "module",
   "bin": {
+    "foliopier": "bin/foliopier.mjs",
     "mydash": "bin/mydash.mjs"
   },
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test test/review-regressions.mjs test/https-access.mjs test/update-release.mjs test/boot-setup.mjs test/lan-access.mjs test/sessions.mjs test/codex-app.mjs test/codex-questions.mjs test/codex-native-prompts.mjs test/codex-question-lifecycle.mjs test/codex-daemon.mjs test/codex-connection.mjs test/codex-wake.mjs test/session-images.mjs test/session-discovery.mjs test/terminal-delivery.mjs test/claude-remote.mjs test/claude-auth.mjs test/shares.mjs test/share-resources.mjs test/share-rendering.mjs test/share-pdf.mjs test/share-pdf-failure.mjs test/share-network.mjs test/share-network-cleanup.mjs test/share-server.mjs test/share-workbench.mjs test/share-owner-views.mjs && bash test/smoke-parallel.sh && node test/i18n-check.mjs --missing-only"
+    "test": "node --test test/branding.mjs test/review-regressions.mjs test/https-access.mjs test/update-release.mjs test/boot-setup.mjs test/lan-access.mjs test/sessions.mjs test/codex-app.mjs test/codex-questions.mjs test/codex-native-prompts.mjs test/codex-question-lifecycle.mjs test/codex-daemon.mjs test/codex-connection.mjs test/codex-wake.mjs test/session-images.mjs test/session-discovery.mjs test/terminal-delivery.mjs test/claude-remote.mjs test/claude-auth.mjs test/shares.mjs test/share-resources.mjs test/share-rendering.mjs test/share-pdf.mjs test/share-pdf-failure.mjs test/share-network.mjs test/share-network-cleanup.mjs test/share-server.mjs test/share-workbench.mjs test/share-owner-views.mjs && bash test/smoke-parallel.sh && node test/i18n-check.mjs --missing-only"
   },
   "engines": {
     "node": ">=20"
