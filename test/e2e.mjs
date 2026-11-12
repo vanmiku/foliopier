@@ -46,7 +46,8 @@ try {
   ok('command installed', fs.existsSync(path.join(bin, WIN ? 'mydash.cmd' : 'mydash')));
   ok('primary command installed', fs.existsSync(path.join(bin, WIN ? 'foliopier.cmd' : 'foliopier')));
   const legacy = spawnSync(path.join(bin, WIN ? 'mydash.cmd' : 'mydash'), ['doctor', '--json'], { env, encoding: 'utf8', shell: WIN, timeout: 30000 });
-  ok('legacy command reads the same installation', legacy.status === 0 && legacy.stdout.includes(env.MYDASH_HOME));
+  const legacyDoc = json(legacy);
+  ok('legacy command reads the same installation', legacy.status === 0 && legacyDoc.ok && legacyDoc.url === ins.url.replace(/\/$/, ''), JSON.stringify({ result: legacyDoc, exitCode: legacy.status, stderr: legacy.stderr }).slice(0, 1200));
   if (!WIN) ok('config.json is readable only by the user', (fs.statSync(path.join(env.MYDASH_HOME, 'config.json')).mode & 0o777) === 0o600);
   if (WIN) ok('Git Bash command installed too', fs.existsSync(path.join(bin, 'mydash')));
   ok('workbench port answers', (await get(`${B}/healthz`)).status === 200);
@@ -149,8 +150,9 @@ try {
   ok('the page can show how far the update got', stages.size > 0 && [...stages].every(x => ['fetch', 'switch', 'deps', 'install', 'rollback'].includes(x)), [...stages].join(', ') || 'no stage seen');
 
   console.log('uninstall');
-  const un = json(mydash(['uninstall', '--purge', '--json']));
-  ok('uninstall ok', un.ok);
+  const uninstallCommand = mydash(['uninstall', '--purge', '--json']);
+  const un = json(uninstallCommand);
+  ok('uninstall ok', un.ok, JSON.stringify({ result: un, exitCode: uninstallCommand.status, stderr: uninstallCommand.stderr }).slice(0, 2500));
   ok('primary alias removed', !fs.existsSync(path.join(bin, WIN ? 'foliopier.cmd' : 'foliopier')));
   ok('legacy alias removed', !fs.existsSync(path.join(bin, WIN ? 'mydash.cmd' : 'mydash')));
   await sleep(1500);
