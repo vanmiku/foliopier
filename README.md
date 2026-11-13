@@ -12,7 +12,7 @@ Claude Code and Codex publish the files. You read them on your computer or phone
 [![Tests](https://github.com/vanmiku/foliopier/actions/workflows/test.yml/badge.svg)](https://github.com/vanmiku/foliopier/actions/workflows/test.yml)
 [![MIT](https://img.shields.io/badge/license-MIT-555)](LICENSE)
 
-[Get started](#get-started) · [How it works](#how-it-works) · [Document sharing](#share-selected-work) · [Connection guide](docs/sessions.md) · [中文](README.zh-CN.md)
+[Website](https://foliopier.com) · [Get started](#get-started) · [How it works](#how-it-works) · [Document sharing](#share-selected-work) · [Connection guide](docs/sessions.md) · [中文](README.zh-CN.md)
 
 </div>
 

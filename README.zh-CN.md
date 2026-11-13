@@ -12,7 +12,7 @@ Claude Code 和 Codex 发布文件，你在电脑或手机上查看内容、回�
 [![测试](https://github.com/vanmiku/foliopier/actions/workflows/test.yml/badge.svg)](https://github.com/vanmiku/foliopier/actions/workflows/test.yml)
 [![MIT](https://img.shields.io/badge/license-MIT-555)](LICENSE)
 
-[开始使用](#开始使用) · [工作流程](#工作流程) · [文档分享](#分享选定的成果) · [会话连接说明](docs/sessions.zh-CN.md) · [English](README.md)
+[官网](https://foliopier.com) · [开始使用](#开始使用) · [工作流程](#工作流程) · [文档分享](#分享选定的成果) · [会话连接说明](docs/sessions.zh-CN.md) · [English](README.md)
 
 </div>
 
