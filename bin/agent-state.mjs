@@ -31,10 +31,17 @@ const valid = /^[\w-]{6,100}$/.test(id);
 const file = path.join(AGENTS, `${id}.json`);
 const prev = valid ? readJson(file) || {} : {};
 
-// 回复最后在用文字问用户吗：去掉代码和网址，看最后几百个字里有没有问号
+// 回复最后在用文字等用户拍板吗：只看末尾，跳过代码、引用和链接。
+// “你说做我再做”“要修的话你说一声”也是提问，不能只认问号。
 function asksInText(msg) {
-  const s = String(msg || '').replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ').replace(/https?:\/\/\S+/g, ' ').trim();
-  return /[?？]/.test(s.slice(-500));
+  const s = String(msg || '').replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ')
+    .replace(/^\s*>.*$/gm, ' ').replace(/\[[^\]\n]*\]\(https?:\/\/[^)\n]*\)/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ').trim().slice(-500);
+  return /[?？]/.test(s)
+    || /(?:你|您)(?:说|确认|同意|批准|点头|决定|选好)[^。！？\n]{0,30}(?:我再|才(?:会)?继续)/.test(s)
+    || /(?:要|想|需要)[^。！？\n]{0,40}(?:的话|就)[^。！？\n]{0,16}(?:说一声|告诉我|确认一下)/.test(s)
+    || /请(?:你|您)?(?:选择|决定|拍板|确认(?:是否|要不要|要|我))/.test(s)
+    || /\b(?:let me know|tell me)\s+(?:if|whether|which)\b|\bplease\s+(?:confirm|choose|decide|select)\b/i.test(s);
 }
 // 这个会话有一张审批单在等用户答：回复里的问题多半就是在说它，不拦
 const waitingForm = () => Object.values(readJson(path.join(HOME, 'state', 'open-items.json')) || {}).some(x => x.session === id && x.kind === 'approval' && x.state === 'pending');
