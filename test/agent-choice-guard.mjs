@@ -15,13 +15,15 @@ function fixture(t) {
     fs.writeFileSync(path.join(home, 'state/open-items.json'), JSON.stringify(form ? {
       'project/approval': { session: 'choice-session', kind: 'approval', state: 'pending' },
     } : {}));
-    const r = spawnSync(process.execPath, ['bin/agent-state.mjs', 'idle', agent], {
+    const r = spawnSync(process.execPath, ['bin/agent-state.mjs', event === 'UserPromptSubmit' ? 'busy' : 'idle', agent], {
       env: { ...process.env, MYDASH_HOME: home, MYDASH_LANG: 'en', CLAUDE_CODE_ENTRYPOINT: entrypoint },
       input: JSON.stringify({ session_id: 'choice-session', hook_event_name: event,
         stop_hook_active: active, last_assistant_message: message }), encoding: 'utf8',
     });
     assert.equal(r.status, 0, r.stderr);
-    return { output: r.stdout ? JSON.parse(r.stdout) : null,
+    let output = null;
+    if (r.stdout) { try { output = JSON.parse(r.stdout); } catch { output = r.stdout; } }
+    return { output,
       state: fs.existsSync(path.join(home, 'state/agents/choice-session.json'))
         ? JSON.parse(fs.readFileSync(path.join(home, 'state/agents/choice-session.json'))).state : null };
   };
@@ -55,6 +57,9 @@ test('decision detection ignores code, quotes, links and ordinary completed work
     '说明已更新。示例：`要继续就告诉我`。\n```text\n你说做我再做。\n```',
     'See [Let me know if you want me to continue](https://example.com/a?b=1).',
     'The model now waits for confirmation before deploying. All checks passed.',
+    '查到原因了：Claude 只写“你说做我再做”，没有调用选择题；旧检查只认问号，所以漏掉了。',
+    '已修复「要修的话你说一声」这类提问的漏检。',
+    'The example was "Let me know if you want me to continue". The guard is now fixed.',
   ]) {
     assert.equal(run(message).output, null, message);
   }
@@ -66,8 +71,30 @@ test('question safeguards retain opt-outs, pending forms, batch runs and the one
     { active: true }, { form: true }, { config: { prompts: { enabled: false } } },
     { config: { prompts: { chat: false } } }, { event: 'StopFailure' }, { entrypoint: 'sdk-ts' },
   ]) assert.equal(run(message, options).output, null, JSON.stringify(options));
-  const codex = run(message, { agent: 'codex' });
-  assert.equal(codex.output?.decision, 'block');
-  assert.match(codex.output.reason, /request_user_input/);
   assert.ok(run('要不要现在发布？').output, 'existing questions still trigger the guard');
+});
+
+test('Codex does not turn ordinary reply checks into visible continuation prompts', (t) => {
+  const run = fixture(t);
+  for (const message of ['要不要现在发布？', '要修的话你说一声。',
+    '已修复“你说做我再做”的提问漏检，测试通过。']) {
+    const r = run(message, { agent: 'codex' });
+    assert.equal(r.output, null, message);
+    assert.equal(r.state, 'idle', message);
+  }
+});
+
+test('Codex receives choice reminders as private context on each user turn', (t) => {
+  const run = fixture(t);
+  for (let i = 0; i < 2; i++) {
+    const r = run('', { agent: 'codex', event: 'UserPromptSubmit' });
+    assert.equal(r.output?.hookSpecificOutput?.hookEventName, 'UserPromptSubmit');
+    assert.match(r.output.hookSpecificOutput.additionalContext, /request_user_input_async/);
+    assert.equal(r.output.decision, undefined);
+    assert.equal(r.output.reason, undefined);
+    assert.equal(r.output.systemMessage, undefined);
+  }
+  for (const config of [{ prompts: { chat: false } }, { prompts: { enabled: false } }]) {
+    assert.equal(run('', { agent: 'codex', event: 'UserPromptSubmit', config }).output, null);
+  }
 });
