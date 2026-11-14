@@ -26,11 +26,12 @@ function fixture(t) {
     event = 'Stop',
     active = false,
     state = 'idle',
+    lang = 'en',
   } = {}) {
     fs.writeFileSync(path.join(home, 'state/prompts.json'), JSON.stringify({ items: prompts }));
     fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(config));
     const r = spawnSync(process.execPath, ['bin/agent-state.mjs', state, agent], {
-      env: { ...process.env, MYDASH_HOME: home, MYDASH_LANG: 'en' },
+      env: { ...process.env, MYDASH_HOME: home, MYDASH_LANG: lang },
       input: JSON.stringify({
         session_id: sid,
         hook_event_name: event,
@@ -52,8 +53,10 @@ test('an unanswered native async question prevents completion that would hide it
     r = f.run();
   assert.equal(JSON.parse(r.output).decision, 'block');
   assert.match(JSON.parse(r.output).reason, /wait/i);
-  assert.match(JSON.parse(r.output).reason, /do not.*(ask|question)/i);
+  assert.ok(JSON.parse(r.output).reason.length < 100, 'visible continuation feedback is only a short user-facing status');
+  assert.doesNotMatch(JSON.parse(r.output).reason, /request_user_input|interruptible|Do not|Codex App/);
   assert.equal(r.state.state, 'busy');
+  assert.equal(JSON.parse(f.run({ lang: 'zh' }).output).reason, '当前选择题还在等你回答。');
 });
 test('the lifecycle guard fails open for stale, handled, other-session, permission and non-native prompts', (t) => {
   const f = fixture(t);
