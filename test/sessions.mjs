@@ -769,6 +769,45 @@ test('article sessions require the actual publishing folder, and identify the or
   assert.deepEqual(s.articleSessions('myproject', {}), []);
 });
 
+function scratchpadFixture() {
+  const project = path.join(home, 'scratch-project'),
+    id = '11111111-2222-4333-8444-555555555555',
+    encoded = project.replace(/[^A-Za-z0-9]/g, '-'),
+    transcript = path.join(process.env.MYDASH_CLAUDE_PROJECTS, encoded, id + '.jsonl'),
+    registry = path.join(process.env.MYDASH_HOME, 'state/agents');
+  fs.mkdirSync(project, { recursive: true });
+  fs.mkdirSync(path.dirname(transcript), { recursive: true });
+  fs.mkdirSync(registry, { recursive: true });
+  fs.writeFileSync(path.join(process.env.MYDASH_HOME, 'config.json'), JSON.stringify({ terminalSessions: { enabled: true, send: false } }));
+  fs.writeFileSync(transcript, jsonl([{ type: 'user', cwd: project, message: { content: 'Review the project' } }]));
+  fs.writeFileSync(path.join(registry, id + '.json'), JSON.stringify({ agent: 'claude', state: 'idle', transcript }));
+  return { project, id, encoded };
+}
+
+test('articles published from a Claude scratchpad retain their original project conversation', () => {
+  const { project, id, encoded } = scratchpadFixture();
+  // Old scratchpads may already be gone; native launch metadata remains authoritative.
+  const scratchpad = path.join(os.tmpdir(), 'claude-' + (process.getuid?.() ?? 0), encoded, id, 'scratchpad/second/report2');
+  const ver = { cwd: scratchpad, session: id, agent: 'claude' };
+  const context = s.projectConversationContext('scratch-project', [{ project: 'scratch-project', versions: [ver] }], ver);
+  assert.equal(context.sessions.find(x => x.id === id)?.original, true);
+  assert.equal(s.sessionMatches(id, scratchpad), true);
+  const normal = s.projectConversationContext('scratch-project', [{ project: 'scratch-project', versions: [{ ...ver, cwd: project }] }], { ...ver, cwd: project });
+  assert.equal(context.scope, normal.scope);
+  assert.deepEqual(s.articleSessions('scratch-project', { ...ver, remote: true }), []);
+});
+
+test('a scratchpad cannot borrow a conversation from another encoded project or session', () => {
+  const { project, id, encoded } = scratchpadFixture(),
+    base = path.join(os.tmpdir(), 'claude-' + (process.getuid?.() ?? 0));
+  const wrongProject = path.join(base, (project + '-other').replace(/[^A-Za-z0-9]/g, '-'), id, 'scratchpad/report');
+  const wrongSession = path.join(base, encoded, 'unknown-session-222', 'scratchpad/report');
+  for (const cwd of [wrongProject, wrongSession, path.join(home, path.basename(base), encoded, id, 'scratchpad/report')]) {
+    assert.equal(s.sessionMatches(id, cwd), false);
+    assert.deepEqual(s.articleSessions('scratch-project', { cwd, session: id, agent: 'claude' }), []);
+  }
+});
+
 test('sessions without a user title use a readable date label instead of the registry ID', () => {
   const cfg = path.join(process.env.MYDASH_HOME, 'config.json');
   fs.writeFileSync(cfg, JSON.stringify({ terminalSessions: { enabled: true, send: false } }));
