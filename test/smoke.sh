@@ -924,7 +924,7 @@ stopq() { printf '%s' "{\"session_id\":\"$1\",\"stop_hook_active\":$2,\"last_ass
 check "回复末尾用文字问：让它接着用 AskUserQuestion 再问（Claude 用 additionalContext，不显示成错误），状态还算忙" "stopq smoke-stop-1 false '做好了。要不要我接着把 B 也改了？' | grep '\"hookEventName\":\"Stop\"' | grep AskUserQuestion >/dev/null && grep '\"busy\"' '$MYDASH_HOME/state/agents/smoke-stop-1.json' >/dev/null"
 check "已经拦过一次（stop_hook_active）就不再拦，记成闲" "test -z \"\$(stopq smoke-stop-1 true '要不要？')\" && grep '\"idle\"' '$MYDASH_HOME/state/agents/smoke-stop-1.json' >/dev/null"
 check "没有问题、问号只在代码和网址里：不拦" "test -z \"\$(stopq smoke-stop-2 false '见 https://x.y/a?b=1 和 \`a?b\`，做完了。')\""
-check "Codex：拦下（decision: block），让它用 request_user_input 或 mydash ask" "stopq smoke-stop-3 false '用哪个？' codex | grep '\"decision\":\"block\"' | grep 'foliopier ask' >/dev/null"
+check "Codex：普通文字提问不再生成回复后的钩子消息" "test -z \"\$(stopq smoke-stop-3 false '用哪个？' codex)\" && grep '\"idle\"' '$MYDASH_HOME/state/agents/smoke-stop-3.json' >/dev/null"
 node -e 'const f=process.argv[1],fs=require("fs"),c=JSON.parse(fs.readFileSync(f));c.prompts={chat:false};fs.writeFileSync(f,JSON.stringify(c,null,2))' "$MYDASH_HOME/config.json"
 check "设置里关掉就不拦" "test -z \"\$(stopq smoke-stop-4 false '要不要？')\""
 node -e 'const f=process.argv[1],fs=require("fs"),c=JSON.parse(fs.readFileSync(f));delete c.prompts;fs.writeFileSync(f,JSON.stringify(c,null,2))' "$MYDASH_HOME/config.json"

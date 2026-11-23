@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parentAgent } from '../lib/session-process.mjs';
+import { t } from '../lib/i18n.mjs';
 
 const event = ['idle', 'ended'].includes(process.argv[2]) ? process.argv[2] : 'busy';
 let state = event;
@@ -31,16 +32,23 @@ const valid = /^[\w-]{6,100}$/.test(id);
 const file = path.join(AGENTS, `${id}.json`);
 const prev = valid ? readJson(file) || {} : {};
 
-// 回复最后在用文字问用户吗：去掉代码和网址，看最后几百个字里有没有问号
+// 回复最后在用文字等用户拍板吗：只看末尾，跳过代码、引用和链接。
+// “你说做我再做”“要修的话你说一声”也是提问，不能只认问号。
 function asksInText(msg) {
-  const s = String(msg || '').replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ').replace(/https?:\/\/\S+/g, ' ').trim();
-  return /[?？]/.test(s.slice(-500));
+  const s = String(msg || '').replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ')
+    .replace(/^\s*>.*$/gm, ' ').replace(/\[[^\]\n]*\]\(https?:\/\/[^)\n]*\)/g, ' ')
+    .replace(/“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」|『[^』\n]*』|"[^"\n]*"/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ').trim().slice(-500);
+  return /[?？]/.test(s)
+    || /(?:你|您)(?:说|确认|同意|批准|点头|决定|选好)[^。！？\n]{0,30}(?:我再|才(?:会)?继续)/.test(s)
+    || /(?:要|想|需要)[^。！？\n]{0,40}(?:的话|就)[^。！？\n]{0,16}(?:说一声|告诉我|确认一下)/.test(s)
+    || /请(?:你|您)?(?:选择|决定|拍板|确认(?:是否|要不要|要|我))/.test(s)
+    || /\b(?:let me know|tell me)\s+(?:if|whether|which)\b|\bplease\s+(?:confirm|choose|decide|select)\b/i.test(s);
 }
 // 这个会话有一张审批单在等用户答：回复里的问题多半就是在说它，不拦
 const waitingForm = () => Object.values(readJson(path.join(HOME, 'state', 'open-items.json')) || {}).some(x => x.session === id && x.kind === 'approval' && x.state === 'pending');
 const REASON = {
   claude: 'Your reply ends by asking the user something in plain text, which does not reach them in FolioPier AI. If it is a choice or decision for them, ask it again with the AskUserQuestion tool (2–4 options; they can also write their own answer) and do not repeat the rest of your reply. If it needs no decision from them (a rhetorical question, something only they can go and do, or a question you already asked with a tool and got the answer to), end your turn without replying to this note.',
-  codex: 'Your reply ends by asking the user something in plain text, which does not reach them in FolioPier AI. If it is a choice or decision for them, ask it again: with request_user_input when available in the current mode, otherwise request_user_input_async. Keep an unanswered asynchronous question in the active turn by waiting; do not finish the turn or re-ask it. Only when neither native tool is available, first show the question and choices in the conversation, then run `foliopier ask "<question>" "<option 1>" "<option 2>"` and wait for the answer. Do not repeat the rest of your reply. If it needs no decision from them (a rhetorical question, something only they can go and do, or a question you already asked with a tool and got the answer to), end your turn without replying to this note.',
 };
 // The App only keeps asynchronous question controls for an active turn. A
 // successful native tool call is not proof that its card survives turn completion.
@@ -56,10 +64,12 @@ const nativeQuestionWaiting = () => {
 };
 let block = null;
 if (state === 'idle' && (input.hook_event_name || 'Stop') === 'Stop' && !input.stop_hook_active && nativeQuestionWaiting()) {
-  block = 'A native request_user_input_async question is still unanswered. Finishing this turn hides its Codex App answer controls. Keep this turn active and wait for the existing question to be answered, using short interruptible waits. Do not ask the question again or send another copy. You may continue independent work; finish only after the answer arrives or the user explicitly cancels or moves on.';
+  // Codex renders a Stop continuation reason in chat. Keep this necessary
+  // lifecycle guard user-facing; the full instructions arrive privately below.
+  block = t('Waiting for your answer to the open question.');
   state = 'busy';
 }
-if (state === 'idle' && (input.hook_event_name || 'Stop') === 'Stop' && !input.stop_hook_active && cfg.prompts?.enabled !== false && cfg.prompts?.chat !== false
+if (agent === 'claude' && state === 'idle' && (input.hook_event_name || 'Stop') === 'Stop' && !input.stop_hook_active && cfg.prompts?.enabled !== false && cfg.prompts?.chat !== false
   && asksInText(input.last_assistant_message) && !waitingForm()) {
   block = REASON[agent]; state = 'busy'; // 还要接着问，不算闲下来
 }
@@ -123,11 +133,12 @@ function ended(session) {
     return Date.now() - fs.statSync(f).mtimeMs > 86400_000;
   } catch { return true; }
 }
-// Claude Code 用 additionalContext：照样接着做，但终端里不显示成「Stop hook error」；Codex 用 decision: block（它的理由会当成下一条提示）
+// Claude Code 的补问用内部上下文；Codex 只为未答原生题保留简短的等待状态。
 if (block) process.stdout.write(JSON.stringify(agent === 'claude' ? { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: block } } : { decision: 'block', reason: block }));
 const out = [];
-// 每个会话第一次收到用户消息时提醒一次（开着很久的会话没读到过这条规则）
-if (event === 'busy' && valid && !prev.told && cfg.prompts?.enabled !== false) out.push(RULE[lang][agent]);
+// Claude 首条消息提醒一次。Codex 每轮提前提醒，避免在 Stop 后生成用户可见的内部指令。
+if (event === 'busy' && valid && cfg.prompts?.enabled !== false
+  && (agent === 'codex' ? cfg.prompts?.chat !== false : !prev.told)) out.push(RULE[lang][agent]);
 if (event === 'busy' && id) {
   try {
     const all = Object.entries(JSON.parse(fs.readFileSync(path.join(HOME, 'state', 'open-items.json'), 'utf8')));
@@ -145,4 +156,9 @@ if (event === 'busy' && id) {
     }
   } catch {}
 }
-if (out.length) process.stdout.write(out.join('\n') + '\n');
+if (out.length) {
+  const context = out.join('\n');
+  process.stdout.write(agent === 'codex'
+    ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: context } })
+    : context + '\n');
+}
