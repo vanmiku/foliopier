@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2 (2026-11-23)
+
+- Enable internet sharing directly from a document's **Share** dialog. After Tailscale authorizes Funnel, return to the dialog to continue and create a link and access code.
+- Fix sharing setup on macOS when the background service invokes the Tailscale app. The setup page also offers browser controls to connect, refresh an expired sign-in link, open the relevant administrator settings, or copy diagnostics.
+- Preserve existing shares when setup is retried and avoid claiming ports already in use by other applications.
+
+Update from **Settings → Updates**, then open a document and choose **Share → Enable internet sharing**. Tailscale must be installed on the hosting computer. A managed network may require administrator approval. See the [sharing guide](docs/sharing.md) and [中文说明](docs/sharing.zh-CN.md).
+
 ## 0.3.1 (2026-11-12)
 
 - Rename the product to **FolioPier AI**, with a new abstract mark, paper companion and updated desktop/mobile icons, workbench labels, notifications and document-share branding.
