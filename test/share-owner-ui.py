@@ -137,19 +137,23 @@ class ShareOwnerUI(_base):
             action = route.request.post_data_json['action']
             calls.append(action)
             if action == 'connect':
-                pending.update(canConnect=False, authUrl='https://login.tailscale.com/a/test')
+                pending.update(canConnect=True, canRefreshLogin=True, authUrl='https://login.tailscale.com/a/test')
+            elif action == 'refresh-login':
+                pending.update(authUrl='https://login.tailscale.com/a/new')
             elif action == 'check':
-                pending.update(phase='off', errorCode='', authUrl='')
+                pending.update(phase='off', errorCode='', authUrl='', canConnect=False, canRefreshLogin=False)
             route.fulfill(status=200, content_type='application/json', body=json.dumps(pending))
         self.page.route('**/api/sharing/setup', setup)
         self.go('/settings')
         self.page.get_by_role('button', name='Connect Tailscale').click()
         sign_in = self.page.get_by_role('link', name='Sign in to Tailscale')
         sign_in.wait_for()
+        self.page.get_by_role('button', name='Get a new Tailscale sign-in link').click()
+        self.page.locator('[data-sharing-auth][href$="/a/new"]').wait_for()
         sign_in.evaluate("(el) => { el.addEventListener('click', e => e.preventDefault(), {once:true}); el.click(); }")
         self.page.evaluate("window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange'))")
         self.page.get_by_role('button', name='Enable internet sharing').wait_for()
-        self.assertEqual(calls, ['connect', 'check'])
+        self.assertEqual(calls, ['connect', 'refresh-login', 'check'])
 
     def test_stale_article_preserves_newer_shared_files_when_editing_permissions(self):
         self.status_fixture()

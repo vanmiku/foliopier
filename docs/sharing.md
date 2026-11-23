@@ -5,7 +5,7 @@ The host needs FolioPier AI and a Tailscale client that supports Funnel. Visitor
 ## Setup
 
 1. Open the document and select **Share → Enable internet sharing**. You can also start from **Settings → Internet document sharing**.
-2. Follow the action shown on the page. If Tailscale is disconnected, select **Connect Tailscale** and sign in if asked. If Tailscale is missing, use the download link to install it on the sharing computer, then return to FolioPier AI.
+2. Follow the action shown on the page. If Tailscale is disconnected, select **Connect Tailscale** and sign in if asked. If your link expires, select **Get a new Tailscale sign-in link**. If Tailscale is missing, use the download link to install it on the sharing computer, then return to FolioPier AI.
 3. If prompted, select **Open Tailscale authorization** and approve sharing. Setup retries when you return to the tab. You can also select **I have finished in Tailscale**. A managed network may require an administrator to grant Funnel access.
 4. In the same dialog, select **Create link and code**. If setup stalls, use **Sharing setup help → Copy sharing diagnostics** to send a summary to support.
 

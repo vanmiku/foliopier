@@ -48,6 +48,7 @@
       TAILSCALE_DEVICE_APPROVAL: T('Ask your Tailscale administrator to approve this computer in Machines.'),
       TAILSCALE_COMMAND_FAILED: T('FolioPier AI could not read or change Tailscale settings. Retry or copy diagnostics for support.'),
       SHARE_LOCAL_PORT_BUSY: T('The local document sharing port is in use. Copy diagnostics for support.'),
+      SHARE_LISTENER_UNAVAILABLE: T('The local document reader did not start. Retry or copy diagnostics for support.'),
       SHARE_ROUTE_MISSING: T('Tailscale has not opened the public sharing entry. Retry or copy diagnostics for support.'),
       FUNNEL_CLEANUP_FAILED: T('Document access is disabled, but the public entry could not be removed. Retry turning off sharing before uninstalling.'),
       MAGICDNS_REQUIRED: T('Ask your Tailscale administrator to turn on MagicDNS in DNS settings.'),
@@ -151,7 +152,10 @@
     admin.hidden = !adminPage;
     if (adminPage) admin.href = 'https://login.tailscale.com/admin/' + adminPage;
     else admin.removeAttribute('href');
-    $('[data-sharing-connect]').hidden = !s.canConnect;
+    const connect = $('[data-sharing-connect]');
+    connect.hidden = !s.canConnect;
+    connect.textContent = s.canRefreshLogin ? T('Get a new Tailscale sign-in link') : T('Connect Tailscale');
+    connect.className = auth.hidden ? 'btn' : 'act';
     const enable = $('[data-sharing-enable]');
     enable.hidden = ready || !install.hidden || (s.phase === 'not-installed' && s.target === 'tailscale-node')
       || (auth.hidden && (s.phase === 'login' || s.errorCode === 'TAILSCALE_OFFLINE'));
@@ -325,7 +329,7 @@
     } catch (error) {
       if (error.state && error.code !== 'SHARING_SETUP_BUSY') {
         renderNetwork(error.state);
-        if (action === 'connect' && errorText(error.code)) setupMessage(errorText(error.code), true);
+        if (['connect', 'refresh-login'].includes(action) && errorText(error.code)) setupMessage(errorText(error.code), true);
       }
       else {
         setupMessage(errorText(error.code) || T('Could not check sharing setup. Try checking again.'), true);
@@ -338,7 +342,7 @@
       controls.forEach(b => b.disabled = false);
     }
   }
-  $('[data-sharing-connect]')?.addEventListener('click', () => setup('connect'));
+  $('[data-sharing-connect]')?.addEventListener('click', () => setup(network?.canRefreshLogin ? 'refresh-login' : 'connect'));
   $('[data-sharing-enable]')?.addEventListener('click', () => setup(network?.phase === 'login' ? 'check' : 'enable'));
   $('[data-sharing-check]')?.addEventListener('click', () => setup('check'));
   $('[data-sharing-disable]')?.addEventListener('click', () => setup('disable'));
