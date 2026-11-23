@@ -477,7 +477,7 @@ async function handlePost(req, res) {
         return json(200,{...result,url:`${readConfig().sharing?.publicUrl||''}/s/${id}`});
       }
       return json(404,{error:t('Page not found.')});
-    }catch(e){return json(e.status||400,{error:t('Sharing could not be updated. Check the setup status and try again.'),code:e.code||'SHARING_ERROR',...(url.pathname==='/api/sharing/setup'?{status:await shareNetworkStatus({refresh:true})}:{})});}
+    }catch(e){return json(e.status||400,{error:t('Sharing could not be updated. Check the setup status and try again.'),code:e.code||'SHARING_ERROR',...(url.pathname==='/api/sharing/setup'&&e.code!=='SHARING_SETUP_BUSY'?{status:await shareNetworkStatus({refresh:true})}:{})});}
   }
   if (url.pathname === '/api/access') {
     if (req.mydashWhere === 'lan') return json(403, { error: 'only on this computer or the tailnet' });

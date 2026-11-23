@@ -4,7 +4,8 @@ const home=fs.mkdtempSync(path.join(os.tmpdir(),'mydash-share-cleanup-'));proces
 const bin=path.join(home,'bin');fs.mkdirSync(bin);const configFile=path.join(home,'funnel.json'),calls=path.join(home,'calls.jsonl');
 fs.writeFileSync(path.join(bin,'tailscale'),`#!${process.execPath}
 const fs=require('fs'),p=${JSON.stringify(configFile)},log=${JSON.stringify(calls)},a=process.argv.slice(2);fs.appendFileSync(log,JSON.stringify(a)+'\\n');
-if(a[0]==='status')console.log(JSON.stringify({BackendState:'Running',Self:{DNSName:'unit.tail.ts.net.'},CertDomains:['unit.tail.ts.net']}));
+if(a[0]==='status')console.log(JSON.stringify({BackendState:process.env.MYDASH_TEST_BACKEND_STATE||'Running',Self:{DNSName:'unit.tail.ts.net.'},CertDomains:['unit.tail.ts.net']}));
+else if(a[0]==='up'){console.error('https://login.tailscale.com/a/unit-test');setInterval(()=>{},1000);}
 else if(a.includes('status'))console.log(fs.existsSync(p)?fs.readFileSync(p,'utf8'):'{}');
 else if(a.includes('off'))fs.writeFileSync(p,'{}');
 else if(a[0]==='funnel'){
@@ -13,6 +14,9 @@ else if(a[0]==='funnel'){
   console.log('https://login.tailscale.com/f/unit-test');
   if(mode==='authorization'){console.error('waiting interrupted');process.exitCode=1;}
   if(mode==='authorization-wait')setInterval(()=>{},1000);
+ } else if(mode==='policy'){
+  console.error('Funnel not available; "funnel" node attribute not set. See https://tailscale.com/s/no-funnel.');
+  process.exitCode=1;
  } else if(mode!=='no-route'){
   const port=Number(a.find(x=>x.startsWith('--https=')).split('=')[1]),proxy=a.find(x=>x.startsWith('http://'));
   fs.writeFileSync(p,JSON.stringify({Web:{['unit.tail.ts.net:'+port]:{Handlers:{'/':{Proxy:proxy}}}},AllowFunnel:{['unit.tail.ts.net:'+port]:true}}));
@@ -51,6 +55,30 @@ test('Funnel exit zero without the expected route does not enable sharing',{skip
  finally{delete process.env.MYDASH_TEST_FUNNEL_FAIL;}
  assert.equal(readConfig().sharing.enabled,false);
  assert.equal((await shareNetworkStatus({refresh:true})).phase,'error');
+});
+test('a network policy error tells the owner to ask the Tailscale administrator',{skip:process.platform==='win32'},async()=>{
+ seed();fs.writeFileSync(configFile,'{}');process.env.MYDASH_TEST_FUNNEL_FAIL='policy';
+ try{await assert.rejects(configureSharing('enable'),{code:'TAILSCALE_FUNNEL_POLICY'});}
+ finally{delete process.env.MYDASH_TEST_FUNNEL_FAIL;}
+ const result = await shareNetworkStatus({refresh:true});
+ assert.equal(result.errorCode,'TAILSCALE_FUNNEL_POLICY');
+ assert.equal(result.enabled,false);
+ assert.equal(result.authUrl,'');
+});
+test('connecting Tailscale returns a sign-in URL without configuring a public route',{skip:process.platform==='win32'},async()=>{
+ seed();updateConfig(c=>({...c,sharing:{enabled:false,localPort:port}}));fs.writeFileSync(configFile,'{}');
+ process.env.MYDASH_TEST_BACKEND_STATE='NeedsLogin';
+ try {
+   const before = fs.readFileSync(calls,'utf8').length;
+   assert.equal((await shareNetworkStatus({refresh:true})).canConnect,true);
+   const status = await configureSharing('connect');
+   assert.equal(status.phase,'login');assert.equal(status.canConnect,false);
+   assert.equal(status.authUrl,'https://login.tailscale.com/a/unit-test');
+   assert.equal(status.enabled,false);
+   const commands = fs.readFileSync(calls,'utf8').slice(before).trim().split('\n').map(JSON.parse);
+   assert.ok(commands.some(args=>args.length===1&&args[0]==='up'));
+   assert.ok(commands.every(args=>args[0]!=='funnel'));
+ } finally {delete process.env.MYDASH_TEST_BACKEND_STATE;}
 });
 test('uninstall removes an owned public Funnel before removing code',{skip:process.platform==='win32'},async()=>{
  seed();route();const {uninstall}=await import('../lib/setup.mjs');const r=await uninstall();

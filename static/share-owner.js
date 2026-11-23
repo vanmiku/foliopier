@@ -15,10 +15,11 @@
   try { boot = JSON.parse($('#share-owner-data')?.textContent || 'null'); } catch {}
   const form = $('#share-create-form'), result = $('[data-share-result]');
   const manager = $('[data-sharing-management]');
+  const setupPanel = $('[data-sharing-controls]');
   const codes = new Map();
   let network, shareList = [], feedback = [], editingId = '', posting = false, refreshing = false;
   let activeTab = 'create', opener = null;
-  let settingUp = false, resumeAfterAuthorization = false;
+  let settingUp = false, afterExternalStep = '', networkRequest = 0;
   const storage = { get(k) { try { return sessionStorage.getItem(k); } catch { return null; } }, set(k, v) { try { sessionStorage.setItem(k, v); } catch {} } };
   const draftKey = boot ? `mydash.share.draft:${boot.project}/${boot.slug}` : '';
   const dateText = value => { const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleString(document.documentElement.lang || undefined, { timeZoneName: 'short' }) : ''; };
@@ -36,17 +37,21 @@
       NEW_RESOURCES: T('New files or images need explicit approval. Review the latest document first.'),
       SHARE_STORAGE_FULL: T('Sharing storage is full. Existing shares can still be stopped or restricted.'),
       SHARE_PORT_BUSY: T('The dedicated sharing ports are in use. Existing services were kept.'),
-      AUTHORIZATION_REQUIRED: T('Approve sharing in Tailscale, then return to this page.'),
+      AUTHORIZATION_REQUIRED: T('Approve sharing on the Tailscale page, then come back here. A network administrator may need to approve.'),
       TAILSCALE_MISSING: T('Install Tailscale on the computer running FolioPier AI first.'),
       TAILSCALE_LOGIN: T('Sign in to Tailscale on the computer running FolioPier AI first.'),
       TAILSCALE_UNSUPPORTED: T('This Tailscale client does not support Funnel. Update Tailscale on the sharing computer and try again.'),
-      TAILSCALE_PERMISSION: T('Tailscale denied permission. Complete authorization on the computer running FolioPier AI, then check again.'),
-      TAILSCALE_OFFLINE: T('Start Tailscale on the sharing computer, then check again.'),
+      TAILSCALE_PERMISSION: T('Ask the administrator of the sharing computer to allow FolioPier AI to manage Tailscale sharing.'),
+      TAILSCALE_OFFLINE: T('Open Tailscale on the computer hosting this document and connect, then check again here.'),
+      TAILSCALE_HTTPS_REQUIRED: T('Ask your Tailscale administrator to turn on HTTPS certificates for this network.'),
+      TAILSCALE_FUNNEL_POLICY: T('Ask your Tailscale administrator to allow Funnel for this device in Access controls.'),
+      TAILSCALE_DEVICE_APPROVAL: T('Ask your Tailscale administrator to approve this computer in Machines.'),
       TAILSCALE_COMMAND_FAILED: T('FolioPier AI could not read or change Tailscale settings. Retry or copy diagnostics for support.'),
       SHARE_LOCAL_PORT_BUSY: T('The local document sharing port is in use. Copy diagnostics for support.'),
       SHARE_ROUTE_MISSING: T('Tailscale has not opened the public sharing entry. Retry or copy diagnostics for support.'),
       FUNNEL_CLEANUP_FAILED: T('Document access is disabled, but the public entry could not be removed. Retry turning off sharing before uninstalling.'),
-      MAGICDNS_REQUIRED: T('Ask your Tailscale administrator to enable MagicDNS and HTTPS.'),
+      MAGICDNS_REQUIRED: T('Ask your Tailscale administrator to turn on MagicDNS in DNS settings.'),
+      SHARING_SETUP_BUSY: T('Sharing setup is already running. Wait a moment, then check again.'),
       CLOCK_UNVERIFIED: T('Check the clock on the sharing computer before continuing.'),
       SHARE_UNAVAILABLE: T('This share is no longer available.'),
       INVALID_SHARE_EXPIRATION: T('Choose a future expiry within 30 days.'),
@@ -108,45 +113,90 @@
     return `/settings${next ? '?shareNext=' + encodeURIComponent(next) : ''}#internet-sharing`;
   }
   function phaseText(s) {
-    if (s.errorCode) return errorText(s.errorCode) || T('Sharing needs attention. Check the setup steps below.');
-    if (s.phase === 'configured') return T('Configured. Internet access has not yet been independently verified.');
-    if (s.phase === 'not-installed') return T('Tailscale is not installed on the sharing computer.');
-    if (s.phase === 'login') return T('Sign in to Tailscale on the sharing computer.');
-    if (s.phase === 'authorization') return T('Tailscale needs administrator authorization.');
-    if (s.phase === 'error') return T('Sharing needs attention. Check the setup steps below.');
-    return T('Internet sharing is off.');
+    if (s.phase === 'configured') return T('Internet sharing is on.');
+    if (s.phase === 'not-installed') return s.target === 'tailscale-node'
+      ? T('The FolioPier AI Tailscale node is missing. Copy diagnostics for support.')
+      : T('Install and sign in to Tailscale on the computer hosting this document, then return here.');
+    if (s.phase === 'login' && s.authUrl) return T('Sign in on the Tailscale page, then come back here.');
+    if (s.canConnect) return T('Connect Tailscale to continue setting up sharing.');
+    if (s.errorCode || s.phase === 'error') return errorText(s.errorCode) || T('Sharing setup did not finish. You can retry or copy diagnostics.');
+    return T('Turn on internet sharing to create a link and access code.');
   }
-  function renderNetwork(s) {
-    network = s;
-    const summary = $('[data-share-network]');
-    if (summary) summary.innerHTML = `<p>${esc(phaseText(s))}</p>${s.phase !== 'configured' ? `<a class="act" data-share-setup-link href="${esc(setupLink())}">${esc(T('Set up internet sharing'))}</a>` : `<small>${esc(T('Keep the sharing computer online. New public DNS records may take time to become reachable.'))}</small>`}${s.pdfReady ? '' : `<p data-sharing-article-pdf>${esc(T('PDF downloads are not ready on the sharing computer. Install Chrome or Edge there before offering PDF downloads.'))} <a data-share-setup-link href="${esc(setupLink())}">${esc(T('Set up PDF downloads'))}</a></p>`}`;
-    if ($('[data-share-submit]')) $('[data-share-submit]').disabled = s.phase !== 'configured' || posting;
-    if (!settings) return;
-    $('[data-sharing-status]').textContent = phaseText(s);
-    $('[data-sharing-disable]').hidden = !s.enabled && !s.cleanupPending;
-    $('[data-sharing-disable]').textContent = s.cleanupPending ? T('Finish disabling sharing') : T('Turn off all sharing');
-    $('[data-sharing-public-url]').textContent = s.phase === 'configured' && s.publicUrl ? `${T('Sharing address')}: ${s.publicUrl}` : '';
-    $('[data-sharing-external]').textContent = s.phase !== 'configured' ? '' : s.externalVerified ? T('Internet access was verified from outside this Tailnet.') : T('To verify access, open a share on mobile data with Tailscale disconnected. Local checks do not prove internet access.');
-    $('[data-sharing-pdf-help]').hidden = s.pdfReady;
+  function setupMessage(text, error = false) {
+    const status = $('[data-sharing-status]');
+    if (status) { status.textContent = text; status.classList.toggle('error', error); }
+  }
+  function renderSetupControls(s) {
+    if (!setupPanel) return;
+    const ready = s.phase === 'configured';
+    setupMessage(phaseText(s), s.phase === 'error');
     const auth = $('[data-sharing-auth]');
     auth.hidden = true;
     auth.removeAttribute('href');
     try {
       const u = new URL(s.authUrl);
-      if (u.protocol === 'https:' && ['login.tailscale.com', 'console.tailscale.com'].includes(u.host) && !u.username && !u.password) {
+      if (!ready && u.protocol === 'https:' && ['login.tailscale.com', 'console.tailscale.com'].includes(u.host) && !u.username && !u.password) {
         auth.href = u.href; auth.hidden = false;
       }
     } catch {}
     auth.textContent = s.phase === 'login' ? T('Sign in to Tailscale') : T('Open Tailscale authorization');
     const install = $('[data-sharing-install]');
-    install.hidden = s.phase !== 'not-installed' || s.target === 'tailscale-node';
+    const unsupported = s.errorCode === 'TAILSCALE_UNSUPPORTED';
+    install.hidden = s.target === 'tailscale-node' || (!unsupported && s.phase !== 'not-installed');
+    install.textContent = unsupported ? T('Update Tailscale') : T('Get Tailscale');
+    const admin = $('[data-sharing-admin]');
+    const adminPage = s.errorCode === 'TAILSCALE_FUNNEL_POLICY' ? 'acls'
+      : s.errorCode === 'TAILSCALE_DEVICE_APPROVAL' ? 'machines'
+      : ['TAILSCALE_HTTPS_REQUIRED', 'MAGICDNS_REQUIRED'].includes(s.errorCode) ? 'dns' : '';
+    admin.hidden = !adminPage;
+    if (adminPage) admin.href = 'https://login.tailscale.com/admin/' + adminPage;
+    else admin.removeAttribute('href');
+    $('[data-sharing-connect]').hidden = !s.canConnect;
     const enable = $('[data-sharing-enable]');
-    enable.hidden = s.phase === 'configured' || !install.hidden;
-    enable.disabled = settingUp;
+    enable.hidden = ready || !install.hidden || (s.phase === 'not-installed' && s.target === 'tailscale-node')
+      || (auth.hidden && (s.phase === 'login' || s.errorCode === 'TAILSCALE_OFFLINE'));
     enable.textContent = !auth.hidden ? T('I have finished in Tailscale') : s.errorCode ? T('Retry enabling sharing') : T('Enable internet sharing');
-    $('[data-sharing-client-help]').hidden = s.errorCode !== 'TAILSCALE_UNSUPPORTED';
+    enable.className = auth.hidden && admin.hidden ? 'btn' : 'act';
+    $('[data-sharing-check]').hidden = ready || (!enable.hidden && install.hidden);
+    const disable = $('[data-sharing-disable]');
+    if (disable) {
+      disable.hidden = !s.enabled && !s.cleanupPending;
+      disable.textContent = s.cleanupPending ? T('Finish disabling sharing') : T('Turn off all sharing');
+    }
+    $('[data-sharing-actions]').hidden = ready && (!disable || disable.hidden);
+    $('[data-sharing-help]').hidden = ready || (!s.errorCode && s.phase === 'off');
+    $('[data-sharing-client-help]').hidden = !unsupported || (s.diagnostics?.platform && s.diagnostics.platform !== 'darwin');
   }
-  async function refreshNetwork() { const data = await request('/api/sharing/status'); renderNetwork(data); return data; }
+  function renderNetwork(s) {
+    network = s;
+    renderSetupControls(s);
+    const submit = $('[data-share-submit]');
+    if (submit) submit.disabled = s.phase !== 'configured' || posting;
+    const pdf = $('[data-sharing-article-pdf]');
+    if (pdf) {
+      pdf.hidden = s.pdfReady;
+      if (!pdf.hidden) $('a', pdf).href = setupLink();
+    }
+    if (!settings) return;
+    $('[data-sharing-public-url]').textContent = s.phase === 'configured' && s.publicUrl ? `${T('Sharing address')}: ${s.publicUrl}` : '';
+    $('[data-sharing-external]').textContent = s.phase !== 'configured' ? '' : s.externalVerified ? T('Internet access was verified from outside this Tailnet.') : T('To verify access, open a share on mobile data with Tailscale disconnected. Local checks do not prove internet access.');
+    $('[data-sharing-pdf-help]').hidden = s.pdfReady;
+  }
+  async function refreshNetwork() {
+    if (settingUp) return;
+    const id = ++networkRequest;
+    try {
+      const data = await request('/api/sharing/status');
+      if (id === networkRequest && !settingUp) renderNetwork(data);
+    } catch {
+      if (id !== networkRequest || settingUp) return;
+      setupMessage(T('Could not check sharing setup. Try checking again.'), true);
+      if (setupPanel) {
+        $('[data-sharing-actions]').hidden = false;
+        $('[data-sharing-check]').hidden = false;
+      }
+    }
+  }
   function persistDraft() {
     if (!form || !draftKey) return;
     const values = {};
@@ -262,22 +312,42 @@
   async function setup(action) {
     if (settingUp) return;
     if (action === 'disable' && !await confirmChange(T('Turn off internet sharing? Every existing share and visitor session will be stopped. Turning sharing on again will not restore these links.'), T('Turn off all sharing'))) return;
-    if (action === 'enable') resumeAfterAuthorization = false;
+    afterExternalStep = '';
     settingUp = true;
-    const controls = $$('[data-sharing-enable], [data-sharing-check], [data-sharing-disable]'); controls.forEach(b => b.disabled = true);
-    message(T('Updating sharing setup…'));
-    try { renderNetwork(await request('/api/sharing/setup', { action })); await refreshList(true); }
-    catch (error) { if (error.state) renderNetwork(error.state); failure(error); }
-    finally { settingUp = false; controls.forEach(b => b.disabled = false); }
+    ++networkRequest;
+    const controls = $$('[data-sharing-connect], [data-sharing-enable], [data-sharing-check], [data-sharing-disable]');
+    controls.forEach(b => b.disabled = true);
+    $('[data-sharing-actions]').inert = true;
+    setupMessage(action === 'enable' ? T('Turning on internet sharing…') : T('Updating sharing setup…'));
+    try {
+      renderNetwork(await request('/api/sharing/setup', { action }));
+      if (action !== 'check') refreshList().catch(() => {});
+    } catch (error) {
+      if (error.state && error.code !== 'SHARING_SETUP_BUSY') {
+        renderNetwork(error.state);
+        if (action === 'connect' && errorText(error.code)) setupMessage(errorText(error.code), true);
+      }
+      else {
+        setupMessage(errorText(error.code) || T('Could not check sharing setup. Try checking again.'), true);
+        $('[data-sharing-actions]').hidden = false;
+        $('[data-sharing-check]').hidden = false;
+      }
+    } finally {
+      settingUp = false;
+      $('[data-sharing-actions]').inert = false;
+      controls.forEach(b => b.disabled = false);
+    }
   }
-  $('[data-sharing-enable]')?.addEventListener('click', () => setup('enable'));
+  $('[data-sharing-connect]')?.addEventListener('click', () => setup('connect'));
+  $('[data-sharing-enable]')?.addEventListener('click', () => setup(network?.phase === 'login' ? 'check' : 'enable'));
   $('[data-sharing-check]')?.addEventListener('click', () => setup('check'));
   $('[data-sharing-disable]')?.addEventListener('click', () => setup('disable'));
-  $('[data-sharing-auth]')?.addEventListener('click', () => { resumeAfterAuthorization = true; });
+  $('[data-sharing-auth]')?.addEventListener('click', () => { afterExternalStep = network?.phase === 'login' ? 'check' : 'enable'; });
+  $('[data-sharing-admin]')?.addEventListener('click', () => { afterExternalStep = network?.phase === 'login' ? 'check' : 'enable'; });
+  $('[data-sharing-install]')?.addEventListener('click', () => { afterExternalStep = 'check'; });
   function resumeSetup() {
-    if (document.hidden || !resumeAfterAuthorization || settingUp) return;
-    resumeAfterAuthorization = false;
-    setup('enable');
+    if (document.hidden || !afterExternalStep || settingUp) return;
+    setup(afterExternalStep);
   }
   window.addEventListener('focus', resumeSetup);
   document.addEventListener('visibilitychange', resumeSetup);
@@ -323,7 +393,7 @@
     return confirmChange(T('Archiving does not stop the {n} active shares for this document. Visitors can still read them. Manage and stop shares first, or archive anyway.', { n: count }), T('Archive anyway'), { manageShares: true });
   };
   $('[data-share-close]')?.addEventListener('click', () => dialog.close());
-  dialog?.addEventListener('close', () => { persistDraft(); opener?.focus(); });
+  dialog?.addEventListener('close', () => { afterExternalStep = ''; persistDraft(); opener?.focus(); });
   dialog?.addEventListener('click', e => { if (e.target.closest('[data-share-setup-link]')) persistDraft(); });
   if (form) {
     restoreDraft(); form.addEventListener('input', persistDraft); form.addEventListener('change', () => { customExpiry(); selectionCount(); persistDraft(); });

@@ -24,6 +24,8 @@
 .share-owner-actions .act, .share-owner-actions .btn, .share-owner-head .act { min-height: 34px; height: auto; padding: 7px 10px; line-height: 1.4; }
 .share-owner-danger { color: var(--unread); }
 .share-owner-network, .share-owner-result { padding: 12px 14px; border-radius: 9px; background: var(--accent-soft); margin: 14px 0; font-size: 13.5px; }
+.share-owner-network > p { margin: 0; }
+.share-owner-network > :last-child:not([hidden]) { margin-bottom: 0; }
 .share-owner-result code { display: block; font-size: 24px; letter-spacing: 4px; padding: 6px 0; }
 .share-owner-result a, .share-owner-card a { overflow-wrap: anywhere; }
 .share-owner-preview iframe { display: block; width: 100%; min-height: 560px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); }
@@ -36,9 +38,6 @@
 .share-owner-comment p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .share-owner-comment small { display: block; color: var(--text-3); }
 .share-owner-edit { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 8px; }
-.share-owner-steps { padding-left: 24px; font-size: 13.5px; }
-.share-owner-steps li { margin: 11px 0; }
-.share-owner-steps span { color: var(--text-3); display: block; margin-top: 2px; }
 .share-owner-copybox { display: block; min-height: 100px; margin-top: 8px; }
 .share-owner-confirm { width: min(460px, calc(100vw - 28px)); }
 .share-owner-confirm p { white-space: pre-wrap; font-size: 14px; }

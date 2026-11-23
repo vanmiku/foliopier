@@ -28,4 +28,7 @@ test('settings includes a setup wizard and explicit irreversible shutdown explan
   assert.match(html, /data-sharing-return/);
   assert.match(html, /data-sharing-management/);
   assert.match(html, /data-sharing-confirm/);
+  const lan = sharingSettingsSection({ lan: true });
+  assert.match(lan, /trusted Tailscale address/);
+  assert.doesNotMatch(lan, /data-sharing-(controls|enable|auth)/);
 });

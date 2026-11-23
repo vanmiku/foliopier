@@ -2,7 +2,7 @@
 
 适用于 FolioPier AI 已更新到 0.3.0 或更新版本、工作台可以打开，但“互联网文档分享”无法开启的情况。
 
-更新 FolioPier AI 后，还需要开启分享并完成 Tailscale Funnel 授权。访客只需浏览器、分享链接和访问码，无需安装 Tailscale。
+在新版 FolioPier AI 中，可以直接打开文档，点「分享 → 开启互联网分享」。也可以从设置页进入。访客只需浏览器、分享链接和访问码。
 
 ## 方法一：在网页中开启
 
@@ -24,7 +24,7 @@ foliopier url --local
 
 ### 2. 检查 Tailscale 登录
 
-普通安装：在这台电脑上打开 Tailscale，确认已登录并连接。
+普通安装：页面出现「连接 Tailscale」时，点它并按提示登录。若尚未安装，请使用页面中的下载链接，在运行 FolioPier AI 的电脑上安装。
 
 独立节点安装（`tailscale-node`）：需要登录的是 FolioPier AI 的独立节点。页面出现“登录 Tailscale”时，点击它完成登录。电脑上另一个 Tailscale 客户端已连接，不代表独立节点也已登录。若没有登录按钮，请复制诊断信息交给支持人员。
 

@@ -58,7 +58,9 @@ class ShareOwnerUI(_base):
         self.status_fixture(enabled=False, phase='error', errorCode='TAILSCALE_UNSUPPORTED')
         self.go('/settings')
         self.page.locator('[data-sharing-status]').filter(has_text='Update Tailscale').wait_for()
-        self.assertTrue(self.page.locator('[data-sharing-client-help] a').is_visible())
+        self.assertTrue(self.page.get_by_role('link', name='Update Tailscale').is_visible())
+        self.page.locator('[data-sharing-help] summary').click()
+        self.assertTrue(self.page.locator('[data-sharing-client-help]').is_visible())
         self.page.unroute('**/api/sharing/status')
         self.status_fixture(enabled=False, phase='error', errorCode='FUNNEL_CLEANUP_FAILED', cleanupPending=True)
         self.go('/settings')
@@ -81,8 +83,73 @@ class ShareOwnerUI(_base):
         self.assertEqual(auth.get_attribute('href'), 'https://login.tailscale.com/f/test')
         auth.evaluate("(el) => { el.addEventListener('click', e => e.preventDefault(), {once:true}); el.click(); }")
         self.page.evaluate("window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange'))")
-        self.page.locator('[data-sharing-status]').filter(has_text='Configured.').wait_for()
+        self.page.locator('[data-sharing-status]').filter(has_text='Internet sharing is on.').wait_for()
         self.assertEqual(calls, [{'action': 'enable'}])
+
+    def test_article_enables_sharing_in_place_and_keeps_the_draft(self):
+        ready = self.status_fixture()
+        self.page.unroute('**/api/sharing/status')
+        pending = self.status_fixture(enabled=False, phase='off', publicUrl='')
+        self.publish('browser-enable-share', '# Browser sharing')
+        calls = []
+        def setup(route):
+            calls.append(route.request.post_data_json)
+            pending.update(ready)
+            route.fulfill(status=200, content_type='application/json', body=json.dumps(ready))
+        self.page.route('**/api/sharing/setup', setup)
+        self.go('/p/test/browser-enable-share')
+        self.page.locator('[data-share-open]').click()
+        self.page.locator('[data-sharing-enable]').wait_for()
+        self.assertEqual(calls, [])
+        submit = self.page.locator('[data-share-submit]')
+        self.assertTrue(submit.is_disabled())
+        title = self.page.locator('#share-create-form [name="title"]')
+        title.fill('My public title')
+        self.page.get_by_role('button', name='Enable internet sharing').click()
+        self.page.locator('[data-sharing-status]').filter(has_text='Internet sharing is on.').wait_for()
+        self.assertEqual(title.input_value(), 'My public title')
+        self.assertTrue(submit.is_enabled())
+        self.assertTrue(self.page.url.endswith('/p/test/browser-enable-share'))
+        self.assertEqual(calls, [{'action': 'enable'}])
+
+    def test_article_offers_install_or_admin_action_for_the_actual_blocker(self):
+        pending = self.status_fixture(enabled=False, phase='not-installed', target=None, errorCode='TAILSCALE_MISSING')
+        self.publish('browser-share-guidance', '# Browser sharing guidance')
+        self.go('/p/test/browser-share-guidance')
+        self.page.locator('[data-share-open]').click()
+        self.page.get_by_role('link', name='Get Tailscale').wait_for()
+        self.assertFalse(self.page.locator('[data-sharing-enable]').is_visible())
+        self.assertTrue(self.page.get_by_role('button', name='Check again').is_visible())
+        pending.update(phase='error', target='tailscale', errorCode='TAILSCALE_FUNNEL_POLICY')
+        self.page.route('**/api/sharing/setup', lambda route: route.fulfill(status=200,
+            content_type='application/json', body=json.dumps(pending)))
+        self.page.get_by_role('button', name='Check again').click()
+        admin = self.page.get_by_role('link', name='Open Tailscale admin settings')
+        admin.wait_for()
+        self.assertEqual(admin.get_attribute('href'), 'https://login.tailscale.com/admin/acls')
+        self.assertIn('allow Funnel for this device', self.page.locator('[data-sharing-status]').inner_text())
+        self.assertFalse(self.page.locator('[data-sharing-install]').is_visible())
+
+    def test_sign_in_returns_to_setup_without_enabling_sharing(self):
+        pending = self.status_fixture(enabled=False, phase='login', errorCode='TAILSCALE_LOGIN', canConnect=True)
+        calls = []
+        def setup(route):
+            action = route.request.post_data_json['action']
+            calls.append(action)
+            if action == 'connect':
+                pending.update(canConnect=False, authUrl='https://login.tailscale.com/a/test')
+            elif action == 'check':
+                pending.update(phase='off', errorCode='', authUrl='')
+            route.fulfill(status=200, content_type='application/json', body=json.dumps(pending))
+        self.page.route('**/api/sharing/setup', setup)
+        self.go('/settings')
+        self.page.get_by_role('button', name='Connect Tailscale').click()
+        sign_in = self.page.get_by_role('link', name='Sign in to Tailscale')
+        sign_in.wait_for()
+        sign_in.evaluate("(el) => { el.addEventListener('click', e => e.preventDefault(), {once:true}); el.click(); }")
+        self.page.evaluate("window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange'))")
+        self.page.get_by_role('button', name='Enable internet sharing').wait_for()
+        self.assertEqual(calls, ['connect', 'check'])
 
     def test_stale_article_preserves_newer_shared_files_when_editing_permissions(self):
         self.status_fixture()
