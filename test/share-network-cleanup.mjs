@@ -7,7 +7,18 @@ const fs=require('fs'),p=${JSON.stringify(configFile)},log=${JSON.stringify(call
 if(a[0]==='status')console.log(JSON.stringify({BackendState:'Running',Self:{DNSName:'unit.tail.ts.net.'},CertDomains:['unit.tail.ts.net']}));
 else if(a.includes('status'))console.log(fs.existsSync(p)?fs.readFileSync(p,'utf8'):'{}');
 else if(a.includes('off'))fs.writeFileSync(p,'{}');
-else if(a[0]==='funnel'){const port=Number(a.find(x=>x.startsWith('--https=')).split('=')[1]),proxy=a.find(x=>x.startsWith('http://'));fs.writeFileSync(p,JSON.stringify({Web:{['unit.tail.ts.net:'+port]:{Handlers:{'/':{Proxy:proxy}}}},AllowFunnel:{['unit.tail.ts.net:'+port]:true}}));if(process.env.MYDASH_TEST_FUNNEL_FAIL==='1'){process.stderr.write('command failed after configuring');process.exitCode=1;}}
+else if(a[0]==='funnel'){
+ const mode=process.env.MYDASH_TEST_FUNNEL_FAIL;
+ if(['authorization','authorization-exit-zero','authorization-wait'].includes(mode)){
+  console.log('https://login.tailscale.com/f/unit-test');
+  if(mode==='authorization'){console.error('waiting interrupted');process.exitCode=1;}
+  if(mode==='authorization-wait')setInterval(()=>{},1000);
+ } else if(mode!=='no-route'){
+  const port=Number(a.find(x=>x.startsWith('--https=')).split('=')[1]),proxy=a.find(x=>x.startsWith('http://'));
+  fs.writeFileSync(p,JSON.stringify({Web:{['unit.tail.ts.net:'+port]:{Handlers:{'/':{Proxy:proxy}}}},AllowFunnel:{['unit.tail.ts.net:'+port]:true}}));
+  if(mode==='1'){process.stderr.write('command failed after configuring');process.exitCode=1;}
+ }
+}
 `);fs.chmodSync(path.join(bin,'tailscale'),0o755);process.env.PATH=bin+path.delimiter+process.env.PATH;
 const {updateConfig,readConfig,INSTALL_ID}=await import('../lib/store.mjs');const {configureSharing,shareNetworkStatus}=await import('../lib/share-network.mjs');
 const server=http.createServer((req,res)=>{res.writeHead(200,{'X-Mydash-Share-Id':INSTALL_ID});res.end('ok');});await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address().port;
@@ -18,6 +29,28 @@ test('failed enable cleans an already-created background route',{skip:process.pl
  seed();fs.writeFileSync(configFile,'{}');process.env.MYDASH_TEST_FUNNEL_FAIL='1';
  try{await assert.rejects(configureSharing('enable'));}finally{delete process.env.MYDASH_TEST_FUNNEL_FAIL;}
  assert.equal(readConfig().sharing.enabled,false);assert.deepEqual(JSON.parse(fs.readFileSync(configFile,'utf8')),{});
+});
+test('Funnel authorization from stdout reaches the owner even with stderr or exit zero',{skip:process.platform==='win32'},async()=>{
+ for(const mode of ['authorization','authorization-exit-zero','authorization-wait']){
+  seed();fs.writeFileSync(configFile,'{}');process.env.MYDASH_TEST_FUNNEL_FAIL=mode;
+  const started = Date.now();
+  try{await assert.rejects(configureSharing('enable'),{code:'AUTHORIZATION_REQUIRED'});}
+  finally{delete process.env.MYDASH_TEST_FUNNEL_FAIL;}
+  const pending=await shareNetworkStatus({refresh:true});
+  assert.equal(pending.phase,'authorization');assert.equal(pending.enabled,false);
+  assert.equal(pending.authUrl,'https://login.tailscale.com/f/unit-test');
+  assert.equal(readConfig().sharing.cleanupPending,false);
+  if (mode === 'authorization-wait') assert.ok(Date.now() - started < 8000, 'do not wait for the command timeout to present authorization');
+ }
+ const ready=await configureSharing('enable');
+ assert.equal(ready.phase,'configured');assert.equal(ready.enabled,true);assert.equal(ready.authUrl,'');
+});
+test('Funnel exit zero without the expected route does not enable sharing',{skip:process.platform==='win32'},async()=>{
+ seed();fs.writeFileSync(configFile,'{}');process.env.MYDASH_TEST_FUNNEL_FAIL='no-route';
+ try{await assert.rejects(configureSharing('enable'),{code:'SHARE_ROUTE_MISSING'});}
+ finally{delete process.env.MYDASH_TEST_FUNNEL_FAIL;}
+ assert.equal(readConfig().sharing.enabled,false);
+ assert.equal((await shareNetworkStatus({refresh:true})).phase,'error');
 });
 test('uninstall removes an owned public Funnel before removing code',{skip:process.platform==='win32'},async()=>{
  seed();route();const {uninstall}=await import('../lib/setup.mjs');const r=await uninstall();

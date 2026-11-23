@@ -5,8 +5,8 @@ The host needs FolioPier AI and a Tailscale client that supports Funnel. Visitor
 ## Setup
 
 1. Open **Settings → Internet document sharing** and select **Enable internet sharing**.
-2. Complete the Tailscale sign-in and Funnel authorization shown by the page. An organization administrator may need to permit this device.
-3. After authorization, return to FolioPier AI and select **Enable internet sharing** again. In 0.3.0, **Check again** only reads the status; it does not retry setup. Local service, Funnel configuration, PDF readiness and external verification are separate checks.
+2. If prompted, open Tailscale authorization and approve sharing. On a managed network, ask your administrator to allow Funnel for the device.
+3. Return to FolioPier AI. Setup retries automatically after you open authorization and return to the tab. You can also select **I have finished in Tailscale**. If setup still fails, open **Sharing setup help → Copy sharing diagnostics** and send the summary to support.
 4. If you came from an article, use **Return to document and continue sharing** to restore the draft.
 
 FolioPier AI uses a dedicated HTTPS port, 8443 or 10000. It preserves other routes and the private workbench on port 443. Initial DNS propagation may take time. A successful local check does not prove internet reachability; test from a phone with Wi-Fi turned off.

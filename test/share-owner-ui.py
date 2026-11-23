@@ -57,13 +57,32 @@ class ShareOwnerUI(_base):
     def test_unsupported_client_and_pending_cleanup_have_actions(self):
         self.status_fixture(enabled=False, phase='error', errorCode='TAILSCALE_UNSUPPORTED')
         self.go('/settings')
-        self.page.locator('[data-sharing-status]').filter(has_text='supported open-source client').wait_for()
+        self.page.locator('[data-sharing-status]').filter(has_text='Update Tailscale').wait_for()
         self.assertTrue(self.page.locator('[data-sharing-client-help] a').is_visible())
         self.page.unroute('**/api/sharing/status')
         self.status_fixture(enabled=False, phase='error', errorCode='FUNNEL_CLEANUP_FAILED', cleanupPending=True)
         self.go('/settings')
         self.page.locator('[data-sharing-status]').filter(has_text='public entry could not be removed').wait_for()
         self.assertTrue(self.page.get_by_role('button', name='Finish disabling sharing').is_visible())
+
+    def test_returning_from_authorization_resumes_setup_once(self):
+        ready = self.status_fixture()
+        self.page.unroute('**/api/sharing/status')
+        self.status_fixture(enabled=False, phase='authorization', errorCode='AUTHORIZATION_REQUIRED',
+                            authUrl='https://login.tailscale.com/f/test')
+        calls = []
+        def setup(route):
+            calls.append(route.request.post_data_json)
+            route.fulfill(status=200, content_type='application/json', body=json.dumps(ready))
+        self.page.route('**/api/sharing/setup', setup)
+        self.go('/settings')
+        auth = self.page.locator('[data-sharing-auth]')
+        auth.wait_for()
+        self.assertEqual(auth.get_attribute('href'), 'https://login.tailscale.com/f/test')
+        auth.evaluate("(el) => { el.addEventListener('click', e => e.preventDefault(), {once:true}); el.click(); }")
+        self.page.evaluate("window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange'))")
+        self.page.locator('[data-sharing-status]').filter(has_text='Configured.').wait_for()
+        self.assertEqual(calls, [{'action': 'enable'}])
 
     def test_stale_article_preserves_newer_shared_files_when_editing_permissions(self):
         self.status_fixture()
