@@ -162,6 +162,29 @@ try {
     result.reason = view.reason || null;
     result.connectionSource = 'desktop';
   }
+  const queueFile = path.join(app, 'lib/codex-native-queue.mjs');
+  const daemonUnavailable = !result.sharedDaemon || result.sharedDaemon.reason === 'daemon_unavailable';
+  if (!result.connected && daemonUnavailable && ['app_ipc_offline', 'app_closed'].includes(result.reason) && fs.existsSync(queueFile)) {
+    const { CodexNativeQueue } = await import(pathToFileURL(queueFile).href);
+    const queue = new CodexNativeQueue();
+    const rpc = queue.rpc.bind(queue);
+    queue.rpc = (connection, method, params) => {
+      if (!['initialize', 'thread/read', 'thread/queue/list', 'thread/turns/list'].includes(method))
+        throw Error('diagnostic-write-blocked');
+      return rpc(connection, method, params);
+    };
+    try {
+      const view = await queue.observe(id, cwd);
+      result.nativeQueue = { available: view.connected };
+      if (view.connected) {
+        result.connected = true;
+        result.connectionSource = 'queue';
+        result.reason = null;
+      }
+    } finally {
+      queue.close();
+    }
+  }
 } catch (e) {
   result.error = ['invalid-options', 'invalid-session', 'session-not-found'].includes(e.message)
     ? e.message

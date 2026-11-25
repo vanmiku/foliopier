@@ -133,14 +133,18 @@
         ? transport === 'codex-app'
           ? connectionSource === 'daemon'
             ? T('Connected to the original Codex session')
-            : T('Connected to Codex App')
+            : connectionSource === 'queue'
+              ? T('Codex message queue available')
+              : T('Connected to Codex App')
           : transport === 'claude-remote'
             ? T('Connected to Claude Remote Control')
             : T('Connected to the original tmux session')
         : canConnect
           ? waking()
             ? T('Connecting to Codex App…')
-            : T('Connect automatically')
+            : sendReason === 'app_ipc_offline'
+              ? T('Codex connection unavailable')
+              : T('Connect automatically')
           : T('Sync only');
     help.disabled = available || !id;
     help.title = available
@@ -162,6 +166,11 @@
               : null;
     const reason =
       contextReason ||
+      (!waking() && sendReason === 'app_ipc_offline'
+        ? T(
+            'FolioPier AI cannot connect to Codex on this Mac. Your draft and queued messages are kept. You can continue in the desktop app.'
+          )
+        : null) ||
       (waking()
         ? T(
             'Opening this conversation on the computer hosting FolioPier AI. You can keep reading or queue a message.'
@@ -276,6 +285,7 @@
       available ||
       !id ||
       agent !== 'codex' ||
+      waking() ||
       (!canConnect && !sendReason.startsWith('app_')) ||
       sendReason.startsWith('daemon_');
     $('[data-article-reconnect]').disabled = waking();
@@ -493,7 +503,9 @@
             session.transport === 'codex-app'
               ? session.connectionSource === 'daemon'
                 ? 'Codex'
-                : 'Codex App'
+                : session.connectionSource === 'queue'
+                  ? T('Codex message queue available')
+                  : 'Codex App'
               : session.transport === 'claude-remote'
                 ? 'Claude Remote Control'
                 : session.transport === 'tmux'
@@ -586,6 +598,7 @@
         'queued',
         'waiting_receipt',
         'waiting_connection',
+        'native_queued',
         'paused',
         'dispatching',
         'working',

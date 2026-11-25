@@ -1,6 +1,6 @@
 {
   "name": "foliopier",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "description": "FolioPier AI: a local-first workbench to read, review and share deliverables from Claude Code and Codex.",
   "license": "MIT",

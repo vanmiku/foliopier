@@ -5,6 +5,7 @@
     'queued',
     'waiting_receipt',
     'waiting_connection',
+    'native_queued',
     'paused',
     'dispatching',
     'working',

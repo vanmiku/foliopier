@@ -188,6 +188,18 @@ test('explicit App protocol errors are compatibility failures rather than mislea
   }
 });
 
+test('a private desktop socket without a listener is reported as offline', async (t) => {
+  if (process.platform === 'win32') return t.skip('desktop Unix IPC adapter');
+  const f = await fixture(t);
+  const b = new api.CodexAppBridge({ socketPath: f.socketPath });
+  b.connect = async () => {
+    throw Object.assign(Error('connection refused'), { code: 'ECONNREFUSED' });
+  };
+  assert.deepEqual(await b.observe(sid, f.dir), { connected: false, reason: 'app_ipc_offline' });
+  assert.equal(b.peek(sid, f.dir).reason, 'app_ipc_offline');
+  assert.deepEqual(f.calls, []);
+});
+
 test('a read-only diagnostic identifies the failed RPC without including conversations or sending input', async (t) => {
   if (process.platform === 'win32') return t.skip('desktop Unix IPC adapter');
   const { spawn } = await import('node:child_process');

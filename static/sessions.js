@@ -123,26 +123,33 @@
           chat.dataset.sessionId
         );
         const hint = document.querySelector('[data-session-send-hint]');
+        const connecting = ['opening', 'connecting'].includes(data.session.connection?.state);
         hint.textContent = data.session.canSend
           ? data.session.transport === 'codex-app'
             ? data.session.connectionSource === 'daemon'
               ? T('Connected to the original Codex session')
-              : T('Connected to Codex App')
+              : data.session.connectionSource === 'queue'
+                ? T('Codex message queue available')
+                : T('Connected to Codex App')
             : data.session.transport === 'claude-remote'
               ? T('Connected to Claude Remote Control')
               : T('Connected to the original tmux session')
           : data.session.canConnect
-            ? ['opening', 'connecting'].includes(data.session.connection?.state)
+            ? connecting
               ? T('Connecting to Codex App…')
               : data.session.connection?.reason === 'app_login_required'
                 ? T('Sign in to the Mac hosting FolioPier AI to wake Codex App. Your queued message is kept.')
-                : data.session.connection?.state === 'failed'
+                : data.session.sendReason === 'app_ipc_offline'
                   ? T(
-                      'Automatic connection did not finish. Retry connection; your draft and queued messages are kept.'
+                      'FolioPier AI cannot connect to Codex on this Mac. Your draft and queued messages are kept. You can continue in the desktop app.'
                     )
-                  : T(
-                      'FolioPier AI can open this original conversation on the hosting Mac without sending a message.'
-                    )
+                  : data.session.connection?.state === 'failed'
+                    ? T(
+                        'Automatic connection did not finish. Retry connection; your draft and queued messages are kept.'
+                      )
+                    : T(
+                        'FolioPier AI can open this original conversation on the hosting Mac without sending a message.'
+                      )
             : data.session.sendReason === 'daemon_not_loaded'
               ? T(
                   'This Codex session is not loaded in the shared background service. Reopen it in the original Codex client; its records and your draft are kept.'
@@ -166,8 +173,7 @@
         form.querySelector('[type=submit]').textContent =
           !data.session.canSend && data.session.canConnect ? T('Connect and send') : T('Send');
         const retry = document.querySelector('[data-session-connect]');
-        retry.hidden = !data.session.canConnect || data.session.canSend;
-        retry.disabled = ['opening', 'connecting'].includes(data.session.connection?.state);
+        retry.hidden = !data.session.canConnect || data.session.canSend || connecting;
         if (data.session.canConnect && !data.session.canSend) connect();
       }
     } catch {

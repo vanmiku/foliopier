@@ -1525,6 +1525,7 @@ class ReviewUI(unittest.TestCase):
         ident,opened,sent=self.auto_wake_fixture()
         self.page.set_viewport_size({'width':1366,'height':820});self.go('/p/test/session-document')
         self.page.wait_for_function('()=>document.querySelector("[data-article-send-help]").textContent.includes("Connecting")')
+        self.assertTrue(self.page.locator('[data-article-reconnect]').is_hidden())
         self.assertIn('Saved conversation',self.page.locator('.article-messages').inner_text())
         self.assertEqual(len(opened),1);self.assertEqual(opened[0]['id'],ident);self.assertEqual(sent,[])
         self.assertNotIn('text',opened[0])
@@ -1539,6 +1540,7 @@ class ReviewUI(unittest.TestCase):
     def test_standalone_session_uses_the_same_automatic_wake_without_submitting_input(self):
         ident,opened,sent=self.auto_wake_fixture();self.go('/sessions/'+ident)
         self.page.wait_for_function('()=>document.querySelector("[data-session-send-hint]").textContent.includes("Connecting")')
+        self.assertTrue(self.page.locator('[data-session-connect]').is_hidden())
         self.assertEqual(len(opened),1);self.assertEqual(sent,[])
         self.assertTrue(self.page.locator('#session-text').is_enabled())
         self.assertEqual(self.page.locator('#session-send [type=submit]').inner_text(),'Connect and send')
@@ -1546,6 +1548,30 @@ class ReviewUI(unittest.TestCase):
         self.page.wait_for_timeout(3100)
         self.assertEqual(len(opened),1)
         self.assertEqual(self.page.locator('#session-text').input_value(),'Standalone draft')
+
+    def test_offline_codex_connection_keeps_draft_and_recovers_on_poll(self):
+        ident,opened,sent=self.auto_wake_fixture()
+        self.page.set_viewport_size({'width':1366,'height':820});self.go('/p/test/session-document')
+        self.page.wait_for_function('()=>document.querySelector("[data-article-send-help]").textContent.includes("Connecting")')
+        self.page.locator('#article-message').fill('Keep this draft during reconnection')
+        url='**/api/sessions/'+ident
+        self.page.unroute(url)
+        source=None
+        def chat(route):
+            route.fulfill(json={'session':{'canSend':bool(source),'canConnect':True,
+                'connection':None if source else {'state':'failed','reason':'app_ipc_offline'},
+                'sendReason':None if source else 'app_ipc_offline', 'connectionSource':source,
+                'transport':'codex-app' if source else None,'deliveries':[]},'stateLabel':'Idle','html':''})
+        self.page.route(url,chat)
+        self.page.wait_for_function('()=>document.querySelector("[data-article-send-help]").textContent==="Codex connection unavailable"')
+        self.assertIn('continue in the desktop app',self.page.locator('#article-send-reason').inner_text())
+        self.assertTrue(self.page.locator('[data-article-reconnect]').is_visible())
+        source='queue'
+        self.page.wait_for_function('()=>document.querySelector("[data-article-send-help]").textContent==="Codex message queue available"')
+        self.assertTrue(self.page.locator('[data-article-reconnect]').is_hidden())
+        self.assertTrue(self.page.locator('.article-compose [type=submit]').is_enabled())
+        self.assertEqual(self.page.locator('#article-message').input_value(),'Keep this draft during reconnection')
+        self.assertEqual(len(opened),1);self.assertEqual(sent,[])
 
     def test_mobile_closed_panel_and_contents_do_not_wake_codex(self):
         ident,opened,sent=self.auto_wake_fixture();self.go('/p/test/session-document')

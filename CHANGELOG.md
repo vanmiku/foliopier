@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3 (2026-11-25)
+
+- On macOS, use the native Codex message queue for eligible desktop conversations when FolioPier AI cannot connect directly. The original conversation picks up the message when it is ready.
+- Show when a message is queued in Codex and confirm delivery after the original conversation records it. Keep drafts during reconnects and hide the retry button while a connection is in progress.
+
+Update from **Settings → Updates**, then refresh the document page. See the [conversation guide](docs/sessions.md) and [中文说明](docs/sessions.zh-CN.md).
+
 ## 0.3.2 (2026-11-23)
 
 - Enable internet sharing directly from a document's **Share** dialog. After Tailscale authorizes Funnel, return to the dialog to continue and create a link and access code.

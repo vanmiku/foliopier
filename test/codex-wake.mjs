@@ -182,6 +182,21 @@ test('wake timeout never sends input, and an unrelated project cannot reuse a pe
   assert.equal((await task).reason, 'app_wake_timeout');
   assert.equal(opens, 1);
 });
+test('an offline desktop socket is reported after wake has had time to reconnect', async () => {
+  const offline = { connected: false, reason: 'app_ipc_offline' };
+  const f = fixture({
+    bridge: { peek: () => offline, observe: async () => offline },
+    open: async () => {},
+    timeoutMs: 12,
+  });
+  assert.equal(f.manager.start(id, cwd).state, 'connecting');
+  assert.deepEqual(await f.manager.ensure(id, cwd), {
+    state: 'failed',
+    reason: 'app_ipc_offline',
+    at: f.manager.peek(id).at,
+  });
+});
+
 test('a queued message cannot wake or dispatch after expiry or permission revocation', async (t) => {
   const { AppDeliveryQueue } = await import('../lib/app-delivery.mjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'md-wake-expire-'));
