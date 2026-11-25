@@ -89,13 +89,19 @@ test('the native queue verifies the project and submits only to the original use
       console.log(JSON.stringify({ id: q.id, result }));
     });
   `;
+  let workerClosed;
   const bridge = new CodexNativeQueue({
     codexHome: dir, binary: () => process.execPath,
-    launch: (bin, args, options) => spawn(bin, ['-e', child, id, log], options),
+    launch: (bin, args, options) => {
+      const worker = spawn(bin, ['-e', child, id, log], options);
+      workerClosed = new Promise((resolve) => worker.once('close', resolve));
+      return worker;
+    },
   });
-  t.after(() => {
+  t.after(async () => {
     bridge.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    await workerClosed;
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
   });
   assert.equal((await bridge.observe(id, dir)).connected, true);
   assert.equal((await bridge.observe(id, os.homedir())).connected, false);
