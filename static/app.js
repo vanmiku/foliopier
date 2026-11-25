@@ -1472,6 +1472,8 @@
     let comments = JSON.parse($('#cm-data')?.textContent || '[]');
     const prose = cmPanel.dataset.prose === '1' ? $('.sheet .prose') : null;
     const itemId = cmPanel.dataset.id, curV = Number(cmPanel.dataset.v), file = cmPanel.dataset.file;
+    const [commentProject, commentSlug] = itemId.split('/');
+    const workflowLink = (name, params) => `/workflow/${encodeURIComponent(commentProject)}/${name}?${escH(new URLSearchParams({ slug: commentSlug, ...params }).toString())}`;
     const commentKey = `mydash.comment.${itemId}.v${curV}.${file}`;
     function highlight() {
       if (!prose) return;
@@ -1494,7 +1496,7 @@
       const open = comments.filter(c => c.status === 'open'), done = comments.filter(c => c.status !== 'open');
       const card = c => `<div class="cm-item${c.status === 'open' ? '' : ' done'}" id="cm-${escH(c.id)}">
         ${c.quote ? `<blockquote>${escH(c.quote)}</blockquote>` : ''}<p>${escH(c.text)}</p>
-        <div class="cm-meta"><span>v${c.v} · ${when(c.createdAt)}</span><span class="cm-st">${c.status === 'open' ? T('Not handled yet') : T('Handled{v}', { v: c.resolvedIn ? ` (v${c.resolvedIn})` : '' })}</span>${c.note ? `<span class="cm-note">${escH(c.note)}</span>` : ''}${body.dataset.sessionSend === '1' && c.status === 'open' ? `<button type="button" class="cm-agent act" data-comment="${escH(c.id)}" data-comment-version="${c.v}" data-comment-file="${escH(c.file || '')}">${T('Send to agent')}</button>` : ''}${c.agentDelivery ? `<a href="/sessions/${encodeURIComponent(c.agentDelivery.session)}">${T('View agent conversation')}</a>` : ''}${c.status === 'open' ? `<button type="button" class="cm-del" data-cid="${escH(c.id)}">${T('Delete')}</button>` : ''}</div></div>`;
+        <div class="cm-meta"><span>v${c.v} · ${when(c.createdAt)}</span><span class="cm-st">${c.status === 'open' ? T('Not handled yet') : T('Handled{v}', { v: c.resolvedIn ? ` (v${c.resolvedIn})` : '' })}</span>${c.note ? `<span class="cm-note">${escH(c.note)}</span>` : ''}${body.dataset.sessionSend === '1' && c.status === 'open' ? `<button type="button" class="cm-agent act" data-comment="${escH(c.id)}" data-comment-version="${c.v}" data-comment-file="${escH(c.file || '')}">${T('Send to agent')}</button>` : ''}${c.comparison ? `<a href="${workflowLink('compare', { comment: c.id })}#review-comment-${encodeURIComponent(c.id)}">${T('Open cell change')}</a>` : ''}${c.agentDelivery ? `<a href="/sessions/${encodeURIComponent(c.agentDelivery.session)}">${T('View agent conversation')}</a>` : ''}${c.status === 'open' ? `<button type="button" class="cm-del" data-cid="${escH(c.id)}">${T('Delete')}</button>` : ''}</div></div>`;
       $('.cm-list', cmPanel).innerHTML = open.map(card).join('') + (done.length ? `<details class="cm-done"><summary>${T('{n} handled|{n} handled', { n: done.length })}</summary>${done.map(card).join('')}</details>` : '');
       $('.cm-n', cmPanel).textContent = open.length || '';
       highlight();

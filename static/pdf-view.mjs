@@ -8,13 +8,17 @@ const T = (key, vars) => {
   return vars ? s.replace(/\{(\w+)\}/g, (all, k) => (k in vars ? String(vars[k]) : all)) : s;
 };
 
-export async function mount(el) {
-  const status = el.querySelector('.pdf-status');
-  const doc = await pdfjs.getDocument({
-    url: el.dataset.src,
+export function openPdf(url) {
+  return pdfjs.getDocument({
+    url,
     cMapUrl: '/vendor/pdfjs/cmaps/', cMapPacked: true,
     standardFontDataUrl: '/vendor/pdfjs/standard_fonts/',
   }).promise;
+}
+
+export async function mount(el) {
+  const status = el.querySelector('.pdf-status');
+  const doc = await openPdf(el.dataset.src);
   const first = await doc.getPage(1);
   const vp1 = first.getViewport({ scale: 1 });
   status.textContent = T('{n} page|{n} pages', { n: doc.numPages });

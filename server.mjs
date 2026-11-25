@@ -1,3 +1,7 @@
+import { comparisonLink, exactFile, recordToken, reviewable, reviewFiles } from './lib/version-review.mjs';
+import { comparisonPage } from './lib/version-review-views.mjs';
+import { packageCandidate, packageError, packageId } from './lib/package-snapshots.mjs';
+import { packageOwnerPage } from './lib/workflow-views.mjs';
 import { BRAND_NAME, BRAND_SHORT, BRAND_COLOR } from './lib/brand.mjs';
 import { projectConversationContext, listSessions, readSession, refreshSession, connectSession, cancelAppDelivery, uploadSessionImage, readSessionImage, sessionImageStorage, cleanSessionImages, discardSessionImage, sendSession, sessionMatches, replyAfter } from './lib/sessions.mjs';
 import { sessionRows, sessionSection, messageRows, sessionPage, stateLabel } from './lib/sessionviews.mjs';
@@ -5,11 +9,11 @@ import { sessionRows, sessionSection, messageRows, sessionPage, stateLabel } fro
 // 两个端口：PORT 是工作台；CONTENT_PORT 只提供原始文件，网页类产物在这里运行，和工作台不同源，脚本碰不到工作台的接口。
 import http from 'node:http';
 import { HttpsAccess } from './lib/https-access.mjs';
-import { createShare, listShares, getShare, ownerShare, updateShare, resetShareCode, revokeShare, ownerShareComments, resolveShareComment } from './lib/shares.mjs';
+import { createShare, publishPackage, maintainPackageCopies, listShares, getShare, ownerShare, updateShare, resetShareCode, revokeShare, ownerShareComments, resolveShareComment } from './lib/shares.mjs';
 import { shareNetworkStatus, configureSharing, shareLocalPort } from './lib/share-network.mjs';
 import { createShareHandler } from './lib/share-server.mjs';
 import { buildShareSnapshot, shareResourcePath, safeAssetBytes } from './lib/share-resources.mjs';
-import { shareReaderPage } from './lib/share-public-views.mjs';
+import { shareReaderPage, packageReaderEntry, packageReaderPage } from './lib/share-public-views.mjs';
 import { findPdfBrowser } from './lib/share-pdf.mjs';
 import { externalFeedbackItems, resolveExternalFeedback } from './lib/share-feedback.mjs';
 import { CodexQuestions } from './lib/codex-questions.mjs';
@@ -107,7 +111,7 @@ const hostOk = h => ALLOWED_HOSTS.has(h) || Boolean(TAILNET_MAIN?.test(h));
 const contentHostOk = h => CONTENT_HOSTS.has(h) || Boolean(TAILNET_CONTENT?.test(h));
 
 // 静态资源版本号（每次部署变化）
-const BUILD = crypto.createHash('sha1').update(['static/app.css', 'static/app.js', 'static/file-nav.js', 'static/share-owner.js', 'static/share-owner.css', 'static/share-public.js', 'static/share-public.css', 'static/lan-auth.js', 'static/sessions.js', 'static/delivery-ui.js', 'static/article-sessions.js', 'static/pdf-view.mjs', 'static/icon.svg', 'static/favicon.ico', 'static/icon-180.png', 'lib/locales/zh.mjs'].map(f => { try { return fs.statSync(path.join(APP, f)).mtimeMs; } catch { return 0; } }).join('|') + lang()).digest('hex').slice(0, 8);
+const BUILD = crypto.createHash('sha1').update(['static/app.css', 'static/app.js', 'static/file-nav.js', 'static/share-owner.js', 'static/share-owner.css', 'static/share-public.js', 'static/share-public.css', 'static/lan-auth.js', 'static/sessions.js', 'static/delivery-ui.js', 'static/workflows.js', 'static/workflows.css', 'static/article-sessions.js', 'static/pdf-view.mjs', 'static/icon.svg', 'static/favicon.ico', 'static/icon-180.png', 'lib/locales/zh.mjs'].map(f => { try { return fs.statSync(path.join(APP, f)).mtimeMs; } catch { return 0; } }).join('|') + lang()).digest('hex').slice(0, 8);
 setBuild(BUILD);
 // 浏览器端用到的译文：只挑 app.js / pdf-view.mjs 里 T('...') 用到的
 // 浏览器端的译文，按语言各算一份（页面语言可以按设备选，见 withLang）
@@ -497,6 +501,50 @@ function accessInfo() {
 
 let clientErrWindow = [];
 const sharePreviews = new Map();
+const packagePreviews = new Map();
+const validRef = ref => typeof ref === 'string' && ref.length > 0 && ref.length <= 160 && !ref.startsWith('.') && !/[\/\\\x00-\x1f:]/.test(ref);
+async function packagePost(body) {
+  const publicUrl = readConfig().sharing?.publicUrl || '';
+  const expose = result => ({ ...result, url: publicUrl + '/s/' + result.share.id });
+  for (const [key, draft] of packagePreviews) if (draft.until < Date.now()) packagePreviews.delete(key);
+  if (!publicUrl || readConfig().sharing.enabled !== true) throw packageError('SHARING_DISABLED', 409);
+  if (body.action === 'publish') {
+    const draft = packagePreviews.get(body.draft);
+    if (!draft) throw packageError('PACKAGE_PREVIEW_EXPIRED', 409);
+    draft.commit ??= publishPackage(draft.setup, draft.record.package).then(expose);
+    try { return await draft.commit; }
+    catch (error) { delete draft.commit; throw error; }
+  }
+  const old = body.id ? getShare(body.id) : null;
+  if (body.id && (old?.project !== body.project || !old?.package)) throw packageError('SHARE_UNAVAILABLE', 410);
+  if (body.action === 'reset' && old) return expose(await resetShareCode(body.id));
+  if (body.action === 'revoke' && old) return { share: await revokeShare(body.id) };
+  if (body.action !== 'preview' || !index().some(m => m.project === body.project)) throw packageError('PACKAGE_INVALID');
+  if ((old?.package.revision || 0) !== body.revision) throw packageError('PACKAGE_REVISION', 409);
+  const title = String(body.title || '').trim().slice(0, 200);
+  if (!title) throw packageError('PACKAGE_TITLE');
+  const pkg = packageCandidate(body.project, body.entries, old?.package);
+  const id = packageId(), until = Date.now() + 10 * 60_000;
+  if (packagePreviews.size >= 20) packagePreviews.delete(packagePreviews.keys().next().value);
+  const expiresAt = body.expiresInHours ? new Date(Date.now() + body.expiresInHours * 3600_000).toISOString() : old?.expiresAt || new Date(Date.now()+86400_000).toISOString();
+  packagePreviews.set(id, { until, setup: { ...body, draft: id }, record: { id, title, description: String(body.description || '').slice(0, 2000), package: pkg, expiresAt } });
+  return { draft: id, url: '/package-preview/' + id };
+}
+function packageMessage(code) {
+  switch (code) {
+    case 'PACKAGE_COUNT': return t('Choose between 1 and 10 documents.');
+    case 'PACKAGE_SIZE': return t('A delivery package can contain up to 50 MB.');
+    case 'PACKAGE_PREVIEW_EXPIRED': return t('The preview expired. Preview the package again before publishing.');
+    case 'PACKAGE_REVISION': return t('Someone updated this package. Reload the page before making changes.');
+    case 'PACKAGE_SOURCE_CHANGED':
+    case 'SOURCE_MISSING':
+    case 'FILE_MISSING': return t('A source version is unavailable or has changed. Review the files and preview again.');
+    case 'SENSITIVE_FILE': return t('A file appears to contain a secret. Remove it from the package and try again.');
+    case 'TOO_LARGE': return t('One document exceeds the sharing size limit.');
+    case 'SHARING_DISABLED': return t('Set up internet sharing before publishing a package.');
+    default: return t('The package could not be saved. Check the selected files and try again.');
+  }
+}
 async function handlePost(req, res) {
   const json = (status, obj) => send(res, status, JSON.stringify(obj), 'application/json; charset=utf-8');
   if (req.headers['x-mydash'] !== '1') return json(403, { error: 'missing X-Mydash header' });
@@ -507,6 +555,35 @@ async function handlePost(req, res) {
   const url = new URL(req.url, 'http://local');
   const bodyLimit = url.pathname === '/api/sessions/images' ? 7 * 1024 * 1024 : 1024 * 1024;
   let body; try { body = JSON.parse(await readBody(req, bodyLimit) || '{}'); } catch (e) { return json(e.message === 'too large' ? 413 : 400, { error: e.message === 'too large' ? (url.pathname === '/api/sessions/images' ? t('Choose PNG, JPEG, WebP or GIF images, up to 5 MB each (4 images max).') : 'body too large (1 MB max)') : 'body is not JSON' }); }
+  if (url.pathname.startsWith('/api/workflow/')) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return json(400, { error: t('Could not save this change. Check the fields and try again.') });
+    if (origin && new URL(origin).host !== req.headers.host) return json(403, { error: 'origin not allowed' });
+  }
+  if (url.pathname === '/api/workflow/review-comment') {
+    const { project, slug, file, sheet, key, record, column, requestId } = body;
+    const v = Number(body.v), base = Number(body.base);
+    const meta = validRef(project) && validRef(slug) && readMeta(project, slug);
+    const previous = meta && exactFile(project, slug, base, file, meta);
+    const current = meta && exactFile(project, slug, v, file, meta);
+    const message = typeof body.text === 'string' && body.text.trim();
+    if (!previous || !current || v === base || !message || !/^[a-f0-9]{32}$/.test(requestId || '') || !/^[a-f0-9]{64}$/.test(record || '') || !['table','sheet'].includes(kindOf(file))) return json(400, { error: t('The selected cell or source version is unavailable.') });
+    let result;
+    try { result = reviewFiles(previous, current, file, { sheet, key }); }
+    catch { return json(400, { error: t('The comparison could not read these files.') }); }
+    const row = result.changes?.find(r => recordToken(r.id) === record);
+    const cell = row?.cells.find(c => c.name === column);
+    if (!cell) return json(409, { error: t('The selected cell or source version is unavailable.') });
+    const comparison = { file, base, v, key, sheet, record: row.id.slice(0, 1000), recordToken: record, column, old: cell.old?.slice(0, 1000) ?? null, current: cell.current?.slice(0, 1000) ?? null };
+    const comment = await addComment(project, slug, { v, file, requestId, comparison, text: message,
+      heading: row.id.slice(0, 120) + ' · ' + column.slice(0, 64),
+      quote: (comparison.old ?? '∅') + ' → ' + (comparison.current ?? '∅'), from: req.mydashWhere });
+    return json(200, { url: comparisonLink(project, slug, comment.comparison, comment.id) });
+  }
+  if (url.pathname === '/api/workflow/packages') {
+    if (req.mydashWhere === 'lan') return json(403, { error: t('Only the owner can manage internet sharing.') });
+    try { return json(200, await packagePost(body)); }
+    catch (error) { return json(error.status || 400, { error: packageMessage(error.code), code: error.code }); }
+  }
   if (url.pathname.startsWith('/api/shar')) {
     if (req.mydashWhere === 'lan') return json(403, { error: t('Only the owner can manage internet sharing.') });
     try {
@@ -1033,7 +1110,7 @@ async function handleRemote(req, res, url) {
     const out = [];
     for (const m of index()) {
       if (!all && (m.project !== proj || (sl && m.slug !== sl))) continue;
-      for (const c of openCm(readResp(m.project, m.slug))) out.push({ id: c.id, item: `${m.project}/${m.slug}`, title: m.title, url: baseUrl() + `/p/${encodeURIComponent(m.project)}/${encodeURIComponent(m.slug)}`, v: c.v, latest: latest(m).v, file: c.file, heading: c.heading, quote: c.quote, text: c.text, createdAt: c.createdAt });
+      for (const c of openCm(readResp(m.project, m.slug))) out.push({ id: c.id, item: `${m.project}/${m.slug}`, title: m.title, url: baseUrl() + (c.comparison ? comparisonLink(m.project, m.slug, c.comparison, c.id) : `/p/${encodeURIComponent(m.project)}/${encodeURIComponent(m.slug)}`), ...(c.comparison ? { comparison: c.comparison } : {}), v: c.v, latest: latest(m).v, file: c.file, heading: c.heading, quote: c.quote, text: c.text, createdAt: c.createdAt });
     }
     out.push(...externalFeedbackItems(all?{}:{project:proj,slug:sl||undefined}));
     return json(200, { ok: true, open: out });
@@ -1136,7 +1213,7 @@ async function handle(req, res) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method Not Allowed', 'text/plain; charset=utf-8');
   if(url.pathname==='/api/sharing/status'||url.pathname==='/api/shares'){
     if(req.mydashWhere==='lan')return send(res,403,JSON.stringify({error:t('Only the owner can manage internet sharing.')}),'application/json');
-    if(url.pathname==='/api/sharing/status')return send(res,200,JSON.stringify({...await shareNetworkStatus(),activeShares:listShares().filter(s=>s.status==='active').length}),'application/json; charset=utf-8',{'Cache-Control':'no-store'});
+    if(url.pathname==='/api/sharing/status')return send(res,200,JSON.stringify({...await shareNetworkStatus(),activeShares:[...listShares(), ...listShares({packages:true})].filter(s=>s.status==='active').length}),'application/json; charset=utf-8',{'Cache-Control':'no-store'});
     const filter={project:url.searchParams.get('project')||undefined,slug:url.searchParams.get('slug')||undefined};
     return send(res,200,JSON.stringify({shares:listShares(filter),comments:url.searchParams.get('details')==='0'?[]:ownerShareComments(filter),publicUrl:readConfig().sharing?.publicUrl||''}),'application/json; charset=utf-8',{'Cache-Control':'no-store'});
   }
@@ -1149,8 +1226,52 @@ async function handle(req, res) {
     html=html.replaceAll('/_share/static/','/static/').replaceAll('/_share/vendor/','/vendor/').replace('window.__SHARE=','window.__SHARE_PREVIEW=true;window.__SHARE=');
     return send(res,200,html,'text/html; charset=utf-8',{'Cache-Control':'no-store','Content-Security-Policy':`default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; frame-src 'self' about:; connect-src 'self'; object-src 'none'; base-uri 'none'`});
   }
+  const packagePreviewPath = /^\/package-preview\/([a-f0-9]{32})(\/asset)?$/.exec(url.pathname);
+  if (packagePreviewPath) {
+    if (req.mydashWhere === 'lan') return send(res, 403, 'Forbidden');
+    const preview = packagePreviews.get(packagePreviewPath[1]);
+    if (!preview || preview.until < Date.now()) return send(res, 404, notFoundPage());
+    const nonce = crypto.randomBytes(18).toString('base64');
+    const sharePath = '/package-preview/' + preview.record.id;
+    if (packagePreviewPath[2]) {
+      const entry = packageReaderEntry(preview.record, url.searchParams.get('entry'), sharePath);
+      const rel = url.searchParams.get('file') || '', type = mimeOf(rel);
+      const abs = entry && Number(url.searchParams.get('rev')) === entry.packageRevision && Number(url.searchParams.get('v')) === entry.snapshot.version && shareResourcePath(entry.snapshot, rel);
+      if (!abs || !/^(image\/|application\/pdf|font\/)/.test(type)) return send(res, 404, notFoundPage());
+      return send(res, 200, safeAssetBytes(abs, rel), type, { 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'none'; sandbox" });
+    }
+    const page = await packageReaderPage(preview.record, url, { nonce, sharePath, preview: true });
+    if (!page) return send(res, 404, notFoundPage());
+    const html = page.html.replaceAll('/_share/static/', '/static/').replaceAll('/_share/vendor/', '/vendor/');
+    return send(res, page.status, html, 'text/html; charset=utf-8', { 'Cache-Control': 'no-store', 'Content-Security-Policy': `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; frame-src 'self' about:; connect-src 'self'; object-src 'none'; base-uri 'none'` });
+  }
   const segs = decodeSegs(url.pathname);
   if (!segs) return send(res, 400, 'Bad path encoding', 'text/plain; charset=utf-8');
+  if (segs.length === 3 && segs[0] === 'workflow' && segs[2] === 'compare') {
+    const project = segs[1], q = url.searchParams, slug = q.get('slug');
+    const meta = validRef(project) && validRef(slug) && readMeta(project, slug);
+    if (!meta) return send(res, 404, notFoundPage());
+    const anchor = q.has('comment') ? readResponses(project, slug).comments.find(c => c.id === q.get('comment') && c.comparison) : null;
+    const saved = anchor?.comparison;
+    const v = saved?.v ?? Number(q.get('v')), base = saved?.base ?? Number(q.get('base'));
+    const file = saved?.file ?? q.get('file'), key = saved?.key ?? (q.get('key') || ''), sheet = saved?.sheet ?? (q.get('sheet') || '');
+    if (!file || !reviewable(file)) return send(res, 404, notFoundPage());
+    const oldFile = exactFile(project, slug, base, file, meta), newFile = exactFile(project, slug, v, file, meta);
+    let result;
+    try { result = base === v ? { code: 'missing' } : reviewFiles(oldFile, newFile, file, { sheet, key }); }
+    catch { result = { code: 'unreadable' }; }
+    return send(res, 200, comparisonPage({ project, slug, file, base, v, meta, sheet, key, oldFile, newFile, result, anchor, filter: q.get('filter'), search: q.get('search'), page: q.get('page') }));
+  }
+  if (segs.length === 3 && segs[0] === 'workflow' && segs[2] === 'packages') {
+    if (req.mydashWhere === 'lan') return send(res, 403, 'Forbidden');
+    const project = segs[1];
+    const docs = index().filter(m => m.project === project && m.versions?.length);
+    const packages = listShares({ project, packages: true });
+    const id = url.searchParams.get('id');
+    const current = packages.find(p => p.id === id);
+    if ((!docs.length && !packages.length) || (id && !current)) return send(res, 404, notFoundPage());
+    return send(res, 200, packageOwnerPage(project, docs, packages, current, readConfig().sharing), 'text/html; charset=utf-8', { 'Cache-Control': 'no-store' });
+  }
 
   // 还在等的提问（给页面和测试用）
   if (url.pathname === '/api/prompts') {
@@ -1430,6 +1551,9 @@ async function syncPublicSharingNow(){
   publicShareServer=srv;publicSharePort=port;
 }
 syncPublicSharing().catch(e=>console.error(new Date().toISOString(),'share listener unavailable',e.code||'ERROR'));
+const sweepPackages = () => maintainPackageCopies().catch(error => console.error('Package snapshot cleanup:', error.code || 'ERROR'));
+sweepPackages();
+setInterval(sweepPackages, 3600_000).unref();
 syncLan();
 setInterval(syncLan, 30_000).unref();
 setInterval(() => {

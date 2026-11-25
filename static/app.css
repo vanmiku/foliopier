@@ -196,6 +196,8 @@ main { flex: 1; width: 100%; max-width: 1160px; margin: 0 auto; padding: 4px 32p
 .rename-save { height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--accent-solid); color: #fff; font: 500 13px/1 var(--sans); cursor: pointer; }
 .rename-cancel { height: 32px; padding: 0 10px; border: 0; background: none; color: var(--text-2); font: 500 13px/1 var(--sans); cursor: pointer; }
 .head-actions { display: flex; gap: 8px; }
+.project-workflow-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+.project-workflow-actions .act { min-height: 34px; }
 
 /* 手机上的项目横条（电脑上有边栏，不显示） */
 .projects { display: none; }
