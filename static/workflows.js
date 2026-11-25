@@ -61,8 +61,9 @@
     if (!form) return;
     const entries = find('[data-package-entries]', form), picker = find('[data-package-picker]', form);
     const preview = find('[data-package-preview]', form), publish = find('[data-action="publish-package"]', form);
-    let draft;
+    let draft, previewGeneration = 0;
     function invalidate() {
+      previewGeneration++;
       draft = null;
       preview.hidden = true;
       publish.hidden = true;
@@ -112,6 +113,8 @@
     invalidate();
     form.addEventListener('submit', event => {
       event.preventDefault();
+      invalidate();
+      const generation = previewGeneration;
       run(event.submitter, line, async () => {
         const inputs = new FormData(form);
         const picks = all('[data-package-entry]', form).map(entry => ({
@@ -121,7 +124,14 @@
         if (!picks.length) throw new Error(strings.select);
         const settings = { title: inputs.get('title'), description: inputs.get('description'), allowPdf: inputs.has('allowPdf'),
           ...(inputs.get('expiresInHours') ? { expiresInHours: Number(inputs.get('expiresInHours')) } : {}) };
-        const response = await write('packages', { ...settings, project: info.project, id: info.id, revision: info.revision, entries: picks, action: 'preview' });
+        let response;
+        try {
+          response = await write('packages', { ...settings, project: info.project, id: info.id, revision: info.revision, entries: picks, action: 'preview' });
+        } catch (error) {
+          if (generation === previewGeneration) throw error;
+          return;
+        }
+        if (generation !== previewGeneration) return;
         draft = response.draft;
         preview.href = response.url;
         preview.textContent = strings.preview;

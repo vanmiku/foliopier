@@ -7,6 +7,7 @@ import subprocess
 import time
 import unittest
 import urllib.request
+from playwright.sync_api import expect
 
 spec = importlib.util.spec_from_file_location('review_ui', Path(__file__).with_name('ui-review.py'))
 base_ui = importlib.util.module_from_spec(spec)
@@ -128,6 +129,38 @@ class WorkflowUI(unittest.TestCase):
         self.page.get_by_role('button', name='Revoke link').click()
         self.page.get_by_text('This share is no longer available.').wait_for()
         self.assertEqual(visitor.reload().status, 410)
+
+    def test_package_preview_arriving_after_removal_cannot_be_published(self):
+        self.go('/p/test')
+        self.page.get_by_role('link', name='Delivery packages').click()
+        self.page.get_by_label('Title').fill('Edited handoff')
+        for slug in ['package-first', 'package-second']:
+            self.page.get_by_label('Choose a document').select_option(slug)
+            self.page.get_by_role('button', name='Add document', exact=True).click()
+        held = []
+        self.page.route('**/api/workflow/packages', lambda route: held.append(route))
+        preview = self.page.get_by_role('button', name='Preview as a visitor')
+        preview.click()
+        self.page.locator('[data-slug="package-second"]').get_by_role('button', name='Remove').click()
+        self.assertEqual(len(held), 1)
+        held.pop().continue_()
+        self.page.unroute('**/api/workflow/packages')
+        expect(preview).to_be_enabled()
+        self.assertFalse(self.page.get_by_role('link', name='Open visitor preview').is_visible())
+        publish = self.page.get_by_role('button', name='Publish this revision')
+        self.assertFalse(publish.is_visible())
+
+        preview.click()
+        publish.click()
+        result = self.page.locator('[data-package-result]')
+        code = result.locator('code').inner_text()
+        visitor = self.context.new_page()
+        visitor.goto(result.locator('a').first.get_attribute('href'))
+        visitor.get_by_label('Access code').fill(code)
+        visitor.get_by_role('button', name='View document').click()
+        visitor.locator('.package-directory > li > p a').first.click()
+        visitor.get_by_text('First edition.').wait_for()
+        self.assertEqual(visitor.get_by_role('link', name='Next document').count(), 0)
 
     def test_csv_comparison_and_saved_comment(self):
         self.go('/p/test/review-table')

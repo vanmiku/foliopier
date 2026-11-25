@@ -106,3 +106,17 @@ test('Excel review selects a matching worksheet and compares literal IDs', () =>
   const result = reviewFiles(file(1), file(2), 'book.xlsx', { sheet: 'Records', key: 'ID' });
   assert.deepEqual(result.changes, [{ id: '0003', type: 'changed', cells: [{ name: 'Value', old: '1', current: '2' }] }]);
 });
+
+test('Excel review finds different numbers with the same formatted display', () => {
+  for (const [v, amount] of [[1, 1.001], [2, 1.002]]) {
+    const book = XLSX.utils.book_new();
+    const rows = XLSX.utils.aoa_to_sheet([['ID', 'Amount'], [3, amount]]);
+    rows.A2.z = '0000';
+    rows.B2.z = '0.00';
+    XLSX.utils.book_append_sheet(book, rows, 'Records');
+    version('review', 'rounded', v, 'book.xlsx', { 'book.xlsx': XLSX.write(book, { bookType: 'xlsx', type: 'buffer' }) });
+  }
+  const file = v => exactFile('review', 'rounded', v, 'book.xlsx');
+  const result = reviewFiles(file(1), file(2), 'book.xlsx', { sheet: 'Records', key: 'ID' });
+  assert.deepEqual(result.changes, [{ id: '0003', type: 'changed', cells: [{ name: 'Amount', old: '1.001', current: '1.002' }] }]);
+});
