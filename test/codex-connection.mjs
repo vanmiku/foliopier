@@ -67,6 +67,7 @@ test('an offline desktop can use the persisted queue without retrying a failed w
     { connected: true, state: 'unknown' }
   );
   assert.equal((await connection.observe(id, '/project')).connectionSource, 'queue');
+  await assert.rejects(connection.start(id, '/project', { expectedTurnId: id }), (e) => e.uncertain === false);
   await assert.rejects(connection.start(id, '/project', {}), (e) => e.uncertain);
   assert.deepEqual(calls, ['daemon:observe', 'desktop:observe', 'queue:observe', 'queue:start']);
 });

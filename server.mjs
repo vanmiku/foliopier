@@ -568,7 +568,7 @@ async function handlePost(req, res) {
       if (body.quote) text = '> ' + body.quote + '\n\n' + text;
     }
     if (commentLink) text = commentLink.marker + '\n' + text;
-    const result = await sendSession(String(body.id || ''), { text, nonce: body.nonce, images: body.images ?? [] });
+    const result = await sendSession(String(body.id || ''), { text, nonce: body.nonce, images: body.images ?? [], expectedTurnId: body.expectedTurnId ?? null });
     if (result.ok && commentLink) {
       await linkCommentSession(commentLink.project, commentLink.slug, commentLink.cid, body.id, commentLink.marker);
       broadcast('response', { id: body.article.id });
@@ -1139,18 +1139,18 @@ async function handle(req, res) {
     const ver = meta?.versions.find(v => v.v === Number(url.searchParams.get('v')));
     if (!ver) return send(res, 404, '{}', 'application/json; charset=utf-8');
     const { sessions, scope, reason } = projectConversationContext(project, index(), latest(meta));
-    if (req.mydashWhere === 'lan') sessions.forEach(s => { s.canSend = false; s.canConnect = false; s.connection = null; s.sendReason = 'lan'; });
+    if (req.mydashWhere === 'lan') sessions.forEach(s => { s.canSend = false; s.canConnect = false; s.connection = null; s.steerTurnId = null; s.sendReason = 'lan'; });
     return send(res, 200, JSON.stringify({ sessions, scope, reason }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
   }
   if (url.pathname === '/api/sessions') {
     const sessions = listSessions(url.searchParams.get('project') || '');
-    if (req.mydashWhere === 'lan') sessions.forEach(s => { s.canSend = false; s.canConnect = false; s.connection = null; s.sendReason = 'lan'; });
+    if (req.mydashWhere === 'lan') sessions.forEach(s => { s.canSend = false; s.canConnect = false; s.connection = null; s.steerTurnId = null; s.sendReason = 'lan'; });
     return send(res, 200, JSON.stringify({ sessions, html: sessionRows(sessions) }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
   }
   if (segs[0] === 'api' && segs[1] === 'sessions' && segs.length === 3) {
     const session = await refreshSession(segs[2],{waitForApp:false,transport:url.searchParams.get('transport')==='claude-remote'?'claude-remote':undefined});
     if (!session) return send(res, 404, '{}', 'application/json; charset=utf-8');
-    if (req.mydashWhere === 'lan') { session.canSend = false; session.canConnect = false; session.connection = null; session.sendReason = 'lan'; }
+    if (req.mydashWhere === 'lan') { session.canSend = false; session.canConnect = false; session.connection = null; session.steerTurnId = null; session.sendReason = 'lan'; }
     return send(res, 200, JSON.stringify({ session, html: messageRows(session.messages, session.agent), stateLabel: stateLabel(session.state) }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
   }
   if (segs[0] === 'sessions') {
@@ -1158,7 +1158,7 @@ async function handle(req, res) {
     if (segs.length === 1) return send(res, 200, homePage(index(), { sessionsHtml: sessionSection(listSessions()) }));
     const session = readSession(segs[1]);
     if (!session || segs.length !== 2) return send(res, 404, notFoundPage());
-    if (req.mydashWhere === 'lan') { session.canSend = false; session.canConnect = false; session.connection = null; session.sendReason = 'lan'; }
+    if (req.mydashWhere === 'lan') { session.canSend = false; session.canConnect = false; session.connection = null; session.steerTurnId = null; session.sendReason = 'lan'; }
     return send(res, 200, sessionPage(session));
   }
   if (url.pathname === '/api/index') {

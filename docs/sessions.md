@@ -14,6 +14,8 @@ Resumed Codex rollout files may include a continuation ID suffix. FolioPier AI v
 Newer Codex clients can instead use the shared app-server daemon. FolioPier AI connects to its existing private Unix WebSocket, verifies the original thread and project, and enables sending only when Codex explicitly permits direct input. An already loaded session needs no Desktop App wake or preliminary message. An unloaded or protected thread remains view-only; FolioPier AI never starts a second executor or changes its model, approval policy or sandbox. Connection source is shown as the original Codex session.
 
 On macOS, if neither direct connection is available and the bundled Codex CLI supports the native message queue, eligible desktop conversations show **Codex message queue available**. FolioPier AI checks the saved conversation and project before adding the message. The original Codex conversation picks it up when it is ready. If it is closed or its queue is paused, open the conversation in Codex to continue. The page keeps the message marked as queued until the original conversation records its message ID.
+
+While Codex is working, **Send after this turn** queues the message. **Steer now** is available when the shared app-server can accept input into the current turn. If that turn ends before Codex accepts the message, the draft stays in the composer.
 ## Connection capabilities
 
 | Connection | Read recent messages | Send text | Send images | Delivery behavior |

@@ -1288,7 +1288,7 @@ mark.cm-hl { background: var(--pin-soft); color: inherit; border-bottom: 2px sol
 .article-compose label { display: block; font-size: 12.5px; margin-bottom: 4px; }
 .article-compose textarea { width: 100%; box-sizing: border-box; min-height: 56px; max-height: 96px; resize: vertical; padding: 8px; border: 1px solid var(--border); border-radius: 7px; font: 16px/1.4 var(--sans); color: var(--text); background: var(--bg); }
 .article-compose .set-hint { font-size: 12.5px; line-height: 1.4; margin: 5px 0; }
-.article-compose-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.article-compose-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .article-compose-actions .linkish { font-size: 12.5px; min-height: 34px; }
 .article-send-status { font-size: 12.5px; line-height: 1.4; max-height: 50px; overflow: auto; margin: 6px 0 0; }
 .article-send-status:empty { display: none; }

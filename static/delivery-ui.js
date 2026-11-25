@@ -52,6 +52,13 @@
       sessionStorage.setItem('mydash.delivery-notices.' + scope, JSON.stringify([...store]));
     } catch {}
   }
+  window.mydashSendTiming = function (form, active, turnId, pending) {
+    const steer = form.querySelector('[data-codex-steer]');
+    steer.hidden = !active;
+    steer.disabled = !active || pending || !turnId;
+    steer.dataset.turnId = active ? turnId || '' : '';
+    form.querySelector('[data-steer-unavailable]').hidden = !active || Boolean(turnId);
+  };
   window.mydashRenderDeliveries = function render(container, rows = [], transport, scope = 'session') {
     const signature = JSON.stringify([scope, rows, transport, document.body.dataset.lan]);
     let view = views.get(container);

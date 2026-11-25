@@ -15,7 +15,8 @@
     input = $('#article-message'),
     box = $('.article-messages');
   const form = $('.article-compose'),
-    send = form.querySelector('[type=submit]');
+    send = form.querySelector('[type=submit]'),
+    steer = form.querySelector('[data-codex-steer]');
   const status = $('.article-send-status'),
     state = $('.article-session-state');
   const prefix = 'mydash.article.' + JSON.stringify([data.id, data.v, data.file]);
@@ -51,6 +52,8 @@
     sendReason = 'not_connected',
     transport = null,
     connectionSource = null,
+    activeTurn = false,
+    steerTurnId = null,
     waitingForReply = false,
     generation = 0,
     lastHtml = null,
@@ -116,7 +119,12 @@
     if (writable() && !composerTouched) compose(true);
     else compose(!form.hidden);
     send.disabled = pending || uploading || !writable() || !id;
-    send.textContent = available ? T('Send') : T('Connect and send');
+    send.textContent = available
+      ? activeTurn
+        ? T('Send after this turn')
+        : T('Send')
+      : T('Connect and send');
+    window.mydashSendTiming(form, available && activeTurn, steerTurnId, pending || uploading);
     const imageButton = $('[data-article-add-image]');
     imageButton.hidden = agent !== 'codex' || transport !== 'codex-app';
     imageButton.disabled = pending || uploading || !available || (draft.images?.length || 0) >= 4;
@@ -550,6 +558,8 @@
     $('.article-session-update').hidden = true;
     sendReason = current.find((s) => s.id === id)?.sendReason || 'not_connected';
     generation++;
+    activeTurn = false;
+    steerTurnId = null;
     lastHtml = null;
     restoreScroll = true;
     draft = load(draftKey());
@@ -662,6 +672,8 @@
       }
       transport = r.session.transport;
       connectionSource = r.session.connectionSource;
+      activeTurn = agent === 'codex' && ['busy', 'needs_input'].includes(r.session.state);
+      steerTurnId = r.session.steerTurnId || null;
       const details = $('[data-article-session-detail]');
       let appLink = details.querySelector('a');
       if (/^claude:\/\/code\/session_[A-Za-z0-9]{8,80}$/.test(r.session.appUrl || '')) {
@@ -929,14 +941,21 @@
     if (e.repeat || input.disabled || input.readOnly || send.disabled) return;
     form.requestSubmit(send);
   });
-  form.addEventListener('submit', async (e) => {
+  form.addEventListener('submit', (e) => {
     e.preventDefault();
+    submitMessage();
+  });
+  steer.addEventListener('click', () => {
+    if (available && steer.dataset.turnId) submitMessage(steer.dataset.turnId);
+  });
+  async function submitMessage(expectedTurnId = null) {
     if (pending || uploading || !writable() || !id || (!input.value.trim() && !draft.images?.length)) return;
     const payload = JSON.stringify({
       text: input.value,
       quote: draft.quote || '',
       comment: draft.comment || null,
       images: (draft.images || []).map((image) => image.id),
+      ...(expectedTurnId ? { expectedTurnId } : {}),
     });
     if (draft.payload !== payload) {
       draft.nonce = newId();
@@ -965,6 +984,7 @@
           nonce: draft.nonce,
           images: (draft.images || []).map((image) => image.id),
           article: { id: data.id, v: data.v, file: data.file },
+          ...(expectedTurnId ? { expectedTurnId } : {}),
         }),
       });
       const result = await r.json();
@@ -990,7 +1010,7 @@
       renderSelect();
       setAvailable(available);
     }
-  });
+  }
   function syncTabs() {
     rail.dataset.agent = agent;
     const contents = rail.dataset.mode === 'contents';

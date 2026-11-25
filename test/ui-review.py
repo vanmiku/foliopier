@@ -1364,6 +1364,43 @@ class ReviewUI(unittest.TestCase):
         self.assertEqual(self.page.locator('#article-message').input_value(),'Preserve my draft')
         self.assertTrue(self.page.locator('.article-compose [type=submit]').is_disabled());self.assertEqual(sent,[])
 
+    def test_busy_codex_distinguishes_steer_from_send_after_the_turn(self):
+        self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
+        self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))
+        ident=self.session_fixture('busy-codex-timing-111','codex')
+        turn='22222222-2222-4222-8222-222222222222'
+        source='daemon'
+        posted=[]
+        def chat(route):
+            route.fulfill(json={'session':{'agent':'codex','state':'busy','canSend':True,'transport':'codex-app',
+                'connectionSource':source,'steerTurnId':turn if source=='daemon' else None},
+                'stateLabel':'Working','html':'<p>Active Codex turn</p>'})
+        def send(route):
+            posted.append(route.request.post_data_json)
+            route.fulfill(status=409,json={'error':'This turn changed. Your draft is kept.'})
+        self.page.route('**/api/sessions/'+ident,chat)
+        self.page.route('**/api/sessions/send',send)
+        self.page.set_viewport_size({'width':1366,'height':820})
+        self.go('/p/test/session-document')
+        self.page.locator('[data-article-agent=codex]').click()
+        steer=self.page.locator('[data-codex-steer]')
+        draft=self.page.locator('#article-message')
+        draft.fill('Keep this follow-up')
+        steer.click()
+        self.page.wait_for_function("()=>document.querySelector('.article-send-status').textContent.includes('turn changed')")
+        self.assertEqual(posted[0]['expectedTurnId'],turn)
+        self.assertEqual(draft.input_value(),'Keep this follow-up')
+        source='queue'
+        self.page.locator('[data-steer-unavailable]').wait_for(state='visible')
+        self.assertTrue(steer.is_disabled())
+        after=self.page.locator('.article-compose [type=submit]')
+        self.assertEqual(after.inner_text(),'Send after this turn')
+        after.click()
+        self.page.wait_for_function("()=>document.querySelector('.article-send-status').textContent.includes('turn changed')")
+        self.assertEqual(len(posted),2)
+        self.assertNotIn('expectedTurnId',posted[1])
+        self.assertNotEqual(posted[0]['nonce'],posted[1]['nonce'])
+
     def test_claude_tmux_send_tracks_receipt_and_reply_and_exposes_only_a_valid_app_link(self):
         self.post('/api/settings', {'terminalSessions':{'enabled':True,'send':True}})
         self.addCleanup(lambda:self.post('/api/settings', {'terminalSessions':{'enabled':False,'send':False}}))

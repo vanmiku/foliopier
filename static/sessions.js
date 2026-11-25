@@ -48,16 +48,19 @@
   }
   const status = document.querySelector('.session-send-status');
   const form = document.getElementById('session-send'),
-    text = document.getElementById('session-text');
+    text = document.getElementById('session-text'),
+    steer = form?.querySelector('[data-codex-steer]');
   let last = '',
     busy = false,
     nonce = null,
     savedText = null,
+    savedTurnId = null,
+    activeTurn = false,
     wakeAttempted = false;
   const key = chat ? 'mydash.session.draft.' + chat.dataset.sessionId : null;
   function saveDraft() {
     try {
-      sessionStorage.setItem(key, JSON.stringify({ text: text.value, nonce, savedText }));
+      sessionStorage.setItem(key, JSON.stringify({ text: text.value, nonce, savedText, savedTurnId }));
     } catch {}
   }
   try {
@@ -68,6 +71,7 @@
         text.value = typeof d.text === 'string' ? d.text : '';
         nonce = d.nonce || null;
         savedText = d.savedText || null;
+        savedTurnId = d.savedTurnId || null;
       } catch {
         text.value = raw;
       }
@@ -168,10 +172,17 @@
                       )
                     : T('Sending is unavailable. Check the connection or messaging settings.');
         const writable = data.session.canSend || data.session.canConnect;
+        activeTurn = data.session.canSend && data.session.agent === 'codex' &&
+          ['busy', 'needs_input'].includes(data.session.state);
+        window.mydashSendTiming(form, activeTurn, data.session.steerTurnId, busy);
         text.disabled = !writable;
         form.querySelector('[type=submit]').disabled = !writable;
         form.querySelector('[type=submit]').textContent =
-          !data.session.canSend && data.session.canConnect ? T('Connect and send') : T('Send');
+          !data.session.canSend && data.session.canConnect
+            ? T('Connect and send')
+            : activeTurn
+              ? T('Send after this turn')
+              : T('Send');
         const retry = document.querySelector('[data-session-connect]');
         retry.hidden = !data.session.canConnect || data.session.canSend || connecting;
         if (data.session.canConnect && !data.session.canSend) connect();
@@ -235,15 +246,23 @@
     if (e.repeat || busy || text.disabled || text.readOnly || send.disabled) return;
     form.requestSubmit(send);
   });
-  form?.addEventListener('submit', async (e) => {
+  form?.addEventListener('submit', (e) => {
     e.preventDefault();
+    submitMessage();
+  });
+  steer?.addEventListener('click', () => {
+    if (steer.dataset.turnId) submitMessage(steer.dataset.turnId);
+  });
+  async function submitMessage(expectedTurnId = null) {
     if (busy || !text.value.trim()) return;
     busy = true;
     let accepted = false;
     form.querySelector('[type=submit]').disabled = true;
-    if (savedText !== text.value) {
+    steer.disabled = true;
+    if (savedText !== text.value || savedTurnId !== expectedTurnId) {
       nonce = newId();
       savedText = text.value;
+      savedTurnId = expectedTurnId;
     }
     nonce ||= newId();
     saveDraft();
@@ -251,7 +270,7 @@
       const r = await fetch('/api/sessions/send', {
         method: 'POST',
         headers: { 'X-Mydash': '1', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: chat.dataset.sessionId, text: text.value, nonce }),
+        body: JSON.stringify({ id: chat.dataset.sessionId, text: text.value, nonce, ...(expectedTurnId ? { expectedTurnId } : {}) }),
       });
       const data = await r.json();
       if (!r.ok) {
@@ -266,6 +285,7 @@
       }
       nonce = null;
       savedText = null;
+      savedTurnId = null;
       if (text.value) saveDraft();
       status.textContent = ['codex-app', 'claude-remote'].includes(data.transport)
         ? ''
@@ -277,7 +297,8 @@
     } finally {
       busy = false;
       form.querySelector('[type=submit]').disabled = false;
-      if (accepted) poll();
+      steer.disabled = !steer.dataset.turnId;
+      if (accepted || expectedTurnId) poll();
     }
-  });
+  }
 })();

@@ -34,6 +34,16 @@ async function fixture(t, options = {}) {
         s.terminate();
         return;
       }
+      if (q.method === 'turn/steer') {
+        const turn = turns.at(-1);
+        if (turn?.status !== 'inProgress' || turn.id !== q.params.expectedTurnId) {
+          s.send(JSON.stringify({ id: q.id, error: { code: -32600, message: 'Active turn changed' } }));
+          return;
+        }
+        turn.items.push({ type: 'userMessage', clientId: q.params.clientUserMessageId, content: q.params.input });
+        s.send(JSON.stringify({ id: q.id, result: { turnId: turn.id } }));
+        return;
+      }
       const result =
         q.method === 'initialize'
           ? { codexHome: dir }
@@ -235,4 +245,33 @@ test('a running native turn keeps the queue busy even if the earlier status snap
     f.calls.some((x) => x.method === 'turn/start'),
     false
   );
+});
+
+test('steering targets the exact active turn once, ahead of waiting messages', async (t) => {
+  if (process.platform === 'win32') return t.skip('Unix adapter');
+  const { AppDeliveryQueue } = await import('../lib/app-delivery.mjs');
+  const f = await fixture(t, { thread: { status: { type: 'active', activeFlags: [] } } });
+  const b = new api.CodexDaemonBridge({ codexHome: f.dir, timeoutMs: 200 });
+  t.after(() => b.close());
+  const expectedTurnId = '22222222-2222-4222-8222-222222222222';
+  f.turns.push({ id: expectedTurnId, status: 'inProgress', startedAt: Date.now() / 1000, items: [] });
+  const queue = new AppDeliveryQueue({
+    dir: path.join(f.dir, 'deliveries'),
+    enabled: () => true, resolve: () => ({ cwd: f.dir }),
+    bridge: {
+      observe: (id, cwd) => b.observe(id, cwd, { force: true }),
+      start: (...args) => b.start(...args),
+    },
+  });
+  assert.equal((await b.observe(id, f.dir)).steerTurnId, expectedTurnId);
+  queue.enqueue(id, { text: 'Later', nonce: 'send-later-test' });
+  const input = { text: 'This turn', nonce: 'steer-this-turn', expectedTurnId };
+  assert.equal((await queue.steer(id, f.dir, input)).delivered, true);
+  assert.equal((await queue.steer(id, f.dir, input)).turnId, expectedTurnId);
+  await queue.tick();
+  assert.equal(queue.list(id).find((x) => x.nonce === 'send-later-test').state, 'queued');
+  await assert.rejects(b.start(id, f.dir, { text: 'Stale', clientId: id, expectedTurnId: id }));
+  f.thread.status.activeFlags = ['waitingOnApproval'];
+  await assert.rejects(b.start(id, f.dir, { text: 'Approval pending', clientId: id, expectedTurnId }));
+  assert.deepEqual(f.calls.filter((x) => ['turn/steer', 'turn/start'].includes(x.method)).map((x) => x.method), ['turn/steer']);
 });
