@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.4 (2026-11-25)
+
+- Choose **Send after this turn** while Codex is working, or use **Steer now** when the shared Codex app-server can accept input into the active turn.
+- Keep the draft if the active turn ends before Codex accepts an immediate message. The web page shows when a connection only supports queued messages.
+
+Update from **Settings → Updates**, then refresh the conversation page. See the [conversation guide](docs/sessions.md) and [中文说明](docs/sessions.zh-CN.md).
+
 ## 0.3.3 (2026-11-25)
 
 - On macOS, use the native Codex message queue for eligible desktop conversations when FolioPier AI cannot connect directly. The original conversation picks up the message when it is ready.
