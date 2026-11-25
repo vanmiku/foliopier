@@ -295,7 +295,7 @@ check "条目页显示由 Codex 发布" "curl -s '$B/p/codexproj/from-codex' | g
 OUTC=$(cd "$CX" && CODEX_THREAD_ID=cx-1 $CLI publish "$TMP/fx/notes.md" -p wrong-name -s cx-p 2>&1)
 check "Codex 会话里乱传 --project 也会被纠正" "test -f '$MYDASH_DATA/codexproj/cx-p/meta.json' && test ! -d '$MYDASH_DATA/wrong-name'"
 check "doctor 显示 Codex 归属依据" "(cd '$CX/sub' && { CODEX_THREAD_ID=cx-1 $CLI doctor 2>/dev/null || true; } | grep 'Codex 会话的启动文件夹' >/dev/null)"
-check "meta.json 带格式版本" "grep '\"schema\": 1' '$MYDASH_DATA/codexproj/from-codex/meta.json' >/dev/null"
+check "meta.json 带格式版本" "grep '\"schema\": 2' '$MYDASH_DATA/codexproj/from-codex/meta.json' >/dev/null"
 
 echo "多个 AI 工具：网页上能看出是谁发的"
 (cd "$LP/sub" && CLAUDE_CODE_SESSION_ID=sess-a $CLI publish "$TMP/fx/notes.md" -s from-claude >/dev/null)
@@ -1022,11 +1022,11 @@ check "长计划（50 KB）也能交给 mydash" "test -n '$BIGID'"
 check "分类名写成 __proto__、toString 这类不会查出怪东西（远程发布不经过命令行的检查）" "node -e 'import(process.argv[1]).then(c=>process.exit(c.normCategory(\"__proto__\")===null&&c.normCategory(\"toString\")===null&&c.normCategory(\"待办\")===\"todo\"?0:1))' '$ROOT/lib/categories.mjs'"
 chmod 000 "$MYDASH_DATA/revproj/xss/v1/xss.md"; curl -s -o /dev/null "$B/f/revproj/xss/v1/xss.md"; chmod 644 "$MYDASH_DATA/revproj/xss/v1/xss.md"
 check "发布的文件读不了时只这一个请求失败，服务不崩" "curl -sf '$B/healthz' >/dev/null"
-# 删掉读过的版本、再用同一个版本号重发：算新的
+# 删掉读过的版本后再发：接着上次的版本号，并标为未读
 (cd "$RV" && printf '# 已读\n\n一\n' > rs.md && $CLI publish rs.md -p revproj -s rs >/dev/null && printf '# 已读\n\n二\n' > rs.md && $CLI publish rs.md -p revproj -s rs >/dev/null)
 POSTJ -H 'X-Mydash: 1' -d '{"id":"revproj/rs","v":2}' "$B/api/read" >/dev/null; sleep 1.1
 $CLI rm revproj/rs --version 2 >/dev/null; (cd "$RV" && printf '# 已读\n\n三\n' > rs.md && $CLI publish rs.md -p revproj -s rs >/dev/null); sleep 1.2
-check "读过的版本删了又用同一个号重发：显示成没读" "curl -s '$B/p/revproj' | grep -E 'class=\"entry unread[^\"]*\" data-id=\"revproj/rs\"' >/dev/null"
+check "读过的版本删除后重发：保留 v1，跳过已删的 v2，并显示成未读" "test -d '$MYDASH_DATA/revproj/rs/v1' && test ! -e '$MYDASH_DATA/revproj/rs/v2' && test -d '$MYDASH_DATA/revproj/rs/v3' && curl -s '$B/p/revproj' | grep -E 'class=\"entry unread[^\"]*\" data-id=\"revproj/rs\"' >/dev/null"
 # 远程上传：文件和目录同名不会让服务崩；主文件必须是传上来的文件之一
 RT=$($CLI remote token --name rvbox --json | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0)).token)')
 RS='{"project":"revproj","slug":"up","main":"zzz.md","files":[{"path":"a/b","sha1":"11f6ad8ec52a2984abaafd7c3b516503785c2072","size":1},{"path":"a","sha1":"11f6ad8ec52a2984abaafd7c3b516503785c2072","size":1}]}'

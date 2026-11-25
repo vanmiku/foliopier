@@ -4,17 +4,138 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mydash-review-unit-'));
 process.env.MYDASH_HOME = home;
 process.env.MYDASH_LANG = 'en';
+delete process.env.MYDASH_DATA;
 after(() => fs.rmSync(home, { recursive: true, force: true }));
 const { markdownHtml, renderFile } = await import('../lib/render.mjs');
 const { questionsOf, validateAnswers } = await import('../lib/approval.mjs');
 const { renderDiff } = await import('../lib/diff.mjs');
-const { addApproval, readResponses } = await import('../lib/responses.mjs');
+const { addApproval, latestApproval, readResponses } = await import('../lib/responses.mjs');
+const { publish } = await import('../lib/publish.mjs');
+const { itemDir, readMeta, withLock, writeMetaAtomic } = await import('../lib/store.mjs');
 
 const block = questions => '```approval\n' + JSON.stringify({ questions }) + '\n```';
+
+const remove = (...args) => spawnSync(process.execPath, ['bin/mydash.mjs', 'rm', ...args], { encoding: 'utf8' });
+async function publishNote(slug, text) {
+  const source = path.join(home, `${slug}.md`);
+  fs.writeFileSync(source, text);
+  return publish([source], { slug, 'force-project': 'test', local: true });
+}
+
+test('rm --version N deletes exactly the requested version', async () => {
+  const slug = 'remove-version';
+  await publishNote(slug, '# Original');
+  await publishNote(slug, '# Revision');
+  const result = remove(`test/${slug}`, '--version', '2');
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(readMeta('test', slug).versions.map(entry => entry.v), [1]);
+  assert.equal(fs.existsSync(path.join(itemDir('test', slug), 'v2')), false);
+  assert.equal(fs.readFileSync(path.join(itemDir('test', slug), 'v1', `${slug}.md`), 'utf8'), '# Original');
+});
+
+test('rm refuses missing, invalid and nonexistent versions without removing files', async () => {
+  const slug = 'invalid-version';
+  await publishNote(slug, '# Original');
+  for (const args of [['--version'], ['--version='], ['--version', '0'], ['--version', 'invalid'], ['--version=2']]) {
+    assert.notEqual(remove(`test/${slug}`, ...args).status, 0, args.join(' '));
+    assert.deepEqual(readMeta('test', slug).versions.map(entry => entry.v), [1]);
+  }
+});
+
+test('publishing after deleting the newest approval never reuses its answer', async () => {
+  const slug = 'retired-approval';
+  const approval = option => block([{ id: 'go', type: 'choice', label: 'Publish?', options: [option, 'No'] }]);
+  await publishNote(slug, approval('First'));
+  await publishNote(slug, approval('Second'));
+  const prior = await addApproval('test', slug, { v: 2, answers: { go: 'Second' }, from: 'test' });
+  const result = remove(`test/${slug}`, '--version=2');
+  assert.equal(result.status, 0, result.stderr);
+  const next = await publishNote(slug, approval('Third'));
+  assert.equal(next.version, 3);
+  assert.equal(latestApproval(readResponses('test', slug), next.version), null);
+  assert.equal(latestApproval(readResponses('test', slug), 2).id, prior.id);
+  assert.equal(remove(`test/${slug}`, '--version=3').status, 0);
+  assert.equal(remove(`test/${slug}`, '--version=1').status, 0);
+  // Removing the final version removes the item and all its responses.
+  assert.equal(readMeta('test', slug), null);
+});
+
+test('legacy metadata skips retired versions still referenced by responses', async () => {
+  const slug = 'legacy-retired-approval';
+  await publishNote(slug, '# Surviving version');
+  const metaPath = path.join(itemDir('test', slug), 'meta.json');
+  const legacy = readMeta('test', slug);
+  legacy.schema = 1;
+  delete legacy.lastVersion;
+  fs.writeFileSync(metaPath, JSON.stringify(legacy));
+  await addApproval('test', slug, { v: 2, answers: { go: 'Old' }, from: 'test' });
+  const next = await publishNote(slug, '# New version');
+  assert.equal(next.version, 3);
+  assert.equal(latestApproval(readResponses('test', slug), next.version), null);
+});
+
+test('publish checks the archived bytes if a source changes while waiting for the item lock', async () => {
+  const slug = 'publish-snapshot';
+  await publishNote(slug, '# Existing');
+  const dir = itemDir('test', slug);
+  const source = path.join(home, 'snapshot.txt');
+  fs.writeFileSync(source, 'Safe at preflight');
+  let result;
+  await withLock(dir, async () => {
+    result = assert.rejects(publish([source], { slug, 'force-project': 'test', local: true }), /look like secrets or credentials/);
+    fs.writeFileSync(source, '-----BEGIN PRIVATE KEY-----\nSynthetic test text only');
+  });
+  await result;
+  assert.deepEqual(readMeta('test', slug).versions.map(entry => entry.v), [1]);
+  assert.equal(fs.readdirSync(dir).some(name => name === 'v2' || name.startsWith('.tmp-v')), false);
+});
+
+test('publish never substitutes old archive bytes based on a stale checksum', async () => {
+  const slug = 'stale-archive-checksum';
+  await publishNote(slug, '# Original bytes');
+  const dir = itemDir('test', slug);
+  // Older releases could record a checksum from before the source was copied.
+  fs.writeFileSync(path.join(dir, 'v1', `${slug}.md`), '# Altered bytes!');
+  const next = await publishNote(slug, '# Original bytes');
+  assert.equal(next.unchangedFiles, 0);
+  assert.equal(fs.readFileSync(path.join(dir, 'v2', `${slug}.md`), 'utf8'), '# Original bytes');
+});
+
+test('a waiting publish inherits the title and category committed under the item lock', async () => {
+  const slug = 'concurrent-title';
+  await publishNote(slug, '# Initial heading');
+  const dir = itemDir('test', slug);
+  let pending;
+  await withLock(dir, async () => {
+    pending = publishNote(slug, '# New heading');
+    const meta = readMeta('test', slug);
+    meta.title = 'Pinned title';
+    meta.category = 'report';
+    Object.assign(meta.versions[0], { title: meta.title, titleSource: 'flag', category: meta.category, categorySource: 'flag' });
+    await writeMetaAtomic(dir, meta);
+  });
+  const next = await pending;
+  assert.equal(next.title, 'Pinned title');
+  assert.equal(next.category, 'report');
+  assert.equal(readMeta('test', slug).versions.at(-1).title, 'Pinned title');
+});
+
+test('repeated local Markdown links encode spaces while bundling one copy of the file', async () => {
+  const slug = 'repeated-link';
+  fs.writeFileSync(path.join(home, 'quarter one.txt'), 'Document text');
+  const next = await publishNote(slug, '[First](<quarter one.txt>)\n\n[Second](quarter%20one.txt?ref=second)');
+  const abs = path.join(itemDir('test', slug), 'v1', `${slug}.md`);
+  const markdown = fs.readFileSync(abs, 'utf8');
+  assert.equal(next.files, 2);
+  assert.match(markdown, /\[First\]\(<quarter%20one\.txt>\)/);
+  assert.match(markdown, /\[Second\]\(quarter%20one\.txt\?ref=second\)/);
+  assert.equal((markdownHtml(markdown).match(/<a href=/g) || []).length, 2);
+});
 
 async function csvPreview(name, source) {
   const abs = path.join(home, name); fs.writeFileSync(abs, source);
@@ -27,6 +148,16 @@ test('CSV delimiter detection ignores separators and newlines inside quoted fiel
   const semi = await csvPreview('semicolon.csv', 'name;notes\r\nAlice;"one,two,three,four"\r\n');
   assert.equal((semi.match(/<th[ >]/g) || []).length, 2);
   assert.match(semi, /<td>one,two,three,four<\/td>/);
+});
+
+test('CSV preview detects the delimiter across records when a header contains punctuation', async () => {
+  const comma = await csvPreview('comma.csv', 'Department; Team; Region,id\nEngineering,001\nSales,002\n');
+  assert.match(comma, /<th[^>]*>Department; Team; Region<\/th><th[^>]*>id<\/th>/);
+  assert.match(comma, /<td>Engineering<\/td><td[^>]*>001<\/td>/);
+  const semi = await csvPreview('semi.csv', 'Department,Team,Region;id\nEngineering;001\nSales;002\n');
+  assert.match(semi, /<th[^>]*>Department,Team,Region<\/th><th[^>]*>id<\/th>/);
+  const headerOnly = await csvPreview('header-only.csv', 'Department; Team; Region,id\n');
+  assert.match(headerOnly, /<th[^>]*>Department; Team; Region<\/th><th[^>]*>id<\/th>/);
 });
 test('CSV with carriage-return rows preserves escaped quotes and quoted CRLF', async () => {
   const html = await csvPreview('carriage.csv', 'name,notes\rAlice,"says ""hello""\r\nnext"\rBob,end\r');

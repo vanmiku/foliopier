@@ -9,7 +9,7 @@ import { DATA_DIR, baseUrl, localUrl, cleanName, itemDir, readMeta, writeMetaAto
 import { syncOpen } from '../lib/waiting.mjs';
 import { displayNameOf } from '../lib/names.mjs';
 import { detectProject } from '../lib/agents.mjs';
-import { cmdPublish, cmdRebuild, fmtTime, UsageError } from '../lib/publish.mjs';
+import { cmdPublish, cmdRebuild, fmtTime, migrateVersionSequence, UsageError } from '../lib/publish.mjs';
 import { health, printChecks, allRequiredOk } from '../lib/checks.mjs';
 import { integrate, hookHealth, status as integrationStatus } from '../lib/integrate.mjs';
 import { cmdSetup, uninstall, update, cmdLan, printUninstall } from '../lib/setup.mjs';
@@ -111,7 +111,7 @@ Markdown 里引用的本地图片和本地文件会被自动一起带上。
 `,
 };
 
-const BOOL = new Set(['help', 'json', 'force', 'yes', 'all', 'dry-run', 'remove', 'purge', 'allow-secret', 'version', 'agents', 'dedup', 'categories', 'done', 'hooks', 'no-hooks', 'undo', 'multi', 'check', 'auto', 'local']);
+const BOOL = new Set(['help', 'json', 'force', 'yes', 'all', 'dry-run', 'remove', 'purge', 'allow-secret', 'agents', 'dedup', 'categories', 'done', 'hooks', 'no-hooks', 'undo', 'multi', 'check', 'auto', 'local']);
 const ALIAS = { t: 'title', s: 'slug', p: 'project', n: 'note', m: 'main', h: 'help' };
 
 function parseArgs(argv) {
@@ -167,19 +167,25 @@ function cmdUrl(pos, opts) {
 }
 
 async function cmdRm(pos, opts) {
-  const target = pos[0]; if (!target || !target.includes('/')) die(t('Usage: foliopier rm <project>/<slug> [--version N]'));
-  const [project, slug] = target.split('/');
-  const dir = itemDir(cleanName(project), cleanName(slug));
+  const target = pos[0];
+  const [project, slug, extra] = (target || '').split('/').map(cleanName);
+  if (pos.length !== 1 || !project || !slug || extra !== undefined) die(t('Usage: foliopier rm <project>/<slug> [--version N]'));
+  const dir = itemDir(project, slug);
   if (!dir.startsWith(DATA_DIR + path.sep)) die(t('Invalid path'));
   const meta = readMeta(project, slug); if (!meta) die(t('No such item: {id}', { id: target }));
-  if (opts.version) {
+  if (Object.hasOwn(opts, 'version')) {
     const v = Number(opts.version);
+    if (!/^\d+$/.test(opts.version) || !Number.isSafeInteger(v) || v < 1) {
+      die(t('Usage: foliopier rm <project>/<slug> [--version N]'));
+    }
     await withLock(dir, async () => {
       const m = readMeta(project, slug);
+      if (!m?.versions.some(x => x.v === v)) throw new UsageError(t('Version v{v} does not exist for {id}', { v, id: target }));
+      migrateVersionSequence(m);
       m.versions = m.versions.filter(x => x.v !== v);
       await fsp.rm(path.join(dir, `v${v}`), { recursive: true, force: true });
       if (!m.versions.length) { await fsp.rm(dir, { recursive: true, force: true }); return; }
-      const l = m.versions[m.versions.length - 1]; m.title = l.title; m.updated = l.time; m.kind = l.kind;
+      const l = latest(m); m.title = l.title; m.updated = l.time; m.kind = l.kind; m.category = l.category;
       await writeMetaAtomic(dir, m);
     });
     process.stdout.write(t('Deleted v{v} of {id}', { v, id: target }) + '\n');
@@ -189,7 +195,7 @@ async function cmdRm(pos, opts) {
     process.stdout.write(t('Deleted {id} ({n} version)|Deleted {id} ({n} versions)', { id: target, n: meta.versions.length }) + '\n');
   }
   // 删掉的审批单、待办不能还挂在「还开着的事」里（钩子据此提醒 agent）
-  await syncOpen(cleanName(project), cleanName(slug));
+  await syncOpen(project, slug);
 }
 
 async function cmdDoctor(opts) {
