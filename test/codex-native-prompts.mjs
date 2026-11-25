@@ -6,7 +6,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 const sid = '22222222-2222-4222-8222-222222222222';
-async function fixture(t) {
+async function fixture(t, promptSettings = {}) {
   const home = fs.mkdtempSync(path.join(process.platform === 'darwin' ? '/tmp' : os.tmpdir(), 'md-nq-'));
   fs.chmodSync(home, 0o700);
   const codex = path.join(home, 'codex'),
@@ -46,7 +46,7 @@ async function fixture(t) {
       contentPort: content,
       access: 'local',
       lang: 'en',
-      prompts: { codexMode: 'parallel' },
+      prompts: { codexMode: 'parallel', ...promptSettings },
     })
   );
   const state = {
@@ -246,6 +246,26 @@ async function fixture(t) {
     rollout,
   };
 }
+test('CLI-first keeps the web form and answer route hidden during the terminal head start', async (t) => {
+  if (process.platform === 'win32') return t.skip('Unix fixtures');
+  const f = await fixture(t, { codexMode: 'cli-first', cliDelay: 60, pushDelay: -1 });
+  const text = 'Answer on the terminal first?';
+  const prompt = {
+    tool: 'codex', kind: 'question', session: sid, cwd: path.join(f.home, 'project'), both: true,
+    native: { tool: 'request_user_input', callId: 'delayed-cli-call', turnId: 'original-turn' },
+    payload: { questions: [{ id: 'choice', question: text, options: ['A', 'B'] }] },
+  };
+  const created = await f.post('/api/prompts', prompt);
+  assert.equal(created.status, 200);
+  const { id } = created.data;
+  assert.equal((await f.post('/api/prompts', prompt)).data.id, id);
+  const list = await (await fetch(f.base + '/api/prompts')).json();
+  assert.equal(list.prompts.some(p => p.id === id), false);
+  assert.equal((await fetch(f.base + '/prompts/' + id)).status, 404);
+  assert.equal((await f.post('/api/prompts/' + id + '/answer', { answers: { [text]: 'A' } })).status, 404);
+  assert.equal((await f.post('/api/prompts/' + id + '/cancel', { reason: 'terminal' })).data.prompt.status, 'terminal');
+  assert.equal((await fetch(f.base + '/prompts/' + id)).status, 404);
+});
 test('native and mydash both show the question; web receipt wins without a transcript race or duplicate submission', async (t) => {
   if (process.platform === 'win32') return t.skip('desktop Unix IPC adapter');
   const f = await fixture(t),

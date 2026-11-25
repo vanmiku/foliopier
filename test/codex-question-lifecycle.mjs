@@ -26,16 +26,18 @@ function fixture(t) {
     event = 'Stop',
     active = false,
     state = 'idle',
+    lang = 'en',
+    message = 'Work complete.',
   } = {}) {
     fs.writeFileSync(path.join(home, 'state/prompts.json'), JSON.stringify({ items: prompts }));
     fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(config));
     const r = spawnSync(process.execPath, ['bin/agent-state.mjs', state, agent], {
-      env: { ...process.env, MYDASH_HOME: home, MYDASH_LANG: 'en' },
+      env: { ...process.env, MYDASH_HOME: home, MYDASH_LANG: lang },
       input: JSON.stringify({
         session_id: sid,
         hook_event_name: event,
         stop_hook_active: active,
-        last_assistant_message: 'Work complete.',
+        last_assistant_message: message,
       }),
       encoding: 'utf8',
     });
@@ -51,8 +53,8 @@ test('an unanswered native async question prevents completion that would hide it
   const f = fixture(t),
     r = f.run();
   assert.equal(JSON.parse(r.output).decision, 'block');
-  assert.match(JSON.parse(r.output).reason, /wait/i);
-  assert.match(JSON.parse(r.output).reason, /do not.*(ask|question)/i);
+  assert.equal(JSON.parse(r.output).reason, 'Waiting for your answer to the open question.');
+  assert.equal(JSON.parse(f.run({ lang: 'zh' }).output).reason, '当前选择题还在等你回答。');
   assert.equal(r.state.state, 'busy');
 });
 test('the lifecycle guard fails open for stale, handled, other-session, permission and non-native prompts', (t) => {
@@ -81,10 +83,25 @@ test('the lifecycle guard fails open for stale, handled, other-session, permissi
   assert.equal(f.run({ event: 'StopFailure' }).output, '');
   assert.equal(f.run({ active: true }).output, '', 'must not create an endless stop-hook loop');
 });
-test('the first-message reminder includes the asynchronous native tool instead of defaulting to CLI', (t) => {
+test('Codex receives the choice reminder as context before each turn', (t) => {
   const f = fixture(t);
-  const r = f.run({ state: 'busy', event: 'UserPromptSubmit', prompts: [] });
-  assert.match(r.output, /request_user_input_async/);
+  const args = { state: 'busy', event: 'UserPromptSubmit', prompts: [] };
+  for (let turn = 0; turn < 2; turn++) {
+    const r = JSON.parse(f.run(args).output);
+    assert.equal(r.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+    assert.match(r.hookSpecificOutput.additionalContext, /request_user_input_async/);
+    assert.equal(r.decision, undefined);
+  }
+  assert.equal(f.run({ ...args, config: { prompts: { chat: false } } }).output, '');
+});
+
+test('a punctuated Codex reply does not produce visible Stop feedback', (t) => {
+  const f = fixture(t);
+  for (const message of ['Does this need a decision?', 'The button says “Continue?”. I checked the setting.']) {
+    const r = f.run({ prompts: [], message });
+    assert.equal(r.output, '');
+    assert.equal(r.state.state, 'idle');
+  }
 });
 
 test('long-lived question heartbeats remain durable for the file-based Stop guard', async (t) => {

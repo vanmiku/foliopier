@@ -239,7 +239,74 @@ class ReviewUI(unittest.TestCase):
     def test_native_codex_default_question_mode(self):
         self.go('/settings')
         self.assertEqual(self.page.locator('#s-pcodex').input_value(), 'parallel')
-        self.assertEqual(self.page.locator('#s-pcodex option').count(), 3)
+        self.assertEqual(self.page.locator('#s-pcodex option').count(), 4)
+        self.assertFalse(self.page.locator('[data-cli-first-settings]').is_visible())
+
+    def test_codex_cli_first_delay_and_browser_preference_round_trip(self):
+        prior = {'codexMode': 'parallel', 'cliDelay': 60, 'cliOpenBrowser': False,
+                 **json.loads((self.home / 'config.json').read_text())['prompts']}
+        self.addCleanup(lambda: self.post('/api/settings', {'prompts': prior}))
+        self.go('/settings')
+        with self.page.expect_response(lambda r: r.url.endswith('/api/settings') and r.request.method == 'POST'):
+            self.page.locator('#s-pcodex').select_option('cli-first')
+        self.assertTrue(self.page.locator('[data-cli-first-settings]').is_visible())
+        self.assertEqual(self.page.locator('#s-pcliwait').input_value(), '60')
+        self.assertFalse(self.page.locator('[name="promptsCliBrowser"]').is_checked())
+        with self.page.expect_response(lambda r: r.url.endswith('/api/settings') and r.request.method == 'POST'):
+            self.page.locator('#s-pcliwait').select_option('120')
+        with self.page.expect_response(lambda r: r.url.endswith('/api/settings') and r.request.method == 'POST'):
+            self.page.locator('[name="promptsCliBrowser"]').check()
+        self.go('/settings')
+        self.assertEqual(self.page.locator('#s-pcodex').input_value(), 'cli-first')
+        self.assertEqual(self.page.locator('#s-pcliwait').input_value(), '120')
+        self.assertTrue(self.page.locator('[name="promptsCliBrowser"]').is_checked())
+
+    def test_mobile_can_set_web_first_and_answer_without_codex_ipc(self):
+        sid = '44444444-4444-4444-8444-444444444444'
+        question = self.post('/api/prompts', {
+            'tool': 'codex', 'kind': 'question', 'cwd': str(self.tmp), 'session': sid,
+            'both': True, 'native': {'tool': 'request_user_input_async', 'callId': 'preview-question'},
+            'payload': {'questions': [{'question': 'Initial question?', 'options': ['A', 'B']}]},
+        })
+        self.go('/prompts/' + question['id'])
+        self.page.route('**/api/prompts/' + question['id'] + '/answer', lambda route: route.fulfill(
+            status=503, json={'reason': 'app_ipc_offline', 'error': 'This answer has not been delivered.'}))
+        self.page.locator('.pr-q input[value="A"]').check()
+        self.page.locator('.pr-go').tap()
+        self.page.get_by_text('This answer has not been delivered.', exact=True).wait_for()
+        self.assertTrue(self.page.locator('.pr-q input[value="A"]').is_checked())
+        self.page.locator('[data-pr-web-first] a').tap()
+        with self.page.expect_response(lambda r: r.url.endswith('/api/settings') and r.request.method == 'POST') as changed:
+            self.page.locator('#s-pcodex').select_option('hold')
+        self.assertTrue(changed.value.ok)
+        self.addCleanup(lambda: self.post('/api/settings', {'prompts': {'codexMode': 'parallel'}}))
+        self.post('/api/prompts/' + question['id'] + '/cancel', {})
+        env = {**self.env}
+        env.pop('MYDASH_PROMPT_MODE', None)
+        hook = subprocess.Popen(['node', str(ROOT / 'bin/agent-ask.mjs'), 'codex'], env=env,
+                                text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        self.addCleanup(lambda: hook.terminate() if hook.poll() is None else None)
+        hook.stdin.write(json.dumps({
+            'hook_event_name': 'PreToolUse', 'tool_name': 'request_user_input_async',
+            'cwd': str(self.tmp), 'session_id': sid, 'tool_use_id': 'mobile-web-first',
+            'tool_input': {'questions': [{'title': 'A new question for the phone?', 'options': ['A', 'B']}]},
+        }))
+        hook.stdin.close()
+        hook.stdin = None
+        for _ in range(50):
+            prompts = self.page.request.get(self.base + '/api/prompts').json()['prompts']
+            pending = next((p for p in prompts if p['title'] == 'A new question for the phone?'), None)
+            if pending:
+                break
+            time.sleep(.1)
+        self.assertIsNotNone(pending)
+        self.go('/prompts/' + pending['id'])
+        self.page.locator('.pr-q input[value="B"]').check()
+        self.page.locator('.pr-go').tap()
+        stdout, _ = hook.communicate(timeout=10)
+        output = json.loads(stdout)['hookSpecificOutput']
+        self.assertIn('A new question for the phone? (id: q1): B', output['permissionDecisionReason'])
+        self.assertEqual(output['permissionDecision'], 'deny')
 
     def show_article_conversation(self):
         agent=self.page.locator('#article-rail').get_attribute('data-agent')

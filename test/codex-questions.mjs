@@ -12,6 +12,40 @@ const sid = '11111111-1111-4111-8111-111111111111',
 const questions = [{ question: 'Which route?', options: [{ label: 'A' }, { label: 'B' }] }];
 const binding = { tool: 'request_user_input_async', callId: call };
 const answers = { 'Which route?': 'A' };
+
+test('CLI delivery checks the original tool result after the daemon resolves its request', async () => {
+  const transcript = path.join(home, 'cli-probe.jsonl');
+  const request = {
+    id: 7,
+    method: 'item/tool/requestUserInput',
+    params: { threadId: sid, turnId: 'turn-1', itemId: call,
+      questions: [{ id: 'route', ...questions[0] }] },
+  };
+  const prompt = {
+    tool: 'codex', kind: 'question', session: sid, cwd: home, questions, cliFirst: { delayMs: 60_000 },
+    native: { tool: 'request_user_input', callId: call, turnId: 'turn-1', questionIds: ['route'] },
+  };
+  let calls = 0;
+  const service = new api.CodexQuestions({
+    resolve: () => ({ cwd: home, transcript }), receiptMs: 30,
+    daemon: {
+      watchQuestions: async () => [request],
+      submitQuestion: async (original, result) => {
+        assert.equal(original, request);
+        assert.deepEqual(result, { answers: { route: { answers: ['A'] } } });
+        if (++calls === 1) return;
+        fs.writeFileSync(transcript, JSON.stringify({ type: 'response_item', payload: {
+          type: 'function_call_output', call_id: call,
+          output: JSON.stringify({ answers: { route: { answers: ['B'] } } }),
+        } }) + '\n');
+      },
+    },
+  });
+  await assert.rejects(service.answer(prompt, { answers }), { reason: 'question_receipt_unconfirmed', uncertain: true });
+  assert.deepEqual(await service.answer(prompt, { answers }), { state: 'answered', source: 'native' });
+  assert.equal(calls, 2);
+});
+
 function fixture(sync = false) {
   assert.equal(typeof api.CodexQuestions, 'function');
   const state = {

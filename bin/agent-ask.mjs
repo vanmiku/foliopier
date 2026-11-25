@@ -13,6 +13,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
+import { cliQuestionResult } from '../lib/codex-question-result.mjs';
+import { parentAgent } from '../lib/session-process.mjs';
 
 const agent = process.argv[2] === 'codex' ? 'codex' : 'claude';
 const watching = process.argv[2] === 'watch';
@@ -80,7 +82,7 @@ function commandStarted(command, owners) {
 //     只认原问题的用户答复；多题要全部答完，不用无关消息推断已回答
 //   Codex 进程没了（软件崩了、退出了），题也就没了。同时每 25 秒来问一次，免得被当成没人等了收掉。最多等一天
 if (watching) {
-  const [, , , id, file, callId, from, toolName, ownerPid, questionCount] = process.argv; const t0 = Date.now();
+  const [, , , id, file, callId, from, toolName, ownerPid, questionCount, turnId] = process.argv; const t0 = Date.now();
   const isAsync = toolName === 'request_user_input_async';
   const next = reader(file, Number(from) || 0); let seen = ''; const answered = new Set();
   const started = process.env.MYDASH_WATCH_CMD ? commandStarted(process.env.MYDASH_WATCH_CMD, new Set([Number(ownerPid)])) : null;
@@ -88,6 +90,13 @@ if (watching) {
     if (started?.()) return true;
     const chunk = next(); if (!chunk) return false;
     seen = (seen + chunk).slice(-2 * 1024 * 1024);
+    if (turnId) {
+      const result = cliQuestionResult(seen, callId, turnId);
+      if (!result?.answers) return result;
+      const count = Object.values(result.answers).filter(answer =>
+        Array.isArray(answer?.answers) && answer.answers.some(value => typeof value === 'string' && value.trim())).length;
+      return count >= (Number(questionCount) || 1) ? result : { cancelled: true };
+    }
     if (isAsync) {
       for (const line of seen.split('\n')) {
         try {
@@ -108,7 +117,12 @@ if (watching) {
     return (callId ? seen.includes(`"call_id":"${callId}"`) : /"type":"(function_call_output|custom_tool_call_output)"/.test(seen)) || /"type":"(task_complete|turn_aborted)"/.test(seen);
   };
   setInterval(async () => {
-    if (done() || Date.now() - t0 > 86400_000) { const r = await post(`/api/prompts/${id}/cancel`, { reason: 'terminal' }); if (r?.prompt?.status !== 'pending') process.exit(0); }
+    const result = done();
+    if (result || Date.now() - t0 > 86400_000) {
+      const reason = result && !result.cancelled ? 'terminal' : 'cancelled';
+      const r = await post(`/api/prompts/${id}/cancel`, { reason });
+      if (r?.prompt?.status !== 'pending') process.exit(0);
+    }
     if (!alive(Number(ownerPid))) { await post(`/api/prompts/${id}/cancel`, {}); process.exit(0); }
   }, 2000);
   for (;;) {
@@ -152,13 +166,16 @@ const print = o => process.stdout.write(JSON.stringify(o));
 const transcript0 = typeof input.transcript_path === 'string' ? input.transcript_path : '';
 if (codexApp && !transcript0) process.exit(0); // 没有会话记录就没法知道答没答，干脆只在软件里问
 if (agent === 'codex' && kind === 'question' && ti.questions?.some(q => q.isSecret)) process.exit(0);
-const codexBoth = codexApp && codexMode === 'parallel' && kind === 'question' && typeof input.tool_use_id === 'string' && input.tool_use_id.length > 0;
-const created = await post('/api/prompts', { tool: agent, kind, session: input.session_id || '', cwd: input.cwd || '', payload, both: (agent === 'claude' && event === 'PermissionRequest') || codexBoth, appOnly: codexApp && !codexBoth, ...(codexBoth ? { native: { tool, callId: input.tool_use_id } } : {}) });
+const cliFirst = codexMode === 'cli-first' && tool === 'request_user_input' && typeof input.turn_id === 'string' && input.turn_id.length > 0;
+const codexBoth = codexApp && (codexMode === 'parallel' || cliFirst || (codexMode === 'cli-first' && tool === 'request_user_input_async'))
+  && kind === 'question' && typeof input.tool_use_id === 'string' && input.tool_use_id.length > 0;
+const created = await post('/api/prompts', { tool: agent, kind, session: input.session_id || '', cwd: input.cwd || '', payload, both: (agent === 'claude' && event === 'PermissionRequest') || codexBoth, appOnly: codexApp && !codexBoth, ...(codexBoth ? { native: { tool, callId: input.tool_use_id, ...(cliFirst ? { turnId: input.turn_id } : {}) } } : {}) });
 if (!created?.id) process.exit(0);
 if (codexApp) {
   let size = 0; try { size = fs.statSync(transcript0).size; } catch {}
   const env = { ...process.env, ...(kind === 'permission' && typeof ti.command === 'string' ? { MYDASH_WATCH_CMD: ti.command } : {}) };
-  spawn(process.execPath, [process.argv[1], 'watch', created.id, transcript0, String(input.tool_use_id || ''), String(size), tool, String(process.ppid), String(payload.questions?.length || 0)], { detached: true, stdio: 'ignore', windowsHide: true, env }).unref();
+  const ownerPid = cliFirst ? parentAgent('codex')?.pid || 0 : process.ppid;
+  spawn(process.execPath, [process.argv[1], 'watch', created.id, transcript0, String(input.tool_use_id || ''), String(size), tool, String(ownerPid), String(payload.questions?.length || 0), cliFirst ? input.turn_id : ''], { detached: true, stdio: 'ignore', windowsHide: true, env }).unref();
   process.exit(0); // 不输出：Codex 照常在软件里弹出
 }
 

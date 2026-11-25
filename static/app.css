@@ -887,6 +887,12 @@ dialog.access-dlg::backdrop { background: rgba(10, 10, 14, .45); }
 .pr-head .eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pr-head .eyebrow a { display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: none; }
 .pr-head .eyebrow b { color: var(--text-3); font-weight: 400; }
+dialog.cli-prompt-dialog { width: min(650px, calc(100vw - 24px)); }
+.cli-prompt-dialog .ad-body { padding: 10px 12px; }
+.cli-prompt-frame { display: block; width: 100%; height: min(540px, calc(100dvh - 130px)); border: 0; }
+body[data-cli-prompt-embed] .app { display: block; }
+body[data-cli-prompt-embed] :is(#side, .side-mask, .topbar) { display: none; }
+body[data-cli-prompt-embed] #main { padding: 12px; }
 .pr-sheet { padding: 4px 0; }
 .pr-chip { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font: 600 12px/1.6 var(--sans); vertical-align: 2px; }
 .pr-multi { margin-left: 8px; color: var(--text-3); font-size: 12.5px; font-weight: 400; }

@@ -495,6 +495,9 @@
       let d = {}; try { d = JSON.parse(e.data); } catch {}
       document.dispatchEvent(new CustomEvent('mydash-prompt', { detail: d }));
     });
+    es.addEventListener('prompt-available', e => {
+      try { queueCliPrompt(JSON.parse(e.data).id); } catch {}
+    });
     es.addEventListener('change', ev => {
       let d; try { d = JSON.parse(ev.data); } catch { return; }
       const id = d.project + '/' + d.slug;
@@ -663,6 +666,32 @@
     dlg.showModal(); onOpen?.(dlg);
     return dlg;
   }
+  const cliPromptQueue = new Set();
+  function queueCliPrompt(id) {
+    if (!/^p[0-9a-f]{10}$/.test(id) || page === 'prompt') return;
+    cliPromptQueue.add(id);
+    openQueuedCliPrompt();
+  }
+  function openQueuedCliPrompt() {
+    if (document.hidden || $('dialog[open]') || dirty.size) return;
+    const id = cliPromptQueue.values().next().value;
+    if (!id) return;
+    cliPromptQueue.delete(id);
+    const title = escH(T('{tool} is asking you', { tool: 'Codex' }));
+    const dlg = modal(`<iframe class="cli-prompt-frame" title="${title}" src="/prompts/${id}?embed=1"></iframe><button type="button" class="ad-close" data-close>${escH(T('Close'))}</button>`);
+    dlg.classList.add('cli-prompt-dialog');
+    dlg.setAttribute('aria-label', T('{tool} is asking you', { tool: 'Codex' }));
+    dlg.dataset.promptId = id;
+  }
+  document.addEventListener('visibilitychange', openQueuedCliPrompt);
+  document.addEventListener('close', () => queueMicrotask(openQueuedCliPrompt), true);
+  document.addEventListener('mydash-prompt', e => {
+    if (!e.detail?.status || e.detail.status === 'pending') return;
+    const id = e.detail.id;
+    cliPromptQueue.delete(id);
+    const dlg = $('dialog.cli-prompt-dialog[open]');
+    if (dlg?.dataset.promptId === id) dlg.close();
+  });
   // Feature discovery is per browser and feature, not repeated for every update.
   const sessionIntroKey = 'mydash.feature.agent-conversations.v1';
   function showSessionIntro(force = false) {
@@ -886,30 +915,33 @@
     // 在「其他」里打字就自动选上「其他」
     for (const ot of $$('.pr-q .ap-other-text')) ot.addEventListener('input', () => { const box = ot.closest('.ap-opt')?.querySelector('input[value="__other__"]'); if (box && ot.value) box.checked = true; ot.closest('.pr-q').classList.remove('ap-missing'); });
     for (const q of $$('.pr-q')) q.addEventListener('change', () => q.classList.remove('ap-missing'));
-    const showConnection = message => {
+    const showConnection = (message, reason) => {
       const el = $('#pr-connection'); if (el) { el.textContent = message; el.hidden = false; }
+      const settings = $('[data-pr-web-first]'); if (settings) settings.hidden = reason !== 'app_ipc_offline';
     };
     const go = async (path, body, okMsg) => {
-      for (const b of $$('.pr-acts button')) b.disabled = true;
+      const active = $$('.pr-acts button:not(:disabled)');
+      for (const b of active) b.disabled = true;
       try {
         const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Mydash': '1' }, body: JSON.stringify(body) });
         const result = await r.json().catch(() => ({}));
         if (r.status === 409 && result.status !== 'pending') { toast(T('This was already handled elsewhere.')); return setTimeout(() => location.reload(), 900); }
         if (!r.ok) {
-          if (prData.native && result.error) showConnection(result.error);
+          if (prData.native && result.error) showConnection(result.error, result.reason);
           else toast((r.status >= 500 || result.uncertain) && result.error ? result.error : T('That did not work. Try again in a moment.'));
           if (result.uncertain) return setTimeout(() => location.reload(), 900);
-          for (const b of $$('.pr-acts button')) b.disabled = false;
+          for (const b of active) b.disabled = false;
           return;
         }
         if (path.endsWith('/reconnect')) {
           if (result.state === 'answered') { toast(T('This was already handled elsewhere.')); return setTimeout(() => location.reload(), 700); }
+          if (prData.cliFirst) return location.reload();
           showConnection(T('Connected to the original Codex question. Your choice has not been submitted.'));
-          for (const b of $$('.pr-acts button')) b.disabled = false;
+          for (const b of active) b.disabled = false;
           return;
         }
         toast(okMsg); setTimeout(() => location.reload(), 700);
-      } catch { toast(T('That did not work. Try again in a moment.')); for (const b of $$('.pr-acts button')) b.disabled = false; }
+      } catch { toast(T('That did not work. Try again in a moment.')); for (const b of active) b.disabled = false; }
     };
     for (const b of $$('.pr-acts [data-act]')) b.addEventListener('click', () => {
       const act = b.dataset.act; const base = `/api/prompts/${prData.id}`;
@@ -933,7 +965,11 @@
       return go(`${base}/answer`, { decision: act, message: $('.pr-reason')?.value.trim() || '' }, T('Sent. The agent carries on now.'));
     });
     // 终端那边取消了、或者在别的设备上答了：刷新一下
-    document.addEventListener('mydash-prompt', e => { if (e.detail?.id === prData.id && prData.status === 'pending') location.reload(); });
+    document.addEventListener('mydash-prompt', e => {
+      if (e.detail?.id !== prData.id || prData.status !== 'pending') return;
+      if (prData.cliFirst && e.detail.status === 'pending' && $('.pr-q input:checked')) return;
+      location.reload();
+    });
   }
 
   // ---------- 新版本：顶栏的「更新」按钮 → 确认 → 进度条 → 结果，点「确定」刷新 ----------
@@ -1127,13 +1163,15 @@
       autoArchiveDays: Number(q('autoArchiveDays').value), daily: q('dailyOn').checked ? q('daily').value : '',
       ...(q('httpsRedirect') ? { httpsRedirect: q('httpsRedirect').checked } : {}),
       ...(q('updateMode') ? { updateMode: q('updateMode').value } : {}),
-      prompts: { enabled: q('promptsOn').checked, chat: q('promptsChat').checked, mode: q('promptsMode').value, codexMode: q('promptsCodex').value, pushDelay: Number(q('promptsPush').value) },
+      prompts: { enabled: q('promptsOn').checked, chat: q('promptsChat').checked, mode: q('promptsMode').value, codexMode: q('promptsCodex').value, pushDelay: Number(q('promptsPush').value),
+        cliDelay: Number(q('promptsCliDelay').value), cliOpenBrowser: q('promptsCliBrowser').checked },
     });
     // 一次只存一份，轮到时再读表单：连着改两项，后存的一定是最新的样子
     let saving = Promise.resolve();
     for (const el of $$('[data-auto]', setForm)) el.addEventListener('change', () => {
       if (el.name === 'dailyOn') syncDaily();
       if (el.name === 'sessionsOn') syncSessions();
+      if (el.name === 'promptsCodex') $('[data-cli-first-settings]', setForm).hidden = el.value !== 'cli-first';
       saving = saving.then(async () => {
         try {
           const j = await send('/api/settings', autoData());

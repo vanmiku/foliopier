@@ -30,6 +30,15 @@ async function fixture(t, options = {}) {
       const q = JSON.parse(data);
       calls.push(q);
       if (!Object.hasOwn(q, 'id')) return;
+      if (q.method === 'thread/resume' && options.question) {
+        s.send(JSON.stringify(options.question));
+        s.send(JSON.stringify({ id: q.id, result: { thread } }));
+        return;
+      }
+      if (!q.method && q.id === options.question?.id) {
+        s.send(JSON.stringify({ method: 'serverRequest/resolved', params: { threadId: id, requestId: q.id } }));
+        return;
+      }
       if (q.method === 'turn/start' && options.dropSend) {
         s.terminate();
         return;
@@ -128,6 +137,27 @@ test('daemon refuses unloaded, read-only, subagent and mismatched project target
       false
     );
   }
+});
+
+test('a live CLI question replays to the daemon connection and can only be submitted while pending', async (t) => {
+  if (process.platform === 'win32') return t.skip('Unix adapter');
+  const question = {
+    id: 37,
+    method: 'item/tool/requestUserInput',
+    params: { threadId: id, turnId: 'original-turn', itemId: 'original-call', questions: [] },
+  };
+  const f = await fixture(t, { question, thread: { status: { type: 'active', activeFlags: ['waitingOnUserInput'] } } });
+  const b = new api.CodexDaemonBridge({ codexHome: f.dir, timeoutMs: 200 });
+  t.after(() => b.close());
+  const requests = await b.watchQuestions(id, f.dir);
+  assert.deepEqual(requests, [question]);
+  assert.deepEqual(f.calls.find(q => q.method === 'thread/resume').params, { threadId: id, excludeTurns: true });
+  const answers = { pick: { answers: ['A'] } };
+  await b.submitQuestion(requests[0], { answers });
+  assert.deepEqual(f.calls.find(q => q.id === question.id), { id: question.id, result: { answers } });
+  await assert.rejects(b.submitQuestion(requests[0], { answers }), { reason: 'question_not_ready' });
+  assert.equal(f.calls.filter(q => q.id === question.id).length, 1);
+  assert.equal(f.calls.some(q => q.method === 'turn/start'), false);
 });
 test('daemon submits literal text and structured images once, preserving original model and permission settings', async (t) => {
   if (process.platform === 'win32') return t.skip('Unix adapter');

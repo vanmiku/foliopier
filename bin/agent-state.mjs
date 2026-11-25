@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Claude Code / Codex 钩子用：记下 agent 现在忙不忙。UserPromptSubmit（用户发了消息，或后台任务把 agent 叫醒）记 busy，
 // Stop（答完一轮）记 idle，SessionEnd（会话关了）记 ended。用法：agent-state.mjs busy|idle|ended [claude|codex]
-// Stop 时如果回复最后是在用文字问用户（要不要…？选哪个？），拦一次，让 agent 改用选择题再问：选择题会经过钩子到 mydash
-// （bin/agent-ask.mjs），文字里的问题哪个钩子都接不到。每个会话第一次发消息时提醒一句这条规则（老会话没读到过新规则）。
+// Claude Code 的 Stop 钩子会提醒补问，Codex 在每轮开始前收到选择题提醒。
+// 原生选择题通过 bin/agent-ask.mjs 送到 FolioPier AI。
 // mydash approvals wait 拿到审批答复后，等 agent 闲下来才退出，免得 agent 做到一半时把答复塞进去。
 // 用户发消息时（busy），如果这个会话发的审批单、待办还开着、或者有人在上面提问（state/open-items.json，见 lib/waiting.mjs），
 // 就输出几行提醒：UserPromptSubmit 钩子的输出会进 agent 的上下文，agent 就不会忘了关单、勾掉、回答。
@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parentAgent } from '../lib/session-process.mjs';
+import { t } from '../lib/i18n.mjs';
 
 const event = ['idle', 'ended'].includes(process.argv[2]) ? process.argv[2] : 'busy';
 let state = event;
@@ -38,16 +39,13 @@ function asksInText(msg) {
 }
 // 这个会话有一张审批单在等用户答：回复里的问题多半就是在说它，不拦
 const waitingForm = () => Object.values(readJson(path.join(HOME, 'state', 'open-items.json')) || {}).some(x => x.session === id && x.kind === 'approval' && x.state === 'pending');
-const REASON = {
-  claude: 'Your reply ends by asking the user something in plain text, which does not reach them in FolioPier AI. If it is a choice or decision for them, ask it again with the AskUserQuestion tool (2–4 options; they can also write their own answer) and do not repeat the rest of your reply. If it needs no decision from them (a rhetorical question, something only they can go and do, or a question you already asked with a tool and got the answer to), end your turn without replying to this note.',
-  codex: 'Your reply ends by asking the user something in plain text, which does not reach them in FolioPier AI. If it is a choice or decision for them, ask it again: with request_user_input when available in the current mode, otherwise request_user_input_async. Keep an unanswered asynchronous question in the active turn by waiting; do not finish the turn or re-ask it. Only when neither native tool is available, first show the question and choices in the conversation, then run `foliopier ask "<question>" "<option 1>" "<option 2>"` and wait for the answer. Do not repeat the rest of your reply. If it needs no decision from them (a rhetorical question, something only they can go and do, or a question you already asked with a tool and got the answer to), end your turn without replying to this note.',
-};
+const CLAUDE_REASK = 'Your reply ends by asking the user something in plain text, which does not reach them in FolioPier AI. If it is a choice or decision for them, ask it again with the AskUserQuestion tool (2–4 options; they can also write their own answer) and do not repeat the rest of your reply. If it needs no decision from them (a rhetorical question, something only they can go and do, or a question you already asked with a tool and got the answer to), end your turn without replying to this note.';
 // The App only keeps asynchronous question controls for an active turn. A
 // successful native tool call is not proof that its card survives turn completion.
 // Guard once; interruptions, errors, stale watchers and explicit modes fail open.
 const nativeQuestionWaiting = () => {
   try {
-    if (!valid || agent !== 'codex' || cfg.prompts?.enabled === false || (cfg.prompts?.codexMode || 'parallel') !== 'parallel') return false;
+    if (!valid || agent !== 'codex' || cfg.prompts?.enabled === false || !['parallel', 'cli-first'].includes(cfg.prompts?.codexMode || 'parallel')) return false;
     return (readJson(path.join(HOME, 'state', 'prompts.json'))?.items || []).some(p =>
       p.tool === 'codex' && p.kind === 'question' && p.session === id && p.status === 'pending'
       && p.both === true && !p.appOnly && p.native?.tool === 'request_user_input_async'
@@ -56,12 +54,13 @@ const nativeQuestionWaiting = () => {
 };
 let block = null;
 if (state === 'idle' && (input.hook_event_name || 'Stop') === 'Stop' && !input.stop_hook_active && nativeQuestionWaiting()) {
-  block = 'A native request_user_input_async question is still unanswered. Finishing this turn hides its Codex App answer controls. Keep this turn active and wait for the existing question to be answered, using short interruptible waits. Do not ask the question again or send another copy. You may continue independent work; finish only after the answer arrives or the user explicitly cancels or moves on.';
+  // Codex displays the continuation reason in the conversation.
+  block = t('Waiting for your answer to the open question.');
   state = 'busy';
 }
-if (state === 'idle' && (input.hook_event_name || 'Stop') === 'Stop' && !input.stop_hook_active && cfg.prompts?.enabled !== false && cfg.prompts?.chat !== false
+if (agent === 'claude' && state === 'idle' && (input.hook_event_name || 'Stop') === 'Stop' && !input.stop_hook_active && cfg.prompts?.enabled !== false && cfg.prompts?.chat !== false
   && asksInText(input.last_assistant_message) && !waitingForm()) {
-  block = REASON[agent]; state = 'busy'; // 还要接着问，不算闲下来
+  block = CLAUDE_REASK; state = 'busy'; // 还要接着问，不算闲下来
 }
 
 if (valid) {
@@ -123,11 +122,12 @@ function ended(session) {
     return Date.now() - fs.statSync(f).mtimeMs > 86400_000;
   } catch { return true; }
 }
-// Claude Code 用 additionalContext：照样接着做，但终端里不显示成「Stop hook error」；Codex 用 decision: block（它的理由会当成下一条提示）
+// Claude 的补问作为附加上下文传入。Codex 只在真实的原生题等待答复时发出简短状态。
 if (block) process.stdout.write(JSON.stringify(agent === 'claude' ? { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: block } } : { decision: 'block', reason: block }));
 const out = [];
-// 每个会话第一次收到用户消息时提醒一次（开着很久的会话没读到过这条规则）
-if (event === 'busy' && valid && !prev.told && cfg.prompts?.enabled !== false) out.push(RULE[lang][agent]);
+// Codex 每轮开始前收到提醒，Claude 只在会话首条消息时提醒。
+if (event === 'busy' && valid && cfg.prompts?.enabled !== false
+  && (agent === 'codex' ? cfg.prompts?.chat !== false : !prev.told)) out.push(RULE[lang][agent]);
 if (event === 'busy' && id) {
   try {
     const all = Object.entries(JSON.parse(fs.readFileSync(path.join(HOME, 'state', 'open-items.json'), 'utf8')));
@@ -145,4 +145,9 @@ if (event === 'busy' && id) {
     }
   } catch {}
 }
-if (out.length) process.stdout.write(out.join('\n') + '\n');
+if (out.length) {
+  const context = out.join('\n');
+  process.stdout.write(agent === 'codex'
+    ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: context } })
+    : context + '\n');
+}

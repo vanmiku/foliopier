@@ -13,6 +13,8 @@ import { shareReaderPage } from './lib/share-public-views.mjs';
 import { findPdfBrowser } from './lib/share-pdf.mjs';
 import { externalFeedbackItems, resolveExternalFeedback } from './lib/share-feedback.mjs';
 import { CodexQuestions } from './lib/codex-questions.mjs';
+import { spawn } from 'node:child_process';
+import { which } from './lib/sys.mjs';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -29,7 +31,7 @@ import { readResponses, addApproval, addComment, deleteComment, latestApproval, 
 import { versionTodos, todoProgress, checksAllowed } from './lib/todo.mjs';
 import { approvalStatus, syncOpen } from './lib/waiting.mjs';
 import { runChecks } from './lib/todocheck.mjs';
-import { createPrompt, getPrompt, allPrompts, answerPrompt, validatePromptAnswer, nativeFailureReason, nativeFailureMessage, setNativeFailure, setNativeDelivery, setPromptStatus, touchPrompt, reapPrompts, promptTitle, promptsEnabled } from './lib/prompts.mjs';
+import { createPrompt, getPrompt, pendingPrompts, promptVisible, cliPromptDelay, cliPromptDue, markCliPromptReady, revealCliPrompt, claimCliPromptPush, answerPrompt, validatePromptAnswer, nativeFailureReason, nativeFailureMessage, setNativeFailure, setNativeDelivery, setPromptStatus, touchPrompt, reapPrompts, promptTitle, promptsEnabled } from './lib/prompts.mjs';
 import { projectForSession, agentInfo } from './lib/agents.mjs';
 import { questionsOf, validateAnswers, summarize } from './lib/approval.mjs';
 import { renderDiff } from './lib/diff.mjs';
@@ -200,20 +202,81 @@ const promptWaiters = new Map();  // id → Set<resolve>
 function wakePrompt(id) {
   for (const done of promptWaiters.get(id) || []) done();
   promptWaiters.delete(id);
-  broadcast('prompt', { id }); broadcast('response', {});
+  const p = getPrompt(id);
+  if (promptVisible(p)) {
+    broadcast('prompt', { id, ...(p.cliFirst ? { status: p.status } : {}) });
+    broadcast('response', {});
+  }
+}
+function pushPrompt(p) {
+  const base = shareUrl().replace(/\/+$/, '');
+  const who = agentInfo(p.tool)?.name || BRAND_NAME;
+  sendPush({ title: t('{tool} is waiting for you · {project}', { tool: who, project: projectNames()[p.project]?.name || p.project }), body: promptTitle(p).slice(0, 200), link: `${base}/prompts/${p.id}` })
+    .then(r => { if (!r.ok && r.error !== 'not configured') console.error(new Date().toISOString(), `prompt push failed: ${r.error}`); });
 }
 // 30 秒（config.prompts.pushDelay）还没人答，推送到手机
 function schedulePromptPush(p) {
   const delay = Number(readConfig().prompts?.pushDelay ?? 30) * 1000;
   if (delay < 0) return;
   setTimeout(() => {
-    const cur = getPrompt(p.id); if (cur?.status !== 'pending') return;
-    const c = readConfig(); const base = shareUrl().replace(/\/+$/, '');
-    const who = agentInfo(p.tool)?.name || BRAND_NAME;
-    sendPush({ title: t('{tool} is waiting for you · {project}', { tool: who, project: projectNames()[p.project]?.name || p.project }), body: promptTitle(p).slice(0, 200), link: `${base}/prompts/${p.id}` })
-      .then(r => { if (!r.ok && r.error !== 'not configured') console.error(new Date().toISOString(), `prompt push failed: ${r.error}`); });
+    const cur = getPrompt(p.id); if (cur?.status === 'pending') pushPrompt(cur);
   }, Math.max(0, delay)).unref();
 }
+
+function openCliPrompt(p) {
+  const browser = process.platform === 'darwin' ? '/usr/bin/open' : which('xdg-open');
+  if (!browser) return;
+  const child = spawn(browser, [`${localUrl()}/prompts/${p.id}`], { stdio: 'ignore' });
+  child.on('error', () => {});
+  child.unref();
+}
+
+async function updateCliPrompt(p, settings) {
+  if (p.nativeDelivery?.state === 'dispatching' && p.nativeDelivery.owner === questionOwner) return;
+  let result, failure;
+  try { result = await nativeQuestions.cliStatus(p); }
+  catch (e) { failure = nativeFailureReason(e.reason); }
+  if (p.status !== 'pending' || !promptsEnabled()
+    || (p.nativeDelivery?.state === 'dispatching' && p.nativeDelivery.owner === questionOwner)) return;
+  if (result?.state === 'answered' || result?.state === 'cancelled') {
+    if (result.source === 'web' && p.nativeDelivery?.candidate)
+      answerPrompt(p.id, p.nativeDelivery.candidate, { by: 'web' });
+    else setPromptStatus(p.id, result.state === 'answered' ? 'terminal' : 'cancelled');
+    setNativeDelivery(p.id, null);
+    wakePrompt(p.id);
+    return;
+  }
+  if (result?.state === 'ready') markCliPromptReady(p);
+  // A previously observed request can disappear just before its transcript
+  // receipt arrives. Give that receipt a chance to close the mirror first.
+  if (p.cliFirst.readyAt && failure === 'question_not_ready') return;
+  if (!p.cliFirst.revealedAt && cliPromptDue(p) > Date.now()) return;
+  const changed = p.nativeFailure?.reason !== failure;
+  if (changed) setNativeFailure(p.id, failure);
+  if (revealCliPrompt(p)) {
+    wakePrompt(p.id);
+    broadcast('prompt-available', { id: p.id });
+    if (settings.cliOpenBrowser === true && result?.state === 'ready') openCliPrompt(p);
+  } else if (changed) wakePrompt(p.id);
+  if (claimCliPromptPush(p, settings.pushDelay ?? 30)) pushPrompt(p);
+}
+
+let checkingCliPrompts = false;
+async function checkCliPrompts() {
+  if (checkingCliPrompts) return;
+  checkingCliPrompts = true;
+  try {
+    const settings = readConfig().prompts || {};
+    const rows = pendingPrompts().filter(p => p.cliFirst && settings.enabled !== false);
+    await Promise.allSettled(rows.map(p => updateCliPrompt(p, settings)));
+    const active = new Set(pendingPrompts().filter(p => p.cliFirst && settings.enabled !== false).map(p => p.session));
+    await Promise.all([...nativeQuestions.daemon.questionSubscriptions.keys()]
+      .filter(id => !active.has(id)).map(id => nativeQuestions.daemon.unwatchQuestions(id)));
+  } finally {
+    checkingCliPrompts = false;
+  }
+}
+setInterval(() => { checkCliPrompts().catch(() => {}); }, 1_000).unref();
 // 等答案的进程每 25 秒来问一次；45 秒没来（终端那边答了、按了 Esc，进程被结束），就算取消了
 setInterval(() => { for (const p of reapPrompts()) wakePrompt(p.id); }, 10_000).unref();
 
@@ -660,15 +723,20 @@ async function handlePost(req, res) {
   if (url.pathname === '/api/prompts') {
     if (!promptsEnabled()) return json(409, { error: 'prompts are turned off' });
     const tool = String(body.tool || 'cli');
-    const p = createPrompt({ tool, kind: String(body.kind || ''), project: String(body.project || '') || projectForSession(tool, String(body.session || ''), String(body.cwd || '')), session: body.session, cwd: body.cwd, payload: body.payload, both: body.both === true, appOnly: body.appOnly === true, native: body.native });
+    const settings = readConfig().prompts || {};
+    const cliDelay = (process.env.MYDASH_PROMPT_MODE || settings.codexMode) === 'cli-first' ? cliPromptDelay(settings.cliDelay) : 0;
+    const p = createPrompt({ tool, kind: String(body.kind || ''), project: String(body.project || '') || projectForSession(tool, String(body.session || ''), String(body.cwd || '')), session: body.session, cwd: body.cwd, payload: body.payload, both: body.both === true, appOnly: body.appOnly === true, native: body.native, cliDelay });
     if (!p) return json(400, { error: 'not a prompt mydash understands' });
-    schedulePromptPush(p); wakePrompt(p.id);
+    if (!p.cliFirst) { schedulePromptPush(p); wakePrompt(p.id); }
     return json(200, { ok: true, id: p.id, url: `${shareUrl().replace(/\/+$/, '')}/prompts/${p.id}` });
   }
   {
     const m = url.pathname.match(/^\/api\/prompts\/(p[0-9a-f]{10})\/(answer|reconnect|release|cancel)$/);
     if (m) {
       const [, id, action] = m;
+      const pending = getPrompt(id);
+      if (action !== 'cancel' && pending && !promptVisible(pending))
+        return json(404, { error: 'no such prompt' });
       if (action === 'reconnect') {
         const p = getPrompt(id);
         if (!p?.native) return json(404, { error: 'no native question' });
@@ -679,6 +747,10 @@ async function handlePost(req, res) {
           const result = await nativeQuestions.check(p, { refresh: true, recover: true, authorize: () => promptsEnabled() && getPrompt(id)?.status === 'pending' && !getPrompt(id)?.nativeDelivery });
           setNativeFailure(id, null);
           if (result.state === 'answered') { setPromptStatus(id, 'terminal'); wakePrompt(id); }
+          if (result.state === 'cancelled') {
+            setPromptStatus(id, 'cancelled'); wakePrompt(id);
+            return json(409, { error: 'question cancelled', status: 'cancelled' });
+          }
           return json(200, { ok: true, ...result });
         } catch (e) {
           const reason = nativeFailureReason(e.reason); setNativeFailure(id, reason, e);
@@ -705,6 +777,10 @@ async function handlePost(req, res) {
             setNativeDelivery(id, { ...claim, state: 'delivered' });
           } catch (e) {
             setNativeDelivery(id, e.uncertain ? { ...claim, state: 'uncertain' } : null);
+            if (e.reason === 'question_cancelled') {
+              setPromptStatus(id, 'cancelled'); wakePrompt(id);
+              return json(409, { error: 'question cancelled', status: 'cancelled' });
+            }
             if (e.uncertain) return json(423, { error: t('Delivery is unconfirmed. Check the native Codex question before trying again.'), uncertain: true });
             const reason = nativeFailureReason(e.reason); setNativeFailure(id, reason, e);
             return json(503, { error: nativeFailureMessage(reason), ...getPrompt(id).nativeFailure });
@@ -715,10 +791,13 @@ async function handlePost(req, res) {
         wakePrompt(id); return json(200, { ok: true, prompt: r.prompt });
       }
       const p = getPrompt(id); if (!p) return json(404, { error: 'no such prompt' });
+      if (p.cliFirst && action === 'release') return json(409, { error: 'already available in Codex', status: p.status });
       if (p.status !== 'pending') return json(409, { error: 'already ' + p.status, status: p.status });
       // The transcript watcher can see our own native response before its HTTP
       // receipt arrives. Let the in-flight sender reconcile which side won.
-      if (p.nativeDelivery?.state === 'dispatching' && p.nativeDelivery.owner === questionOwner) return json(200, { ok: true, prompt: p });
+      if (p.nativeDelivery?.state === 'dispatching' && p.nativeDelivery.owner === questionOwner
+        || (p.cliFirst && p.nativeDelivery?.state === 'uncertain' && body.reason === 'terminal'))
+        return json(200, { ok: true, prompt: p });
       setPromptStatus(id, action === 'release' ? 'released' : body.reason === 'terminal' ? 'terminal' : 'cancelled'); wakePrompt(id);
       return json(200, { ok: true, prompt: getPrompt(id) });
     }
@@ -794,7 +873,8 @@ async function handlePost(req, res) {
     // AI 工具的提问：总开关、两种问法、文字提问兜底、推送延迟（-1 不推）
     if (body.prompts && typeof body.prompts === 'object') {
       const p = { ...(cur.prompts || {}), ...body.prompts };
-      patch.prompts = { enabled: p.enabled !== false, chat: p.chat !== false, mode: p.mode === 'hold' ? 'hold' : 'parallel', codexMode: ['hold', 'app', 'parallel'].includes(p.codexMode) ? p.codexMode : 'parallel', pushDelay: [-1, 0, 30, 60].includes(Number(p.pushDelay)) ? Number(p.pushDelay) : 30 };
+      patch.prompts = { enabled: p.enabled !== false, chat: p.chat !== false, mode: p.mode === 'hold' ? 'hold' : 'parallel', codexMode: ['hold', 'app', 'parallel', 'cli-first'].includes(p.codexMode) ? p.codexMode : 'parallel', pushDelay: [-1, 0, 30, 60].includes(Number(p.pushDelay)) ? Number(p.pushDelay) : 30,
+        cliDelay: cliPromptDelay(p.cliDelay), cliOpenBrowser: p.cliOpenBrowser === true };
     }
     if (body.updateMode !== undefined) {
       if (!['notify', 'auto', 'off'].includes(body.updateMode)) return json(400, { error: 'updateMode must be notify, auto or off', field: 'updateMode' });
@@ -1074,7 +1154,7 @@ async function handle(req, res) {
 
   // 还在等的提问（给页面和测试用）
   if (url.pathname === '/api/prompts') {
-    const list = allPrompts().filter(p => p.status === 'pending').map(p => ({ id: p.id, kind: p.kind, tool: p.tool, project: p.project, title: promptTitle(p), at: p.at }));
+    const list = pendingPrompts().filter(promptVisible).map(p => ({ id: p.id, kind: p.kind, tool: p.tool, project: p.project, title: promptTitle(p), at: p.at }));
     return send(res, 200, JSON.stringify({ prompts: list }), 'application/json; charset=utf-8', { 'Cache-Control': 'no-store' });
   }
   // 等答案：最多挂 25 秒，期间答了 / 回终端答 / 取消了就马上返回
@@ -1093,7 +1173,7 @@ async function handle(req, res) {
   }
   if (url.pathname.startsWith('/prompts/')) {
     const p = getPrompt(url.pathname.slice('/prompts/'.length));
-    return p ? send(res, 200, promptPage(p)) : send(res, 404, notFoundPage(t('No such question. It may have been cleared.')));
+    return promptVisible(p) ? send(res, 200, promptPage(p, { embedded: Boolean(p.cliFirst && url.searchParams.get('embed') === '1') })) : send(res, 404, notFoundPage(t('No such question. It may have been cleared.')));
   }
 
   if (url.pathname === '/api/access') {
