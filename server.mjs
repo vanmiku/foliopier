@@ -1188,7 +1188,8 @@ async function handle(req, res) {
 
   if (url.pathname === '/events') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-    res.write('retry: 3000\n\n');
+    const ids = promptsEnabled() ? pendingPrompts().filter(p => p.cliFirst && promptVisible(p)).map(p => p.id) : [];
+    res.write(`retry: 3000\n\nevent: prompt-sync\ndata: ${JSON.stringify(ids)}\n\n`);
     clients.add(res);
     req.on('close', () => clients.delete(res));
     return;

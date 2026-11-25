@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+import urllib.error
 import urllib.request
 from playwright.sync_api import sync_playwright
 
@@ -37,7 +38,7 @@ class ReviewUI(unittest.TestCase):
         cls.env = {**os.environ, 'MYDASH_HOME': str(cls.home), 'MYDASH_LANG': 'en',
                    'MYDASH_CODEX_HOME': str(cls.tmp / 'codex'), 'MYDASH_CLAUDE_HOME': str(cls.tmp / 'claude')}
         for key in ['MYDASH_DATA', 'MYDASH_PORT', 'MYDASH_CONTENT_PORT', 'MYDASH_BASE_URL', 'MYDASH_REMOTE',
-                    'MYDASH_TOKEN', 'CODEX_THREAD_ID', 'CLAUDE_CODE_SESSION_ID', 'MYDASH_PROJECT']:
+                    'MYDASH_TOKEN', 'MYDASH_PROMPT_MODE', 'CODEX_THREAD_ID', 'CLAUDE_CODE_SESSION_ID', 'MYDASH_PROJECT']:
             cls.env.pop(key, None)
         (cls.home / 'config.json').write_text(json.dumps({'port': port, 'contentPort': port + 1,
             'baseUrl': cls.base, 'lang': 'en', 'access': 'local', 'update': {'mode': 'off'},
@@ -260,6 +261,67 @@ class ReviewUI(unittest.TestCase):
         self.assertEqual(self.page.locator('#s-pcodex').input_value(), 'cli-first')
         self.assertEqual(self.page.locator('#s-pcliwait').input_value(), '120')
         self.assertTrue(self.page.locator('[name="promptsCliBrowser"]').is_checked())
+
+    def test_cli_first_popup_recovers_a_question_revealed_during_event_disconnect(self):
+        config = self.home / 'config.json'
+        saved = config.read_text()
+        settings = json.loads(saved)
+        settings['prompts'].update(codexMode='cli-first', cliDelay=30, cliOpenBrowser=False)
+        config.write_text(json.dumps(settings))
+        self.addCleanup(lambda: config.write_text(saved))
+        self.context.add_init_script("""
+            const NativeEventSource = window.EventSource;
+            window.EventSource = class extends EventTarget {
+                constructor(path) { super(); this.path = path; this.opens = 0; window.testEvents = this; this.reconnect(); }
+                reconnect() {
+                    this.source = new NativeEventSource(this.path);
+                    this.source.onopen = () => { this.opens++; this.onopen?.(); };
+                    for (const type of ['prompt', 'prompt-available', 'prompt-sync']) {
+                        this.source.addEventListener(type, event => this.dispatchEvent(new MessageEvent(type, { data: event.data })));
+                    }
+                }
+                disconnect() { this.source.close(); this.onerror?.(); }
+            };
+        """)
+        self.go('/')
+        self.page.wait_for_function('window.testEvents.opens === 1')
+        self.page.evaluate('window.testEvents.disconnect()')
+        question = self.post('/api/prompts', {'tool': 'codex', 'kind': 'question', 'cwd': str(self.tmp),
+            'both': True, 'session': 'a934761d-130d-4791-859a-931660c99af7',
+            'native': {'tool': 'request_user_input', 'callId': 'missed-cli-question', 'turnId': 'cli-turn'},
+            'payload': {'questions': [{'id': 'choose', 'question': 'Available while disconnected?', 'options': ['A', 'B']}]}})
+        ident = question['id']
+        def cancel(prompt_id):
+            try:
+                self.post('/api/prompts/' + prompt_id + '/cancel', {})
+            except urllib.error.HTTPError as error:
+                if error.code != 409:
+                    raise
+                error.close()
+
+        self.addCleanup(cancel, ident)
+        # A regular question belongs in the sidebar and should not become a popup on reconnect.
+        regular = self.post('/api/prompts', {'tool': 'cli', 'kind': 'question', 'cwd': str(self.tmp),
+            'payload': {'questions': [{'question': 'Sidebar only?', 'options': ['A', 'B']}]}})
+        self.addCleanup(cancel, regular['id'])
+        def available():
+            return any(row['id'] == ident for row in self.page.request.get(self.base + '/api/prompts').json()['prompts'])
+
+        self.assertFalse(available())
+        deadline = time.monotonic() + 40
+        while not available() and time.monotonic() < deadline:
+            time.sleep(.3)
+        self.assertTrue(available())
+        self.page.evaluate('window.testEvents.reconnect()')
+        dialog = self.page.locator('dialog.cli-prompt-dialog[open]')
+        dialog.wait_for(timeout=4000)
+        self.assertEqual(dialog.get_attribute('data-prompt-id'), ident)
+        dialog.locator('iframe').content_frame.get_by_text('Available while disconnected?', exact=True).wait_for()
+
+        self.page.evaluate('window.testEvents.disconnect()')
+        self.post('/api/prompts/' + ident + '/cancel', {})
+        self.page.evaluate('window.testEvents.reconnect()')
+        dialog.wait_for(state='detached', timeout=4000)
 
     def test_mobile_can_set_web_first_and_answer_without_codex_ipc(self):
         sid = '44444444-4444-4444-8444-444444444444'

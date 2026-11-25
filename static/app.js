@@ -498,6 +498,9 @@
     es.addEventListener('prompt-available', e => {
       try { queueCliPrompt(JSON.parse(e.data).id); } catch {}
     });
+    es.addEventListener('prompt-sync', e => {
+      try { syncCliPrompts(JSON.parse(e.data)); } catch {}
+    });
     es.addEventListener('change', ev => {
       let d; try { d = JSON.parse(ev.data); } catch { return; }
       const id = d.project + '/' + d.slug;
@@ -667,16 +670,25 @@
     return dlg;
   }
   const cliPromptQueue = new Set();
+  const shownCliPrompts = new Set();
   function queueCliPrompt(id) {
-    if (!/^p[0-9a-f]{10}$/.test(id) || page === 'prompt') return;
+    if (!/^p[0-9a-f]{10}$/.test(id) || page === 'prompt' || shownCliPrompts.has(id)) return;
     cliPromptQueue.add(id);
     openQueuedCliPrompt();
+  }
+  function syncCliPrompts(ids) {
+    const pending = new Set(ids);
+    for (const id of cliPromptQueue) if (!pending.has(id)) cliPromptQueue.delete(id);
+    const dlg = $('dialog.cli-prompt-dialog[open]');
+    if (dlg && !pending.has(dlg.dataset.promptId)) dlg.close();
+    for (const id of pending) queueCliPrompt(id);
   }
   function openQueuedCliPrompt() {
     if (document.hidden || $('dialog[open]') || dirty.size) return;
     const id = cliPromptQueue.values().next().value;
     if (!id) return;
     cliPromptQueue.delete(id);
+    shownCliPrompts.add(id);
     const title = escH(T('{tool} is asking you', { tool: 'Codex' }));
     const dlg = modal(`<iframe class="cli-prompt-frame" title="${title}" src="/prompts/${id}?embed=1"></iframe><button type="button" class="ad-close" data-close>${escH(T('Close'))}</button>`);
     dlg.classList.add('cli-prompt-dialog');
